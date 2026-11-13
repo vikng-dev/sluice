@@ -8,8 +8,8 @@ each profile's pools, one per provider: a bar with a part for every account, as 
 large and as full as its week is used, and under it each account's plan, the share of its week used,
 which one a client is itself signed in as, and which is answering now. It also says when the clients
 are not going through Sluice. `sluice status` prints the same accounts. What can be done to a thing shows when the pointer is on it: a profile's **+** signs another
-account in for it, at the provider you pick, and an account's **⋯** moves it to another profile or
-removes it.
+account in for it, at the provider you pick, and an account's **⋯** removes it. An account is
+moved by dragging it onto another profile.
 
 ## Use it
 

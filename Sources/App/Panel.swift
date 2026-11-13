@@ -51,10 +51,13 @@ struct Panel: View {
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
             ForEach(sections, id: \.name) { section in
-                VStack(alignment: .leading, spacing: 10) {
-                    ProfileCaption(name: section.name, empty: section.pools.isEmpty, titles: titles) { signIn($0, section.name) }
-                    ForEach(section.pools) { pool in
-                        PoolView(pool: pool, now: now, others: profiles.filter { $0 != section.name }, move: move, remove: remove)
+                DropZone(
+                    accepts: { id in accounts.contains { $0.id == id && $0.profile != section.name } },
+                    drop: { id in accounts.first { $0.id == id }.map { move($0, section.name) } }
+                ) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ProfileCaption(name: section.name, empty: section.pools.isEmpty, titles: titles) { signIn($0, section.name) }
+                        ForEach(section.pools) { PoolView(pool: $0, now: now, remove: remove) }
                     }
                 }
             }
@@ -76,6 +79,29 @@ struct Panel: View {
         }
         .padding(14)
         .frame(width: 340)
+    }
+}
+
+/// A profile's part of the panel. An account dragged here from another profile moves to this one.
+private struct DropZone<Content: View>: View {
+    let accepts: (_ account: String) -> Bool
+    let drop: (_ account: String) -> Void
+    @ViewBuilder let content: Content
+    @State private var targeted = false
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(6)
+            .background(targeted ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .padding(-6)
+            .dropDestination(for: String.self) { accounts, _ in
+                guard let account = accounts.first, accepts(account) else { return false }
+                drop(account)
+                return true
+            } isTargeted: {
+                targeted = $0
+            }
     }
 }
 
@@ -134,9 +160,6 @@ private extension AccountStatus {
 private struct PoolView: View {
     let pool: Pool
     let now: Date
-    /// The profiles an account here could move to.
-    let others: [String]
-    let move: (AccountStatus, String) -> Void
     let remove: (AccountStatus) -> Void
 
     /// When the pool next gets allowance back.
@@ -160,7 +183,8 @@ private struct PoolView: View {
             VStack(alignment: .leading, spacing: 6) {
                 PoolBar(accounts: pool.accounts)
                 ForEach(pool.accounts, id: \.id) { account in
-                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, others: others, move: move, remove: remove)
+                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, remove: remove)
+                        .draggable(account.id)
                 }
                 if let identity = pool.identity, !pool.accounts.contains(where: { $0.label == identity }) {
                     Label("\(pool.client) is signed in as \(identity)", systemImage: "person.crop.circle")
@@ -202,9 +226,6 @@ private struct AccountRow: View {
     /// The client that is itself signed in as this account in the profile, if one is.
     let client: String?
     let now: Date
-    /// The profiles it could move to.
-    let others: [String]
-    let move: (AccountStatus, String) -> Void
     let remove: (AccountStatus) -> Void
     @State private var hovered = false
 
@@ -228,9 +249,6 @@ private struct AccountRow: View {
                 }
                 if serving { Circle().fill(.green).frame(width: 6, height: 6).help("Answering requests now") }
                 Menu {
-                    if !others.isEmpty {
-                        Menu("Move to") { ForEach(others, id: \.self) { name in Button(name) { move(account, name) } } }
-                    }
                     Button("Remove…", role: .destructive) { remove(account) }
                 } label: {
                     Image(systemName: "ellipsis")
