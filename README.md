@@ -8,20 +8,23 @@ The menu bar view is not built yet.
 
 ## Use it
 
-Open Sluice.app once; it relays from then on and starts with the Mac. Its command-line tool is
-inside it, at `Sluice.app/Contents/MacOS/sluice`.
+Open Sluice.app once; it relays from then on and starts with the Mac. The app is also the
+command-line tool. Run this once, and `sluice` is on your PATH with the rest:
+
+```sh
+/Applications/Sluice.app/Contents/MacOS/Sluice setup
+```
+
+`setup` links `sluice`, and stand-ins for `claude` and `codex`, into `~/.config/sluice/bin` and
+tells you the line that puts that folder first on your PATH. A stand-in points the real client at
+Sluice when Sluice is running, and otherwise just runs it, so nothing breaks when Sluice is off.
+Your own client settings are not edited.
 
 ```sh
 sluice login                  # sign a Claude account in through the browser; repeat per account
 sluice login codex            # the same for a ChatGPT account
 sluice status                 # accounts, their windows, and warm conversations
-sluice setup                  # make claude and codex go through Sluice
 ```
-
-`sluice setup` puts stand-ins for `claude` and `codex` in `~/.config/sluice/bin` and tells you the
-line that puts that folder first on your PATH. A stand-in points the real client at Sluice when
-Sluice is running, and otherwise just runs it, so nothing breaks when Sluice is off. Your own
-client settings are not edited.
 
 Claude Code stays signed in to any one subscription: Sluice replaces its credential and account id
 on the way out with those of the account it picked. Codex needs no login of its own.
@@ -66,8 +69,7 @@ One Swift package, no dependencies.
 |---|---|
 | `Sources/Core` | Accounts, Keychain storage, relay, router, the provider contract. No UI. |
 | `Sources/Providers` | One folder per provider (Claude, Codex), each answering the contract. |
-| `Sources/App` | The menu bar app. |
-| `Sources/CLI` | `sluice`: sign-in, status and setup, and the stand-in for each client. |
+| `Sources/App` | The one program: the menu bar app, the `sluice` command, and the stand-in for each client. |
 
 ## Build
 

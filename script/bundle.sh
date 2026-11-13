@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds a universal Sluice.app (with the sluice CLI inside) into dist/.
+# Builds a universal Sluice.app into dist/.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -12,7 +12,6 @@ bin=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
 rm -rf dist
 mkdir -p "$app/Contents/MacOS"
 cp "$bin/SluiceApp" "$app/Contents/MacOS/Sluice"
-cp "$bin/sluice" "$app/Contents/MacOS/sluice"
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

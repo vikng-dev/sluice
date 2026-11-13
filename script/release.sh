@@ -18,8 +18,6 @@ git fetch -q --tags origin main
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null && { echo "$tag exists; bump Version.swift"; exit 1; }
 
 script/bundle.sh
-# The CLI shares the app's identifier so both read the same Keychain item without a prompt.
-codesign --force --options runtime --timestamp --identifier dev.vikng.sluice --sign "$SIGN_IDENTITY" dist/Sluice.app/Contents/MacOS/sluice
 codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" dist/Sluice.app
 ditto -c -k --keepParent dist/Sluice.app "$zip"
 xcrun notarytool submit "$zip" --keychain-profile "$NOTARY_PROFILE" --wait
