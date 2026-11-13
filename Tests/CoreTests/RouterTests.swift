@@ -134,9 +134,8 @@ import Testing
     }
 
     @Test func aTierShowsTheMultipleOrElseTheName() {
-        #expect(Plan(name: "Ultra", multiple: 20, business: false, price: 200).tier == "20x $200")
-        #expect(Plan(name: "Go", multiple: nil, business: false, price: 8).tier == "Go $8")
-        #expect(Plan(name: "Enterprise", multiple: nil, business: true, price: nil).tier == "Enterprise")
+        #expect(Plan(name: "Ultra", multiple: 20, business: false, price: 200).tier == "20x")
+        #expect(Plan(name: "Go", multiple: nil, business: false, price: 8).tier == "Go")
     }
 }
 

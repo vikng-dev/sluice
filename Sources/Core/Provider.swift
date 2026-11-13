@@ -70,9 +70,7 @@ public struct Plan: Sendable, Codable, Equatable {
     }
 
     /// The tier in a few characters: the multiple where there is one, the name where there is not.
-    public var tier: String {
-        ([multiple.map { "\($0)x" } ?? name] + (price.map { ["$\($0)"] } ?? [])).joined(separator: " ")
-    }
+    public var tier: String { multiple.map { "\($0)x" } ?? name }
 }
 
 public struct Reading: Sendable, Equatable {

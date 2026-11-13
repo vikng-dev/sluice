@@ -184,7 +184,7 @@ private struct AccountRow: View {
                 }
                 if serving { Circle().fill(.green).frame(width: 6, height: 6).help("Answering requests now") }
                 Spacer(minLength: 4)
-                if let plan = account.plan { Badge(text: plan.tier, symbol: plan.business ? "briefcase.fill" : nil).help(plan.name) }
+                if let plan = account.plan { Badge(text: plan.tier, symbol: plan.business ? "briefcase.fill" : nil).help(plan.name + (plan.price.map { ", $\($0) a month" } ?? "")) }
                 if let budget = account.budget {
                     Text(budget.percentText).font(.caption.monospacedDigit()).frame(width: 34, alignment: .trailing)
                         .foregroundStyle(budget.used >= 1 ? Color.red : budget.used >= 0.85 ? .orange : .primary)
