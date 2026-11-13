@@ -9,7 +9,7 @@ large and as full as its week is used, and under it each account's plan, the sha
 which one a client is itself signed in as, and which is answering now. It also says when the clients
 are not going through Sluice. `sluice status` prints the same accounts. What can be done to a thing shows when the pointer is on it: a profile's **+** adds an
 account to it, at the provider you pick, or work that belongs to it (folders, or a repository owner), and an account's **⋯** removes it. An account is
-moved by its handle: it lifts off the panel and drops onto another profile. A profile's name and its color dot are changed where they are: click the name to type another, click the dot to pick a color. Under the name is the work the profile claims; a claim is let go by the × it shows under the pointer, and the default profile has everything else.
+moved by its handle: it lifts off the panel and drops onto another profile. A profile's name and its color dot are changed where they are: click the name to type another, click the dot to pick a color. Beside the name is a count of the work the profile claims, and the default profile has everything else; click the count to lay the claims out, each let go by the × it shows under the pointer.
 
 ## Use it
 

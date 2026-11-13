@@ -190,7 +190,8 @@ enum Claim: Hashable {
 }
 
 /// A profile's name, color and claims, each changed where it is: a click on the name types a new one, a
-/// click on the dot offers the colors, and a claim is let go by the × it shows under the pointer. The +
+/// click on the dot offers the colors, and a click on the count of its claims lays them out, each let go
+/// by the × it shows under the pointer. The +
 /// that gives the profile an account or a claim shows when the pointer is on it, and always on an empty one.
 private struct ProfileCaption: View {
     let name: String
@@ -208,6 +209,8 @@ private struct ProfileCaption: View {
     let unclaim: (Claim) -> Void
     @State private var hovered = false
     @State private var picking = false
+    /// Whether the claims are laid out, and not only counted.
+    @State private var open = false
     /// What is being typed: the label, or an owner to claim. Kept apart from the text: a field that is
     /// going away writes its text once more, and that must not open it again.
     @State private var typed: Typed?
@@ -217,6 +220,15 @@ private struct ProfileCaption: View {
     private enum Typed { case label, owner }
 
     private var claims: [Claim] { (profile?.folders ?? []).map(Claim.folder) + (profile?.owners ?? []).map(Claim.owner) }
+
+    /// The claims in a few words, beside the name.
+    private var summary: String {
+        func count(_ items: [String]?, _ one: String) -> String? {
+            items.flatMap { $0.isEmpty ? nil : "\($0.count) \(one)\($0.count == 1 ? "" : "s")" }
+        }
+        let said = [takesTheRest ? "everything else" : nil, count(profile?.folders, "folder"), count(profile?.owners, "owner")].compactMap { $0 }
+        return said.isEmpty && name != Config.defaultProfile ? "no work yet" : said.joined(separator: ", ")
+    }
 
     private func dot(_ tint: Tint?, size: Double) -> some View {
         Circle().fill(tint?.color ?? Color.secondary.opacity(0.4)).frame(width: size, height: size)
@@ -269,6 +281,18 @@ private struct ProfileCaption: View {
                         .contentShape(Rectangle())
                         .onTapGesture { type(.label, from: profile?.label ?? "") }
                         .help("Click to change what this profile is shown as")
+                    if claims.isEmpty {
+                        Text(summary).font(.caption2).foregroundStyle(.tertiary)
+                    } else {
+                        Button { open.toggle() } label: {
+                            HStack(spacing: 3) {
+                                Text(summary)
+                                Image(systemName: "chevron.right").imageScale(.small).rotationEffect(.degrees(open ? 90 : 0))
+                            }
+                            .font(.caption2).foregroundStyle(.tertiary).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).help("The work that belongs to this profile")
+                    }
                 }
                 Spacer()
                 Menu {
@@ -287,20 +311,20 @@ private struct ProfileCaption: View {
                 .help("Add an account, or work that belongs to this profile")
                 .opacity(hovered || empty ? 1 : 0)
             }
-            Flow {
-                if takesTheRest { Text("Everything else").padding(.vertical, 2) }
-                if claims.isEmpty, !takesTheRest, name != Config.defaultProfile, typed != .owner { Text("No work is its own yet").padding(.vertical, 2) }
-                ForEach(claims, id: \.self) { claim in ClaimChip(claim: claim) { unclaim(claim) } }
-                if typed == .owner {
-                    HStack(spacing: 3) {
-                        Image(systemName: "at")
-                        field("owner").frame(width: 110)
+            if open && !claims.isEmpty || typed == .owner {
+                Flow {
+                    ForEach(claims, id: \.self) { claim in ClaimChip(claim: claim) { unclaim(claim) } }
+                    if typed == .owner {
+                        HStack(spacing: 3) {
+                            Image(systemName: "at")
+                            field("owner").frame(width: 110)
+                        }
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.primary.opacity(0.06), in: Capsule())
                     }
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.06), in: Capsule())
                 }
+                .font(.caption2).foregroundStyle(.tertiary)
             }
-            .font(.caption2).foregroundStyle(.tertiary)
         }
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
@@ -308,6 +332,7 @@ private struct ProfileCaption: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
             keep()
             picking = false
+            open = false
         }
     }
 }
