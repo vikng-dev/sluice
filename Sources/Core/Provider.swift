@@ -5,11 +5,10 @@ import Foundation
 public protocol Provider: Sendable {
     /// The first path segment of the provider's local address, e.g. `claude`.
     var id: String { get }
-    /// The command that runs this provider's client, e.g. `claude`.
-    var client: String { get }
-    /// The environment to add and the arguments to run the client with, so that a launch with
-    /// `arguments` talks to Sluice's `address` for this provider.
-    func pointing(_ arguments: [String], at address: String) -> (environment: [String: String], arguments: [String])
+    /// Makes the provider's client on this machine talk to `address`, or to the provider again,
+    /// by editing the client's own settings.
+    func route(_ on: Bool) throws
+    func isRouted() throws -> Bool
     /// Where a relayed request's path is appended.
     var upstream: URL { get }
     /// Where the provider's sign-in must land when its OAuth client is registered to one fixed address;
@@ -107,5 +106,34 @@ actor SignIns {
 private extension Data {
     var base64URL: String {
         base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+    }
+}
+
+public extension Provider {
+    /// Where this provider's client reaches Sluice.
+    var address: String { "http://localhost:\(Sluice.port)/\(id)" }
+}
+
+/// A client's settings file that Sluice could not read or may not change.
+public struct ClientSettingsError: Error, CustomStringConvertible {
+    public let path: String
+    public let reason: String
+    public init(path: String, reason: String) { self.path = path; self.reason = reason }
+    public var description: String { "\(path): \(reason)" }
+}
+
+/// A client's settings file: absent is empty, and a write goes to the file a link points at.
+public struct ClientSettings: Sendable {
+    let file: URL
+    public init(_ file: URL) { self.file = file.resolvingSymlinksInPath() }
+    public var path: String { file.path }
+
+    public func read() throws -> Data? {
+        FileManager.default.fileExists(atPath: file.path) ? try Data(contentsOf: file) : nil
+    }
+
+    public func write(_ data: Data) throws {
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: file, options: .atomic)
     }
 }

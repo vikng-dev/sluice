@@ -4,7 +4,6 @@ import SluiceCore
 /// Claude subscriptions, as Claude Code reaches them. Wire facts: docs/wire.md.
 public struct Claude: Provider {
     public let id = "claude"
-    public let client = "claude"
     public let upstream = URL(string: "https://api.anthropic.com")!
     public let redirect: URL? = nil
 
@@ -18,8 +17,34 @@ public struct Claude: Provider {
 
     public init() {}
 
-    public func pointing(_ arguments: [String], at address: String) -> (environment: [String: String], arguments: [String]) {
-        (["ANTHROPIC_BASE_URL": address], arguments)
+    /// Claude Code's user settings, in the folder Claude Code itself would use.
+    private var settings: ClientSettings {
+        let folder = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude")
+        return ClientSettings(folder.appending(path: "settings.json"))
+    }
+
+    public func route(_ on: Bool) throws {
+        try settings.write(Self.pointed(try settings.read(), at: on ? address : nil, path: settings.path))
+    }
+
+    public func isRouted() throws -> Bool {
+        try Self.environment(in: try settings.read(), path: settings.path).env["ANTHROPIC_BASE_URL"] as? String == address
+    }
+
+    /// The settings with `env.ANTHROPIC_BASE_URL` set to `address`, or removed; everything else is kept.
+    static func pointed(_ settings: Data?, at address: String?, path: String) throws -> Data {
+        var (all, env) = try environment(in: settings, path: path)
+        env["ANTHROPIC_BASE_URL"] = address
+        all["env"] = env.isEmpty ? nil : env
+        return try JSONSerialization.data(withJSONObject: all, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
+    }
+
+    private static func environment(in settings: Data?, path: String) throws -> (all: [String: Any], env: [String: Any]) {
+        guard let settings else { return ([:], [:]) }
+        guard let all = try? JSONSerialization.jsonObject(with: settings) as? [String: Any], let env = all["env"] as? [String: Any]? else {
+            throw ClientSettingsError(path: path, reason: "not the JSON object Claude Code's settings should be")
+        }
+        return (all, env ?? [:])
     }
 
     public func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL {

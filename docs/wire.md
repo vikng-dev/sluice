@@ -79,10 +79,9 @@ It then sends `POST /backend-api/codex/responses` as SSE over plain HTTP. `chatg
 wrong lever: it refuses a non-HTTPS origin for turns, tries WebSockets first, and carries plugin,
 settings and analytics traffic as well.
 
-**Passing the provider on the command line.** The same entry works as `-c` overrides, with no
-config file: `-c 'model_provider="sluice"' -c 'model_providers.sluice={…}'`. Placed last they are
-honoured by `exec` and accepted by subcommands that make no model call (`mcp list`). Placed before
-a subcommand they are dropped whenever the subcommand carries any `-c` of its own.
+**Only the user's config can name the provider.** A project's `.codex/config.toml` with
+`model_provider` or `model_providers` is ignored with a warning ("unsupported project-local config
+keys"), codex-cli 0.160.0. The same entry also works as `-c` overrides placed last on the command line.
 
 **It needs no login of its own.** With no login it sends the same headers and body keys, minus
 `authorization` and `chatgpt-account-id`; the relay adds both and the turn is served. With
@@ -109,3 +108,16 @@ with no Codex headers, when the body is in its dialect: `stream: true`, `store: 
 `instructions`, and `input` as a list of messages (a bare string is refused: "Input must be a
 list"). Another app's function tools are called normally. Fields outside the dialect are refused
 by name ("Unsupported parameter: temperature").
+
+## Who is calling
+
+The relay pins by the caller's folder, which no request carries. For a loopback connection macOS
+tells it: `proc_pidfdinfo` finds the process of this user whose TCP socket runs from the
+connection's port to the relay's, and `proc_pidinfo(PROC_PIDVNODEPATHINFO)` gives that process's
+working folder. Checked with Claude Code 2.1.323 (`claude -p`) and codex-cli 0.160.0: both make their
+requests from the process started in the project folder. The folder is where the client was
+started, with links resolved (`/tmp` reads as `/private/tmp`).
+
+Claude Code reads `env.ANTHROPIC_BASE_URL` from its settings files. A project's
+`.claude/settings.json` applies in that exact folder only, not in folders beneath it, which is why
+pins are not done there.

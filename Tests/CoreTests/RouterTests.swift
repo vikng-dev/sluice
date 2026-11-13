@@ -93,11 +93,25 @@ import Testing
     }
 }
 
-@Suite struct CodexLaunchTests {
-    @Test func overridesGoLastButBeforeABareDoubleDash() {
-        let plain = Codex().pointing(["exec", "-c", "x=1", "hi"], at: "A").arguments
-        #expect(plain.prefix(4) == ["exec", "-c", "x=1", "hi"] && plain.count == 8)
-        let dashed = Codex().pointing(["exec", "--", "hi"], at: "A").arguments
-        #expect(dashed.first == "exec" && dashed.suffix(2) == ["--", "hi"])
+@Suite struct ClientSettingsTests {
+    @Test func codexConfigGainsSluiceAndGivesItBackUnchanged() throws {
+        let own = "model = \"x\"\n\n[projects.\"/a\"]\ntrust_level = \"trusted\"\n"
+        let routed = try Codex.pointed(own, at: "A", path: "")
+        // The choice is a top-level key: after a table header it would belong to that table.
+        #expect(routed.hasPrefix(Codex.choice + "\n") && routed.hasSuffix(Codex.entry("A").joined(separator: "\n") + "\n"))
+        #expect(try Codex.pointed(routed, at: "B", path: "") == Codex.pointed(own, at: "B", path: ""))
+        #expect(try Codex.pointed(routed, at: nil, path: "") == own)
+    }
+
+    @Test func codexConfigWithItsOwnProviderIsLeftAlone() {
+        #expect(throws: ClientSettingsError.self) { try Codex.pointed("model_provider = \"other\"\n", at: "A", path: "") }
+    }
+
+    @Test func claudeSettingsKeepEverythingElse() throws {
+        let own = Data(#"{"env":{"KEEP":"1"},"model":"x"}"#.utf8)
+        let routed = try Claude.pointed(own, at: "A", path: "")
+        #expect(try JSONSerialization.jsonObject(with: routed) as? NSDictionary == ["env": ["KEEP": "1", "ANTHROPIC_BASE_URL": "A"], "model": "x"])
+        #expect(try JSONSerialization.jsonObject(with: Claude.pointed(routed, at: nil, path: "")) as? NSDictionary == ["env": ["KEEP": "1"], "model": "x"])
+        #expect(throws: ClientSettingsError.self) { try Claude.pointed(Data("[]".utf8), at: "A", path: "") }
     }
 }

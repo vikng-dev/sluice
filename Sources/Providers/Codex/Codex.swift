@@ -4,7 +4,6 @@ import SluiceCore
 /// ChatGPT subscriptions, as the Codex CLI reaches them. Wire facts: docs/wire.md.
 public struct Codex: Provider {
     public let id = "codex"
-    public let client = "codex"
     public let upstream = URL(string: "https://chatgpt.com/backend-api/codex")!
     /// The Codex CLI's OAuth client accepts only this address.
     public let redirect: URL? = URL(string: "http://localhost:1455/auth/callback")
@@ -15,13 +14,45 @@ public struct Codex: Provider {
 
     public init() {}
 
-    /// A model provider entry passed as config overrides, so the user's own config file is untouched.
-    /// They go last, where every subcommand accepts them; ahead of a subcommand they are dropped
-    /// whenever the subcommand has overrides of its own. A bare `--` ends the options, so they go before it.
-    public func pointing(_ arguments: [String], at address: String) -> (environment: [String: String], arguments: [String]) {
-        let overrides = ["-c", #"model_provider="sluice""#, "-c", #"model_providers.sluice={name="sluice",base_url="\#(address)",wire_api="responses"}"#]
-        let end = arguments.firstIndex(of: "--") ?? arguments.endIndex
-        return ([:], arguments[..<end] + overrides + arguments[end...])
+    /// Codex's user config, in the folder Codex itself would use. A project's own config cannot name a provider.
+    private var settings: ClientSettings {
+        let folder = ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex")
+        return ClientSettings(folder.appending(path: "config.toml"))
+    }
+
+    public func route(_ on: Bool) throws {
+        try settings.write(Data(Self.pointed(try text(), at: on ? address : nil, path: settings.path).utf8))
+    }
+
+    public func isRouted() throws -> Bool {
+        let lines = try text().split(separator: "\n")
+        return lines.contains(Substring(Self.choice)) && lines.contains(Substring(Self.entry(address)[2]))
+    }
+
+    private func text() throws -> String {
+        String(decoding: try settings.read() ?? Data(), as: UTF8.self)
+    }
+
+    static let choice = #"model_provider = "sluice""#
+    static func entry(_ address: String) -> [String] {
+        ["[model_providers.sluice]", #"name = "Sluice""#, #"base_url = "\#(address)""#, #"wire_api = "responses""#]
+    }
+
+    /// The config with Sluice as the model provider at `address`, or with Sluice's lines taken out.
+    /// The choice of provider is a top-level key, so it goes first; the entry is a table, so it goes last.
+    static func pointed(_ config: String, at address: String?, path: String) throws -> String {
+        var lines = config.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        lines.removeAll { $0 == choice }
+        if let start = lines.firstIndex(of: entry("")[0]) {
+            let end = lines[(start + 1)...].firstIndex { $0.hasPrefix("[") } ?? lines.endIndex
+            lines.removeSubrange(start..<end)
+        }
+        while lines.last == "" { lines.removeLast() }
+        guard let address else { return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n" }
+        guard !lines.prefix(while: { !$0.hasPrefix("[") }).contains(where: { $0.hasPrefix("model_provider") }) else {
+            throw ClientSettingsError(path: path, reason: "already chooses a model provider; remove that line to route Codex through Sluice")
+        }
+        return ([choice] + lines + [""] + entry(address)).joined(separator: "\n") + "\n"
     }
 
     public func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL {

@@ -78,6 +78,21 @@ import Testing
     }
 }
 
+@Suite struct OwnerPinTests {
+    @Test func theOwnerIsReadFromEitherRemoteForm() {
+        #expect(Repo.originOwner(in: "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = git@github.com:Acme/app.git\n") == "acme")
+        #expect(Repo.originOwner(in: "[remote \"fork\"]\n\turl = https://h/x/y\n[remote \"origin\"]\n\turl = https://github.com/acme/app\n") == "acme")
+        #expect(Repo.originOwner(in: "[core]\n") == nil)
+    }
+
+    @Test func aFolderRuleBeatsAnOwnerRule() throws {
+        let config = try JSONDecoder().decode(Config.self, from: Data(#"{"pins":{"~/work":"a"},"owners":{"Acme":"b"}}"#.utf8))
+        #expect(config.pin(for: "/home/me/work/app", home: "/home/me", owner: { _ in "acme" }) == "a")
+        #expect(config.pin(for: "/home/me/else/app", home: "/home/me", owner: { _ in "acme" }) == "b")
+        #expect(config.pin(for: "/home/me/else/app", home: "/home/me", owner: { _ in nil }) == nil)
+    }
+}
+
 @Suite struct LocalCallerTests {
     func request(_ headers: [(String, String)]) -> HTTPRequest {
         HTTPRequest(method: "POST", target: "/claude/v1/messages", headers: headers.map { (name: $0.0, value: $0.1) }, body: Data())

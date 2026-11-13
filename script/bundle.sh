@@ -28,4 +28,20 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+# launchd keeps the app running (see Sources/App/main.swift).
+mkdir -p "$app/Contents/Library/LaunchAgents"
+cat > "$app/Contents/Library/LaunchAgents/dev.vikng.sluice.relay.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>dev.vikng.sluice.relay</string>
+    <key>BundleProgram</key><string>Contents/MacOS/Sluice</string>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>LimitLoadToSessionType</key><string>Aqua</string>
+    <key>ProcessType</key><string>Interactive</string>
+</dict>
+</plist>
+PLIST
 echo "$app ($version)"

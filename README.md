@@ -12,18 +12,18 @@ relay's state and switches the routing on and off; usage is read with `sluice st
 brew install --cask vikng-dev/tap/sluice
 ```
 
-Open Sluice once; it relays from then on and starts with the Mac. The app is also the `sluice`
-command, which Homebrew puts on your PATH. Then turn on **Route claude and codex through Sluice**
-in the menu, or run:
+Open Sluice once. macOS keeps it running from then on: it starts with the Mac and comes back if it
+stops. The app is also the `sluice` command, which Homebrew puts on your PATH. Then turn on
+**Route Claude Code and Codex through Sluice** in the menu, or run:
 
 ```sh
 sluice setup
 ```
 
-`setup` links `sluice`, and stand-ins for `claude` and `codex`, into `~/.config/sluice/bin` and
-tells you the line that puts that folder first on your PATH. A stand-in points the real client at
-Sluice when Sluice is running, and otherwise just runs it, so nothing breaks when Sluice is off.
-Your own client settings are not edited, and `sluice setup --undo` (or the same switch) removes them.
+That writes Sluice's address into each client's own user settings (`~/.claude/settings.json`,
+`~/.codex/config.toml`, or wherever `CLAUDE_CONFIG_DIR` and `CODEX_HOME` point) and touches nothing
+else in them. Sessions started afterwards use it, whatever launched them. `sluice setup --undo`, the
+same switch, or quitting from the menu puts the clients back on their providers.
 
 ```sh
 sluice login                  # sign a Claude account in through the browser; repeat per account
@@ -47,19 +47,22 @@ included. A client that calls Anthropic's API itself is not; see [docs/wire.md](
   placed afresh.
 - **Keep going.** When an account refuses because an allowance is spent, the request is resent on
   the next account before the client sees anything. A plain rate limit is passed through.
-- **Pin.** Work in a pinned folder uses one account and no other. An account can also be pin-only:
-  outside the pool, reachable only by pin. Both are rules in `~/.config/sluice/config.json`, read
-  on every launch and request:
+- **Pin.** Some work uses one account and no other. An account can also be pin-only: outside the
+  pool, reachable only by pin. The rules are in `~/.config/sluice/config.json`, read on every request:
 
   ```json
   {
     "pins": { "~/work": "me@work.example" },
+    "owners": { "acme": "me@work.example" },
     "pinOnly": ["me@work.example"]
   }
   ```
 
-  The deepest folder rule wins. Under the hood a pin is an address,
-  `http://localhost:7483/claude/pin/<email>`, which a harness can use directly.
+  Sluice asks macOS which program sent a request and which folder it runs in. `pins` goes by that
+  folder, and the deepest rule wins. Failing that, `owners` goes by the owner in the origin remote
+  of the git repository the folder is in. Nothing is set per project, and any program on this Mac
+  is pinned the same way. A harness can also name the account itself:
+  `http://localhost:7483/claude/pin/<email>`, which beats both rules.
 
 Sluice signs in to each account itself and keeps the tokens in its own Keychain item. What it
 observed (windows, warm conversations) is kept in `~/Library/Application Support/Sluice`, so a
@@ -74,7 +77,7 @@ the system log, with the account and the status and nothing of the request itsel
 log stream --info --predicate 'subsystem == "dev.vikng.sluice"'
 ```
 
-To remove Sluice: `sluice setup --undo`, then `brew uninstall --zap sluice`. The signed-in accounts
+To remove Sluice: quit it from the menu, then `brew uninstall --zap sluice`. The signed-in accounts
 stay in the Keychain item `dev.vikng.sluice` until you delete it.
 
 ## Layout
@@ -85,7 +88,7 @@ One Swift package, no dependencies.
 |---|---|
 | `Sources/Core` | Accounts, Keychain storage, relay, router, the provider contract. No UI. |
 | `Sources/Providers` | One folder per provider (Claude, Codex), each answering the contract. |
-| `Sources/App` | The one program: the menu bar app, the `sluice` command, and the stand-in for each client. |
+| `Sources/App` | The one program: the menu bar app and the `sluice` command. |
 
 ## Build
 

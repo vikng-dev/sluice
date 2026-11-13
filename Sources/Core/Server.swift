@@ -15,7 +15,9 @@ public final class Server: Sendable {
         listener.newConnectionHandler = { connection in
             connection.start(queue: .global())
             Task {
-                await Self.serve(Peer(connection: connection), handler)
+                var folder: String?
+                if case .hostPort(_, let from) = connection.endpoint { folder = Caller.folder(ofLocalPort: from.rawValue, to: port) }
+                await Self.serve(Peer(connection: connection), from: folder, handler)
                 connection.cancel()
             }
         }
@@ -45,10 +47,11 @@ public final class Server: Sendable {
         listener.cancel()
     }
 
-    private static func serve(_ peer: Peer, _ handler: Handler) async {
+    private static func serve(_ peer: Peer, from folder: String?, _ handler: Handler) async {
         var buffer = Data()
         do {
-            while let request = try await peer.request(&buffer) {
+            while var request = try await peer.request(&buffer) {
+                request.callerFolder = folder
                 guard request.isLocalCaller else { throw HTTPError.notLocal }
                 try await handler(request, ResponseWriter(peer: peer, method: request.method))
             }

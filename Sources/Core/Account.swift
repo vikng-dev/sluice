@@ -95,6 +95,8 @@ public struct Config: Decodable, Sendable {
     var pinOnly: Set<String> = []
     /// Folders whose work is pinned to one account: folder (`~` allowed) to the account's label.
     var pins: [String: String] = [:]
+    /// Repository owners whose work is pinned to one account: the owner in a repository's origin remote, to the label.
+    var owners: [String: String] = [:]
 
     init() {}
 
@@ -102,64 +104,23 @@ public struct Config: Decodable, Sendable {
         let keys = try decoder.container(keyedBy: CodingKeys.self)
         pinOnly = try keys.decodeIfPresent(Set<String>.self, forKey: .pinOnly) ?? []
         pins = try keys.decodeIfPresent([String: String].self, forKey: .pins) ?? [:]
+        owners = try keys.decodeIfPresent([String: String].self, forKey: .owners) ?? [:]
     }
 
-    private enum CodingKeys: CodingKey { case pinOnly, pins }
+    private enum CodingKeys: CodingKey { case pinOnly, pins, owners }
 
-    /// The account pinned for work in `directory`: the rule for the deepest folder containing it.
-    func pin(for directory: String, home: String) -> String? {
+    /// The account pinned for work in `directory`: the rule for the deepest folder containing it,
+    /// or else the rule for the owner of the repository it is in.
+    func pin(for directory: String, home: String, owner: (String) -> String? = Repo.owner) -> String? {
         func folder(_ rule: String) -> String { (rule.hasPrefix("~") ? home + rule.dropFirst() : rule).trimmingSuffix("/") + "/" }
-        return pins.filter { (directory.trimmingSuffix("/") + "/").hasPrefix(folder($0.key)) }.max { folder($0.key).count < folder($1.key).count }?.value
+        if let rule = pins.filter({ (directory.trimmingSuffix("/") + "/").hasPrefix(folder($0.key)) }).max(by: { folder($0.key).count < folder($1.key).count }) { return rule.value }
+        guard !owners.isEmpty, let owner = owner(directory) else { return nil }
+        return owners.first { $0.key.lowercased() == owner }?.value
     }
 }
 
 private extension String {
     func trimmingSuffix(_ suffix: String) -> String { hasSuffix(suffix) ? String(dropLast(suffix.count)) : self }
-}
-
-/// How a client on this machine finds Sluice.
-public enum Local {
-    /// Where `sluice setup` puts the commands that stand in for each provider's client.
-    public static let shims = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/sluice/bin")
-
-    /// Links each name in the stand-in folder to `program`, which tells them apart by the name it is run under.
-    public static func link(_ names: [String], to program: URL) throws {
-        try FileManager.default.createDirectory(at: shims, withIntermediateDirectories: true)
-        try unlink(names)
-        for name in names { try FileManager.default.createSymbolicLink(at: shims.appending(path: name), withDestinationURL: program) }
-    }
-
-    public static func unlink(_ names: [String]) throws {
-        for name in names where isLinked(name) { try FileManager.default.removeItem(at: shims.appending(path: name)) }
-    }
-
-    public static func isLinked(_ name: String) -> Bool {
-        (try? FileManager.default.destinationOfSymbolicLink(atPath: shims.appending(path: name).path)) != nil
-    }
-
-    /// The line that puts the stand-ins ahead of the real clients in a shell.
-    public static var pathLine: String {
-        "export PATH=\"\(shims.path.replacingOccurrences(of: NSHomeDirectory(), with: "$HOME")):$PATH\""
-    }
-
-    /// The address a client working in `directory` should use for `provider`.
-    public static func address(provider: String, directory: String) throws -> String {
-        let base = "http://localhost:\(Sluice.port)/\(provider)"
-        guard let pin = try Storage.live.config().pin(for: directory, home: NSHomeDirectory()) else { return base }
-        // A label is an email or a name; anything that would break a path segment is escaped.
-        return base + "/pin/" + pin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/")))!
-    }
-
-    /// Whether something is listening on Sluice's port.
-    public static var isRunning: Bool {
-        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
-        defer { close(descriptor) }
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = Sluice.port.bigEndian
-        address.sin_addr.s_addr = inet_addr("127.0.0.1")
-        return withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } } == 0
-    }
 }
 
 /// What Sluice observed and would otherwise relearn after a restart.
@@ -206,9 +167,12 @@ actor Accounts {
         accounts = next
     }
 
-    func candidates(provider: String, pin: String?, conversation: String?) throws -> [Account] {
-        memory.router.order(
-            accounts.filter { $0.provider == provider }, pin: pin, pinOnly: try storage.config().pinOnly,
+    /// The accounts to try, in order. A pin in the address wins; without one the caller's folder may name one.
+    func candidates(provider: String, pin: String?, folder: String?, conversation: String?) throws -> [Account] {
+        let config = try storage.config()
+        return memory.router.order(
+            accounts.filter { $0.provider == provider },
+            pin: pin ?? folder.flatMap { config.pin(for: $0, home: NSHomeDirectory()) }, pinOnly: config.pinOnly,
             conversation: conversation, usage: memory.usage, now: Date()
         )
     }

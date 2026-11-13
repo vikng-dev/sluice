@@ -6,6 +6,8 @@ public struct HTTPRequest: Sendable {
     public var target: String
     public var headers: [(name: String, value: String)]
     public var body: Data
+    /// The working folder of the program that sent this, when it could be told.
+    public var callerFolder: String? = nil
 
     public func header(_ name: String) -> String? {
         headers.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.value

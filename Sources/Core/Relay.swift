@@ -3,7 +3,8 @@ import os
 
 /// A local address, read as a route. The grammar:
 /// `/login/<provider>`, `/callback?code=…&state=…`, `/status`, and
-/// `/<provider>[/pin/<account>]/<the provider's own path and query>`.
+/// `/<provider>[/pin/<account>]/<the provider's own path and query>`. Without a pin in the address,
+/// the caller's folder decides: see `Config.pin`.
 enum Route: Equatable {
     case login(provider: String)
     case callback(code: String, state: String)
@@ -96,12 +97,12 @@ public final class Relay: Sendable {
             let conversation = provider.conversation(of: request)
             let candidates: [Account]
             do {
-                candidates = try await accounts.candidates(provider: id, pin: pin, conversation: conversation?.id)
+                candidates = try await accounts.candidates(provider: id, pin: pin, folder: request.callerFolder, conversation: conversation?.id)
             } catch {
                 return try await writer.send(500, text: "sluice: \(error)")
             }
             guard !candidates.isEmpty else {
-                return try await writer.send(503, text: "sluice: \(pin.map { "no \(id) account is named \($0)" } ?? "no \(id) account is in the pool"); run: sluice status")
+                return try await writer.send(503, text: "sluice: no \(id) account can serve this\(request.callerFolder.map { " from \($0)" } ?? ""); run: sluice status")
             }
             for (index, candidate) in candidates.enumerated() {
                 let isLast = index == candidates.count - 1
