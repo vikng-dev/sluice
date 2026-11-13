@@ -187,13 +187,15 @@ private let program = Bundle.main.executableURL!
         change { try $0.star(profile, starred) }
     }
 
-    /// What the menu bar shows in place of the glyph: each starred profile's pools, by provider, and how
-    /// much of each is used or left. Empty when none is starred.
-    func counters(left: Bool) -> [[(provider: String, text: String)]] {
+    /// What the menu bar shows in place of the glyph: each starred profile's colour and its pools, by
+    /// provider, with how much of each is used or left. Empty when none is starred.
+    func counters(left: Bool) -> [(color: NSColor?, pools: [(provider: String, text: String, share: Double)])] {
         config.names.filter { config.profiles[$0]?.starred == true }.map { profile in
-            Dictionary(grouping: accounts.filter { $0.profile == profile }, by: \.provider).sorted { $0.key < $1.key }.map { provider, pool in
-                (provider, "\(Int(((left ? 1 - pool.used : pool.used) * 100).rounded()))%")
+            let pools = Dictionary(grouping: accounts.filter { $0.profile == profile }, by: \.provider).sorted { $0.key < $1.key }.map { provider, pool in
+                let share = left ? 1 - pool.used : pool.used
+                return (provider: provider, text: "\(Int((share * 100).rounded()))%", share: share)
             }
+            return (config.profiles[profile]?.color.map { NSColor($0.color) }, pools)
         }
     }
 
@@ -239,7 +241,7 @@ struct SluiceApp: App {
             )
         } label: {
             // The glyph says whether clients are routed; while they are, the starred profiles take its place.
-            let counters = running.counters(left: left).filter { !$0.isEmpty }
+            let counters = running.counters(left: left).filter { !$0.pools.isEmpty }
             Image(nsImage: counters.isEmpty || !running.routed ? gateGlyph(open: running.routed) : counterGlyph(counters))
         }
         .menuBarExtraStyle(.window)
