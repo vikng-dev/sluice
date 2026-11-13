@@ -18,7 +18,8 @@ struct Panel: View {
     let remove: (AccountStatus) -> Void
     let rename: (_ profile: String, _ label: String) -> Void
     let tint: (_ profile: String, Tint?) -> Void
-    let addProfile: (_ shownAs: String) -> Void
+    /// Makes a profile, and when it is made for an account, with that account in it.
+    let addProfile: (_ shownAs: String, _ founder: AccountStatus?) -> Void
     let removeProfile: (_ profile: String) -> Void
     /// Asks which folders, and claims them.
     let claimFolders: (_ profile: String) -> Void
@@ -29,7 +30,9 @@ struct Panel: View {
 
     private var profiles: [String] { config.names }
     @State private var carried: Carried?
-    /// Where each profile and each account's row is in the panel.
+    /// The account let go on the place for a new profile, which is now being named for it.
+    @State private var founder: AccountStatus?
+    /// Where each profile, each account's row and the place for a new profile is in the panel.
     @State private var frames: [String: CGRect] = [:]
 
     /// The profile the carried account would land in: the one under the pointer, unless it is its own.
@@ -38,8 +41,13 @@ struct Panel: View {
         return profiles.first { $0 != carried.account.profile && frames["profile:\($0)"]?.contains(carried.pointer) == true }
     }
 
+    /// Whether the carried account is over the place for a new profile.
+    private var overNew: Bool {
+        carried.map { frames["new"]?.contains($0.pointer) == true } ?? false
+    }
+
     private var actions: RowActions {
-        RowActions(remove: remove, carry: profiles.count > 1 ? { carry($0, client: $1, $2) } : nil, drop: drop, putBack: putBack)
+        RowActions(remove: remove, carry: { carry($0, client: $1, $2) }, drop: drop, putBack: putBack)
     }
 
     private func carry(_ account: AccountStatus, client: String?, _ drag: DragGesture.Value) {
@@ -48,9 +56,14 @@ struct Panel: View {
         carried = Carried(account: account, client: client, translation: drag.translation, pointer: drag.location)
     }
 
-    /// Let go over another profile, the account moves there; anywhere else, it goes back.
+    /// Let go over another profile, the account moves there; over the place for a new one, a profile is
+    /// named for it; anywhere else, it goes back.
     private func drop() {
         guard let carried else { return }
+        if overNew {
+            founder = carried.account
+            return putBack()
+        }
         guard let target else { return putBack() }
         move(carried.account, target)
         self.carried = nil
@@ -120,18 +133,21 @@ struct Panel: View {
                 .padding(.top, 4)
                 .framed("profile:\(section.name)")
             }
-            NewProfile(add: addProfile).padding(.horizontal, 10).padding(.top, 4)
-            HStack {
-                Text("Sluice \(Sluice.version)").font(.caption).foregroundStyle(.tertiary)
-                Spacer()
-                if routed {
-                    Menu { Button("Stop routing") { route(false) } } label: { Image(systemName: "ellipsis") }
-                        .bare()
-                        .help("Clients started from now on talk to their own providers")
+            HStack(alignment: .top) {
+                NewProfile(founder: $founder, carrying: carried != nil, targeted: overNew) { addProfile($0, founder) }
+                    .framed("new")
+                Menu {
+                    Text("Sluice \(Sluice.version)")
+                    Divider()
+                    if routed { Button("Stop routing") { route(false) } }
+                    Button("Quit Sluice", action: quit)
+                } label: {
+                    Image(systemName: "ellipsis")
                 }
-                Button("Quit", action: quit).controlSize(.small).help("The clients go back to their own providers")
+                .bare().frame(height: 16)
+                .help("Stop routing sends clients started from now on to their own providers; quitting sends them all")
             }
-            .padding(.horizontal, 6).padding(.top, 2)
+            .padding(.horizontal, 10).padding(.top, 4)
         }
         .padding(10)
         .frame(width: 352)
@@ -183,8 +199,7 @@ private extension Menu {
 /// What can be done to an account's row. The copy that follows the pointer has none.
 private struct RowActions {
     let remove: (AccountStatus) -> Void
-    /// Nil when there is no other profile to carry it to.
-    let carry: ((AccountStatus, _ client: String?, DragGesture.Value) -> Void)?
+    let carry: (AccountStatus, _ client: String?, DragGesture.Value) -> Void
     let drop: () -> Void
     let putBack: () -> Void
 }
@@ -321,40 +336,69 @@ private struct ProfileCaption: View {
     }
 }
 
-/// Where the next profile would be: a click types what it is to be shown as, and Return makes it. One
-/// half typed and walked away from is not made.
+/// Where the next profile would be. A click types what it is to be shown as, and Return makes it; one
+/// half typed and walked away from is not made. An account let go here gets a profile of its own: the
+/// name is offered from its address, and Return makes the profile with the account in it.
 private struct NewProfile: View {
+    @Binding var founder: AccountStatus?
+    /// Whether an account is being carried, and whether it is over this.
+    let carrying: Bool
+    let targeted: Bool
     let add: (String) -> Void
     @State private var editing = false
     @State private var draft = ""
     @FocusState private var typing: Bool
 
+    private func type(_ text: String) {
+        draft = text
+        editing = true
+    }
+
+    private func leave() {
+        editing = false
+        founder = nil
+    }
+
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "plus").imageScale(.small).frame(width: 11, height: 11)
-            if editing {
-                TextField("Name", text: $draft)
-                    .textFieldStyle(.plain).font(.caption.weight(.semibold)).focused($typing)
-                    .onAppear { typing = true }
-                    .onSubmit {
-                        guard editing else { return }
-                        editing = false
-                        add(draft)
-                    }
-                    .onExitCommand { editing = false }
-                    .onChange(of: typing) { _, typing in if !typing { editing = false } }
-            } else {
-                Text("New profile").font(.caption.weight(.semibold))
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Image(systemName: "plus").imageScale(.small).frame(width: 11, height: 16)
+                if editing {
+                    TextField("Name", text: $draft)
+                        .textFieldStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(.primary).focused($typing)
+                        .onAppear { typing = true }
+                        .onSubmit {
+                            guard editing else { return }
+                            add(draft)
+                            leave()
+                        }
+                        .onExitCommand(perform: leave)
+                        .onChange(of: typing) { _, typing in if !typing { leave() } }
+                } else {
+                    Text(carrying ? "New profile for this account" : "New profile").font(.caption.weight(.semibold))
+                }
+                Spacer()
             }
-            Spacer()
+            if editing, let founder {
+                Text("\(founder.label) moves into it. Return makes the profile, Esc does not.").font(.caption2).padding(.leading, 17)
+            }
         }
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(carrying ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
+        // While an account is carried this is a place to let it go, as large as it is easy to hit.
+        .padding(carrying ? 10 : 0)
+        .background(Color.accentColor.opacity(targeted ? 0.18 : 0), in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            if carrying { RoundedRectangle(cornerRadius: 10).strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
+        }
+        .padding(.leading, carrying ? -10 : 0)
         .contentShape(Rectangle())
-        .onTapGesture {
-            draft = ""
-            editing = true
+        .onTapGesture { if !editing { type("") } }
+        // The name offered is the address's own: what comes after the @, without its ending.
+        .onChange(of: founder?.id) {
+            guard let founder else { return }
+            type(founder.label.split(separator: "@").dropFirst().first?.split(separator: ".").first.map(String.init) ?? "")
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in editing = false }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in leave() }
     }
 }
 
@@ -570,16 +614,16 @@ private struct AccountRow: View {
             Image(systemName: "line.3.horizontal").font(.caption).foregroundStyle(.secondary)
                 .frame(width: Self.gutter, height: 16, alignment: .leading)
                 .contentShape(Rectangle())
-                .opacity(actions == nil || (hovered && actions?.carry != nil) ? 1 : 0)
-                .gesture(actions?.carry.map { carry in
+                .opacity(actions == nil || hovered ? 1 : 0)
+                .gesture(actions.map { actions in
                     DragGesture(minimumDistance: 1, coordinateSpace: .named(Frames.space))
                         .updating($held) { _, held, _ in held = true }
-                        .onChanged { carry(account, client, $0) }
-                        .onEnded { _ in actions?.drop() }
+                        .onChanged { actions.carry(account, client, $0) }
+                        .onEnded { _ in actions.drop() }
                 })
                 // A hold that is broken off never ends, so letting go is not heard; the hold being over is.
                 .onChange(of: held) { _, held in if !held { actions?.putBack() } }
-                .help("Drag onto another profile to move this account there")
+                .help("Drag onto another profile to move this account there, or onto New profile to make one for it")
             details
         }
         .contentShape(Rectangle())

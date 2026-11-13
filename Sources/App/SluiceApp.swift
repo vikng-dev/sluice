@@ -106,8 +106,12 @@ private let program = Bundle.main.executableURL!
     }
 
     /// A new profile has its own client folders, which are set to talk to Sluice like the others.
-    func addProfile(shownAs label: String) {
-        change { try $0.add(profileShownAs: label) }
+    /// Made for an account, the profile has it from the start.
+    func addProfile(shownAs label: String, with founder: AccountStatus?) {
+        change { config in
+            let name = try config.add(profileShownAs: label)
+            if let founder { try config.move(account: founder.label, to: name) }
+        }
         if refusal.isEmpty, routed { route(true) }
     }
 
