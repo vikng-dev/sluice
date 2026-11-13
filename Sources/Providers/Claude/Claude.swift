@@ -153,6 +153,8 @@ public struct Claude: Provider {
         if let tokens = usage["input_tokens"] as? Int { spend.input = tokens }
         if let tokens = usage["cache_read_input_tokens"] as? Int { spend.cacheRead = tokens }
         if let tokens = usage["cache_creation_input_tokens"] as? Int { spend.cacheWrite = tokens }
+        if let tokens = (usage["cache_creation"] as? [String: Any])?["ephemeral_1h_input_tokens"] as? Int { spend.cacheWriteHour = tokens }
+        if let speed = usage["speed"] as? String, speed != "standard" { spend.speed = speed }
         if let tokens = usage["output_tokens"] as? Int { spend.output = tokens }
     }
 
@@ -190,7 +192,7 @@ public struct Claude: Provider {
         for status in try await [usage.0, profile.0] where status != 200 {
             throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil)
         }
-        return try await Usage(plan: Self.plan(inProfile: profile.1), windows: Self.windows(inUsage: usage.1))
+        return try await Usage(plan: Self.plan(inProfile: profile.1), windows: Self.windows(inUsage: usage.1), scoped: Self.scoped(inUsage: usage.1))
     }
 
     /// The plan in a profile. The tier's name ends in the multiple (`default_claude_max_20x`), and a Team
@@ -225,6 +227,19 @@ public struct Claude: Provider {
             guard let window = usage[key] as? [String: Any], let used = window["utilization"] as? Double,
                   let reset = (window["resets_at"] as? String).flatMap(time.date) else { return nil }
             return Window(name: name, used: used / 100, resetsAt: reset)
+        }
+    }
+
+    /// A model's own share of the week in a usage answer, named as the answer names the model.
+    static func scoped(inUsage body: Data) -> [Window] {
+        let limits = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["limits"] as? [[String: Any]] ?? []
+        let time = ISO8601DateFormatter()
+        time.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return limits.compactMap { limit in
+            guard limit["kind"] as? String == "weekly_scoped", let used = limit["percent"] as? Double,
+                  let model = ((limit["scope"] as? [String: Any])?["model"] as? [String: Any])?["display_name"] as? String,
+                  let reset = (limit["resets_at"] as? String).flatMap(time.date) else { return nil }
+            return Window(name: model.lowercased(), used: used / 100, resetsAt: reset)
         }
     }
 

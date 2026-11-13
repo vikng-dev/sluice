@@ -7,6 +7,8 @@ public struct Sample: Codable, Sendable, Equatable {
     public var provider: String
     public var account: String
     public var windows: [Window]
+    /// The limits on a part of its use, where it has any. Nil in lines from before these were read.
+    public var scoped: [Window]?
 }
 
 /// What one answer cost the account that gave it, as its provider counted it: the tokens read new, read
@@ -16,7 +18,11 @@ public struct Spend: Codable, Sendable, Equatable {
     public var input = 0
     public var cacheRead = 0
     public var cacheWrite = 0
+    /// Of what was written to the cache, the tokens to be kept an hour; nil where the provider does not say.
+    public var cacheWriteHour: Int?
     public var output = 0
+    /// How fast the answer was made, where the provider names a speed other than its usual one.
+    public var speed: String?
 
     public init() {}
 }

@@ -100,6 +100,26 @@ import Testing
         #expect(try Claude.windows(inUsage: Data(#"{"five_hour":null,"seven_day":null}"#.utf8)).isEmpty)
     }
 
+    @Test func aModelsOwnShareOfTheWeekIsReadApartFromTheWeek() {
+        let body = #"{"limits":[{"kind":"weekly_all","percent":62,"resets_at":"2026-11-18T09:00:00.416474+00:00","scope":null},{"kind":"weekly_scoped","percent":47,"resets_at":"2026-11-18T09:00:00.416623+00:00","scope":{"model":{"display_name":"Fable","id":null},"surface":null}}]}"#
+        let scoped = Claude.scoped(inUsage: Data(body.utf8))
+        #expect(scoped.map(\.name) == ["fable"] && scoped[0].used == 0.47)
+        #expect(Claude.scoped(inUsage: Data(#"{"limits":null}"#.utf8)).isEmpty)
+    }
+
+    @Test func aLineOfHistoryFromBeforeAFieldWasKeptIsStillRead() throws {
+        let file = FileManager.default.temporaryDirectory.appending(path: "sluice-history-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data("""
+        {"account":"a","at":"2026-11-13T15:50:10Z","provider":"p","windows":[{"name":"7d","resetsAt":"2026-11-19T16:00:00Z","used":0.04}]}
+        {"account":"a","at":"2026-11-13T15:50:10Z","conversation":"c","folder":"/w","profile":"default","provider":"p","seconds":2.5,"spend":{"cacheRead":9,"cacheWrite":1,"input":3,"model":"m","output":4}}
+
+        """.utf8).write(to: file)
+        let samples: [Sample] = try lines(of: file), served: [Served] = try lines(of: file)
+        #expect(samples.count == 1 && samples[0].scoped == nil)
+        #expect(served.count == 1 && served[0].spend.cacheWriteHour == nil && served[0].spend.output == 4)
+    }
+
     @Test func claudePlanIsReadFromTheOrganizationAndItsTier() {
         func plan(_ organization: String) -> Plan? { Claude.plan(inProfile: Data(#"{"organization":\#(organization)}"#.utf8)) }
         #expect(plan(#"{"organization_type":"claude_max","rate_limit_tier":"default_claude_max_20x","plan_display_name":"Ultra"}"#)
@@ -135,7 +155,7 @@ import Testing
     @Test func whatAnAnswerCostIsReadFromItsStreamHoweverTheStreamIsCutUp() {
         let stream = [
             #"event: message_start"#,
-            #"data: {"type":"message_start","message":{"model":"m-1","usage":{"input_tokens":3,"cache_creation_input_tokens":10,"cache_read_input_tokens":24000,"output_tokens":1}}}"#,
+            #"data: {"type":"message_start","message":{"model":"m-1","usage":{"input_tokens":3,"cache_creation_input_tokens":10,"cache_read_input_tokens":24000,"cache_creation":{"ephemeral_5m_input_tokens":4,"ephemeral_1h_input_tokens":6},"output_tokens":1,"speed":"fast"}}}"#,
             "",
             // What an answer says is not what it cost.
             #"data: {"type":"content_block_delta","delta":{"text":"the word \"usage\": {\"output_tokens\": 9}"}}"#,
@@ -148,7 +168,7 @@ import Testing
         for start in stride(from: 0, to: bytes.count, by: 7) { meter.read(Data(bytes[start..<min(start + 7, bytes.count)])) }
         meter.finish()
         var cost = Spend()
-        (cost.model, cost.input, cost.cacheRead, cost.cacheWrite, cost.output) = ("m-1", 3, 24000, 10, 42)
+        (cost.model, cost.input, cost.cacheRead, cost.cacheWrite, cost.cacheWriteHour, cost.output, cost.speed) = ("m-1", 3, 24000, 10, 6, 42, "fast")
         #expect(meter.spend == cost)
     }
 

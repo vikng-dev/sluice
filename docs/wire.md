@@ -36,9 +36,18 @@ limits are not in the headers; they need the usage endpoint.
 **Usage, on request (captured 2026-11-13).** `GET https://api.anthropic.com/api/oauth/usage` with
 the bearer token and `anthropic-beta: oauth-2025-04-20`; the `user:inference` scope is enough.
 `five_hour` and `seven_day` are each `{utilization, resets_at}` or null: `utilization` is 0–100,
-`resets_at` is ISO 8601 with fractional seconds. A Max account sends `five_hour: null`; a window
-not yet started has `resets_at: null`. `limits[]` carries the per-model weekly windows, and
-`extra_usage` the paid overage, neither of which Sluice reads.
+`resets_at` is ISO 8601 with fractional seconds. An account on the 20x tier sends `five_hour: null`; a
+window not yet started has `resets_at: null`. `limits[]` has an entry per limit, each `{kind, group,
+percent, resets_at, is_active, severity, scope}`: `session`, `weekly_all`, and `weekly_scoped` for a
+model's own share of the week, whose `scope.model.display_name` names the model (`Fable` seen) and
+whose `percent` is of that share. `weekly_scoped_shares[]` says how large the share is
+(`allowance_percent_of_weekly: 50` seen). Sluice keeps the scoped limits in its history and does not
+route on them. `extra_usage` and `spend` are the paid overage, which Sluice does not read.
+
+**Limit resets (captured 2026-11-13).** The same address with `?cedar_ember=1&skip_spend=1` fills
+`cedar_ember`: `{eligible, ineligible_reason, at_limit, cooldown_until, exhausted, grants,
+next_grant_id, weekly_resets_at}`. Asked as Sluice, every account answered `eligible: false,
+ineligible_reason: "surface"` with no grants, so the resets an account holds are not seen.
 
 **Plan (captured 2026-11-13).** `GET https://api.anthropic.com/api/oauth/profile`, same headers.
 `organization.organization_type` is `claude_max` or `claude_team`; `organization.rate_limit_tier`
@@ -47,7 +56,8 @@ ends in the multiple (`default_claude_max_20x`, and `default_claude_max_5x` on a
 
 **Cache.** Claude Code marks its system blocks `cache_control: {type: ephemeral, ttl: 1h}`. The
 first SSE event, `message_start`, carries `usage.cache_read_input_tokens` and
-`usage.cache_creation_input_tokens` (split into `ephemeral_5m` and `ephemeral_1h`), so the relay
+`usage.cache_creation_input_tokens` (split under `usage.cache_creation` into `ephemeral_5m_input_tokens`
+and `ephemeral_1h_input_tokens`) and `usage.speed` (`standard` seen), so the relay
 knows the cache result before any text arrives. A later event, `message_delta`, carries `usage` at
 its top with `output_tokens` as the total so far; `input_tokens` in either leaves out what was read
 from the cache or written to it (a first request showed 2 read new and 23,042 written to the cache). A second session on the same account read the
@@ -121,7 +131,9 @@ and `x-codex-credits-has-credits` / `-balance`.
 **Usage, on request (captured 2026-11-13).** `GET https://chatgpt.com/backend-api/wham/usage` with
 the bearer token and `chatgpt-account-id`. `rate_limit.primary_window` and `.secondary_window` are
 each `{used_percent, limit_window_seconds, reset_at}` or null: `used_percent` is 0–100, `reset_at`
-Unix seconds. `plan_type` names the plan in one lowercase word (`prolite` seen, on the $100 Pro tier).
+Unix seconds. `plan_type` names the plan in one lowercase word (`prolite` seen, on the $100 Pro tier), which has
+one window, of a week. `rate_limit_reset_credits` is `{available_count, applicable_available_count}`:
+the resets the account holds, and those usable now. `credits` is the paid balance.
 
 **A spent account.** Not captured. Sluice treats any `429` as a refusal and tries the next account.
 

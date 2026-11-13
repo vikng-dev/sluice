@@ -113,6 +113,11 @@ private actor Hits {
         await accounts.answered("fake/a", reporting: [Window(name: "7d", used: 0.4, resetsAt: reset)])
         await accounts.answered("fake/a", reporting: [Window(name: "7d", used: 0.1, resetsAt: reset)])
         #expect(lines.withLock { $0.map { $0.windows.map(\.used) } } == [[0.4], [0.41], [0.1]])
+        // A model's own share of the week moving is news too, though the week reads the same.
+        for share in [0.2, 0.2, 0.3] {
+            await accounts.record(Usage(plan: nil, windows: [Window(name: "7d", used: 0.1, resetsAt: reset)], scoped: [Window(name: "fable", used: share, resetsAt: reset)]), for: "fake/a")
+        }
+        #expect(lines.withLock { $0.dropFirst(3).map { $0.scoped?.first?.used } } == [0.2, 0.3])
         #expect(lines.withLock { $0.first?.account } == "a")
     }
 

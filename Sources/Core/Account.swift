@@ -234,6 +234,8 @@ actor Accounts {
     private var plans: [String: Plan] = [:]
     /// What each account's windows read when its last line of history was written.
     private var sampled: [String: [Window]] = [:]
+    /// The limits on a part of each account's use, as last told. They are kept for the history only.
+    private var scoped: [String: [Window]] = [:]
 
     init(storage: Storage) throws {
         self.storage = storage
@@ -291,6 +293,7 @@ actor Accounts {
     /// What the provider said about the account when asked.
     func record(_ usage: Usage, for id: String) {
         plans[id] = usage.plan
+        scoped[id] = usage.scoped
         record(usage.windows, for: id)
     }
 
@@ -321,10 +324,11 @@ actor Accounts {
     private func sample(_ id: String, now: Date = Date()) {
         guard let account = accounts.first(where: { $0.id == id }) else { return }
         let windows = (memory.usage[id] ?? []).filter { $0.resetsAt > now }.map(\.settled).sorted { $0.resetsAt < $1.resetsAt }
-        guard windows != sampled[id] else { return }
+        let parts = (scoped[id] ?? []).filter { $0.resetsAt > now }.map(\.settled)
+        guard windows + parts != sampled[id] else { return }
         do {
-            try storage.appendSample(Sample(at: now, provider: account.provider, account: account.label, windows: windows))
-            sampled[id] = windows
+            try storage.appendSample(Sample(at: now, provider: account.provider, account: account.label, windows: windows, scoped: parts.isEmpty ? nil : parts))
+            sampled[id] = windows + parts
         } catch {
             FileHandle.standardError.write(Data("sluice: could not add to the history: \(error)\n".utf8))
         }

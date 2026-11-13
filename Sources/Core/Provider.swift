@@ -63,10 +63,13 @@ public struct Usage: Sendable, Equatable {
     /// Nil when the provider names no plan.
     public var plan: Plan?
     public var windows: [Window]
+    /// The limits on a part of the account's use, such as one model's own share of the week.
+    public var scoped: [Window]
 
-    public init(plan: Plan?, windows: [Window]) {
+    public init(plan: Plan?, windows: [Window], scoped: [Window] = []) {
         self.plan = plan
         self.windows = windows
+        self.scoped = scoped
     }
 }
 
