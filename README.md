@@ -3,8 +3,9 @@
 A macOS menu bar app that pools your AI coding subscriptions behind one local address.
 Claude Code and Codex talk to Sluice on localhost; Sluice decides which of your accounts answers.
 
-**Status: early.** Claude Code and Codex are relayed across pools of accounts. The menu shows the
-relay's state and switches the routing on and off; usage is read with `sluice status`.
+**Status: early.** Claude Code and Codex are relayed across pools of accounts. The menu bar panel shows
+each profile's accounts with how much of each allowance is used and when it resets, marks the
+account answering now, and switches the routing on and off. `sluice status` prints the same.
 
 ## Use it
 
@@ -93,7 +94,8 @@ Within a profile's pool:
 
 Sluice signs in to each account itself and keeps the tokens in its own Keychain item. What it
 observed (windows, warm conversations) is kept in `~/Library/Application Support/Sluice`, so a
-restart forgets nothing. It never spends paid extra usage. What it knows about each provider's wire format is in
+restart forgets nothing. Each answer updates the account it came through, and every five minutes
+Sluice asks the providers about all of them, so an idle account's numbers are current too. It never spends paid extra usage. What it knows about each provider's wire format is in
 [docs/wire.md](docs/wire.md).
 
 Only programs on this Mac are answered. A web page can reach a local port, so a request that names

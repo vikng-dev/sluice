@@ -12,6 +12,7 @@ public struct Codex: Provider {
     static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
     static let authorize = URL(string: "https://auth.openai.com/oauth/authorize")!
     static let token = URL(string: "https://auth.openai.com/oauth/token")!
+    static let usage = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
 
     public init() {}
 
@@ -105,8 +106,7 @@ public struct Codex: Provider {
             func field(_ name: String) -> Double? { headers["x-codex-\(slot)-\(name)"].flatMap(Double.init) }
             // An unused slot reports a zero-minute window with no reset.
             guard let minutes = field("window-minutes"), minutes > 0, let used = field("used-percent"), let reset = field("reset-at") else { return nil }
-            let name = switch minutes { case 300: "5h"; case 10080: "7d"; default: "\(Int(minutes))m" }
-            return Window(name: name, used: used / 100, resetsAt: Date(timeIntervalSince1970: reset))
+            return Window(name: Self.name(minutes: minutes), used: used / 100, resetsAt: Date(timeIntervalSince1970: reset))
         }
         return Reading(windows: windows, refused: status == 429)
     }
@@ -115,6 +115,26 @@ public struct Codex: Provider {
         var access_token: String
         var refresh_token: String?
         var id_token: String?
+    }
+
+    static func name(minutes: Double) -> String {
+        switch minutes { case 300: "5h"; case 10080: "7d"; default: "\(Int(minutes))m" }
+    }
+
+    public func usage(of account: Account) async throws -> [Window] {
+        let (status, body) = try await HTTPCall.send("GET", Self.usage, headers: ["Authorization": "Bearer \(account.accessToken)", "chatgpt-account-id": account.subject])
+        guard status == 200 else { throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil) }
+        return try Self.windows(inUsage: body)
+    }
+
+    /// The windows in a usage answer; a slot the plan does not have is null.
+    static func windows(inUsage body: Data) throws -> [Window] {
+        guard let limit = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["rate_limit"] as? [String: Any] else { throw ProviderError.invalidResponse }
+        return ["primary_window", "secondary_window"].compactMap { slot in
+            guard let window = limit[slot] as? [String: Any], let used = window["used_percent"] as? Double,
+                  let seconds = window["limit_window_seconds"] as? Double, let reset = window["reset_at"] as? Double else { return nil }
+            return Window(name: name(minutes: seconds / 60), used: used / 100, resetsAt: Date(timeIntervalSince1970: reset))
+        }
     }
 
     private func grant(_ fields: [String: String]) async throws -> Grant {

@@ -3,12 +3,19 @@ import SluiceCore
 
 public let providers: [any Provider] = [Claude(), Codex()]
 
-/// Starts the relay with every provider on Sluice's port.
-public func startSluice() async throws -> Server {
+/// Starts the relay with every provider on Sluice's port, and keeps every account's usage current:
+/// a request's answer updates the account it went through, and the rest are asked every five minutes.
+public func startSluice() async throws -> (server: Server, relay: Relay) {
     let relay = try Relay(providers: providers, storage: .live, port: Sluice.port)
     let server = try Server(port: Sluice.port) { try await relay.handle($0, $1) }
     try await server.start()
-    return server
+    Task {
+        while !Task.isCancelled {
+            await relay.checkUsage()
+            try await Task.sleep(for: .seconds(300))
+        }
+    }
+    return (server, relay)
 }
 
 /// The clients that keep a folder per profile, which is what a stand-in chooses.

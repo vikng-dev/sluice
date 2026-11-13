@@ -59,13 +59,40 @@ public final class Relay: Sendable {
         redirectURI = "http://localhost:\(port)/callback"
     }
 
+    public func status() async throws -> [AccountStatus] {
+        try await accounts.status()
+    }
+
+    /// Asks each provider for each account's usage, once. An account that cannot sign in is marked;
+    /// a usage address that does not answer says nothing about the account, so that is only logged.
+    public func checkUsage() async {
+        for account in await accounts.all {
+            // An account is only ever stored under a provider that signed it in.
+            let provider = providers[account.provider]!
+            let fresh: Account
+            do {
+                fresh = try await accounts.fresh(account.id, using: provider)
+            } catch {
+                await accounts.failed(account.id, "Could not renew its sign-in: \(error)")
+                continue
+            }
+            do {
+                try await accounts.record(provider.usage(of: fresh), for: account.id, answeringARequest: false)
+            } catch ProviderError.signedOut {
+                await accounts.failed(account.id, "Signed out. Run: sluice login \(account.provider)")
+            } catch {
+                log("\(account.provider) \(account.label) usage check failed: \(error)")
+            }
+        }
+    }
+
     public func handle(_ request: HTTPRequest, _ writer: ResponseWriter) async throws {
         switch Route(target: request.target) {
         case nil:
             try await writer.send(404, text: "sluice: no such address")
         case .status:
             do {
-                try await writer.send(200, contentType: "application/json", text: String(decoding: JSONEncoder().encode(accounts.status()), as: UTF8.self))
+                try await writer.send(200, contentType: "application/json", text: String(decoding: JSONEncoder().encode(status()), as: UTF8.self))
             } catch {
                 try await writer.send(500, text: "sluice: \(error)")
             }
@@ -111,6 +138,7 @@ public final class Relay: Sendable {
                     account = try await accounts.fresh(candidate.id, using: provider)
                 } catch {
                     log("\(id) \(candidate.label) could not renew: \(error)")
+                    await accounts.failed(candidate.id, "Could not renew its sign-in: \(error)")
                     if isLast { return try await writer.send(502, text: "sluice: could not renew \(candidate.label): \(error)") }
                     continue
                 }
@@ -131,7 +159,7 @@ public final class Relay: Sendable {
                 }
                 let headers = response.allHeaderFields.compactMap { name, value in (name as? String).map { ($0, "\(value)") } }
                 let reading = provider.reading(status: response.statusCode, headers: Dictionary(headers.map { ($0.0.lowercased(), $0.1) }) { $1 })
-                await accounts.record(reading.windows, for: account.id)
+                await accounts.record(reading.windows, for: account.id, answeringARequest: true)
                 log("\(id) \(account.label) \(request.method) \(target.prefix { $0 != "?" }) \(response.statusCode)\(reading.refused ? " spent" : "")")
                 if reading.refused, !isLast { continue }
                 if let conversation, !reading.refused {

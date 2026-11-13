@@ -1,0 +1,97 @@
+import SluiceCore
+import SwiftUI
+
+/// What opens from the menu bar: every profile's accounts and how much of each allowance is used.
+struct Panel: View {
+    let state: String
+    let problem: String
+    let accounts: [AccountStatus]
+    let now: Date
+    @Binding var routed: Bool
+    let quit: () -> Void
+
+    private var profiles: [(name: String, accounts: [AccountStatus])] {
+        Dictionary(grouping: accounts, by: \.profile)
+            .map { (name: $0.key, accounts: $0.value.sorted { ($0.provider, $1.main ? 1 : 0, $0.label) < ($1.provider, $0.main ? 1 : 0, $1.label) }) }
+            .sorted { ($0.name == Config.defaultProfile ? "" : $0.name) < ($1.name == Config.defaultProfile ? "" : $1.name) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Sluice").font(.headline)
+                Spacer()
+                Text(state).font(.caption).foregroundStyle(.secondary)
+            }
+            if !problem.isEmpty { Text(problem).font(.caption).foregroundStyle(.red) }
+            if accounts.isEmpty { Text("No accounts yet. Run: sluice login").font(.callout).foregroundStyle(.secondary) }
+            ForEach(profiles, id: \.name) { profile in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(profile.name.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
+                    ForEach(profile.accounts, id: \.id) { AccountRow(account: $0, now: now) }
+                }
+            }
+            Divider()
+            Toggle("Route Claude Code and Codex through Sluice", isOn: $routed).toggleStyle(.switch).controlSize(.small).font(.callout)
+            HStack {
+                Text("Sluice \(Sluice.version)").font(.caption).foregroundStyle(.tertiary)
+                Spacer()
+                Button("Quit", action: quit).controlSize(.small).help("The clients go back to their own providers")
+            }
+        }
+        .padding(14)
+        .frame(width: 340)
+    }
+}
+
+private extension AccountStatus {
+    var id: String { provider + ":" + label }
+}
+
+private struct AccountRow: View {
+    let account: AccountStatus
+    let now: Date
+
+    /// It answered a request within the last minute.
+    private var serving: Bool { account.lastAnswered.map { now.timeIntervalSince($0) < 60 } ?? false }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(account.label).font(.callout).lineLimit(1).truncationMode(.middle)
+                if account.main { Text("main").font(.caption2).padding(.horizontal, 5).padding(.vertical, 1).background(.quaternary, in: Capsule()) }
+                if serving { Circle().fill(.green).frame(width: 6, height: 6).help("Answering requests now") }
+                Spacer()
+                Text(account.provider).font(.caption).foregroundStyle(.secondary)
+            }
+            if let problem = account.problem {
+                Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            } else if account.windows.isEmpty {
+                Text("No usage reported").font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(account.windows, id: \.name) { window in
+                HStack(spacing: 8) {
+                    Text(window.name).font(.caption.monospaced()).foregroundStyle(.secondary).frame(width: 20, alignment: .leading)
+                    Bar(used: window.used)
+                    Text(window.percentText).font(.caption.monospacedDigit()).frame(width: 34, alignment: .trailing)
+                    Text(window.resetText).font(.caption).foregroundStyle(.secondary).frame(width: 74, alignment: .trailing)
+                }
+            }
+        }
+    }
+}
+
+private struct Bar: View {
+    let used: Double
+
+    var body: some View {
+        GeometryReader { space in
+            Capsule().fill(.quaternary)
+            if used > 0 {
+                Capsule().fill(used >= 1 ? Color.red : used >= 0.85 ? .orange : .accentColor)
+                    .frame(width: max(space.size.height, space.size.width * min(used, 1)))
+            }
+        }
+        .frame(height: 5)
+    }
+}

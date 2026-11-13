@@ -89,6 +89,23 @@ import Testing
     }
 }
 
+@Suite struct UsageAnswerTests {
+    @Test func claudeWindowsWithoutAResetAreLeftOut() throws {
+        let body = #"{"five_hour":{"utilization":0.0,"resets_at":null},"seven_day":{"utilization":49.0,"resets_at":"2026-11-18T09:00:00.063930+00:00"},"seven_day_opus":null}"#
+        let windows = try Claude.windows(inUsage: Data(body.utf8))
+        #expect(windows.map(\.name) == ["7d"] && windows[0].used == 0.49)
+        #expect(Int(windows[0].resetsAt.timeIntervalSince1970) == 1_794_992_400)
+        // A plan with no five-hour window sends null for it.
+        #expect(try Claude.windows(inUsage: Data(#"{"five_hour":null,"seven_day":null}"#.utf8)).isEmpty)
+    }
+
+    @Test func codexWindowsAreNamedByTheirLength() throws {
+        let body = #"{"rate_limit":{"primary_window":{"used_percent":3,"limit_window_seconds":604800,"reset_at":1795144120},"secondary_window":null}}"#
+        #expect(try Codex.windows(inUsage: Data(body.utf8)) == [Window(name: "7d", used: 0.03, resetsAt: Date(timeIntervalSince1970: 1_795_144_120))])
+        #expect(throws: ProviderError.self) { try Codex.windows(inUsage: Data("{}".utf8)) }
+    }
+}
+
 @Suite struct UserFileTests {
     @Test func codexConfigGainsSluiceAndGivesItBackUnchanged() throws {
         let own = "model = \"x\"\n\n[projects.\"/a\"]\ntrust_level = \"trusted\"\n"

@@ -33,6 +33,13 @@ Requests with the credential and that id swapped are served normally.
 A window with no usage yet omits its headers (a fresh account sent no `5h-*`). Per-model weekly
 limits are not in the headers; they need the usage endpoint.
 
+**Usage, on request (captured 2026-11-13).** `GET https://api.anthropic.com/api/oauth/usage` with
+the bearer token and `anthropic-beta: oauth-2025-04-20`; the `user:inference` scope is enough.
+`five_hour` and `seven_day` are each `{utilization, resets_at}` or null: `utilization` is 0–100,
+`resets_at` is ISO 8601 with fractional seconds. A Max account sends `five_hour: null`; a window
+not yet started has `resets_at: null`. `limits[]` carries the per-model weekly windows, and
+`extra_usage` the paid overage, neither of which Sluice reads.
+
 **Cache.** Claude Code marks its system blocks `cache_control: {type: ephemeral, ttl: 1h}`. The
 first SSE event, `message_start`, carries `usage.cache_read_input_tokens` and
 `usage.cache_creation_input_tokens` (split into `ephemeral_5m` and `ephemeral_1h`), so the relay
@@ -97,6 +104,11 @@ JWT whose `exp` is its expiry and whose `https://api.openai.com/auth` claim hold
 **Limits, on every response.** `x-codex-primary-used-percent`, `x-codex-primary-window-minutes`,
 `x-codex-primary-reset-at` (Unix seconds), the same three for `secondary`, `x-codex-plan-type`,
 and `x-codex-credits-has-credits` / `-balance`.
+
+**Usage, on request (captured 2026-11-13).** `GET https://chatgpt.com/backend-api/wham/usage` with
+the bearer token and `chatgpt-account-id`. `rate_limit.primary_window` and `.secondary_window` are
+each `{used_percent, limit_window_seconds, reset_at}` or null: `used_percent` is 0–100, `reset_at`
+Unix seconds.
 
 **A spent account.** Not captured. Sluice treats any `429` as a refusal and tries the next account.
 

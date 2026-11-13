@@ -174,6 +174,10 @@ public struct AccountStatus: Codable, Sendable {
     public var main: Bool
     public var windows: [Window]
     public var warmConversations: Int
+    /// When it last answered a relayed request, since the relay started.
+    public var lastAnswered: Date?
+    /// Why it cannot serve, in the provider's or Sluice's words; nil when nothing is known to be wrong.
+    public var problem: String?
 }
 
 /// The accounts, what each provider last said about them, and where conversations are held.
@@ -182,6 +186,8 @@ actor Accounts {
     private var accounts: [Account]
     private var refreshing: [String: Task<Account, any Error>] = [:]
     private var memory: Memory
+    private var lastAnswered: [String: Date] = [:]
+    private var problems: [String: String] = [:]
 
     init(storage: Storage) throws {
         self.storage = storage
@@ -194,7 +200,8 @@ actor Accounts {
         return accounts.map {
             AccountStatus(
                 provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), main: config.isMain($0.label),
-                windows: (memory.usage[$0.id] ?? []).filter { $0.resetsAt > now }, warmConversations: memory.router.warmConversations(on: $0.id, now: now)
+                windows: (memory.usage[$0.id] ?? []).filter { $0.resetsAt > now }.sorted { $0.resetsAt < $1.resetsAt },
+                warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: lastAnswered[$0.id], problem: problems[$0.id]
             )
         }
     }
@@ -216,7 +223,17 @@ actor Accounts {
         return memory.router.order(pool, conversation: conversation, usage: memory.usage, now: Date())
     }
 
-    func record(_ windows: [Window], for id: String) {
+    var all: [Account] { accounts }
+
+    /// The account could not be used, for a reason worth showing until it next works.
+    func failed(_ id: String, _ problem: String) {
+        problems[id] = problem
+    }
+
+    /// What the provider just said about the account, in answer to a relayed request or to a usage check.
+    func record(_ windows: [Window], for id: String, answeringARequest: Bool) {
+        problems[id] = nil
+        if answeringARequest { lastAnswered[id] = Date() }
         for window in windows {
             memory.usage[id, default: []].removeAll { $0.name == window.name }
             memory.usage[id, default: []].append(window)

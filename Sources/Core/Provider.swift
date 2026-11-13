@@ -29,6 +29,9 @@ public protocol Provider: Sendable {
     func conversation(of request: HTTPRequest) -> (id: String, cacheLifetime: TimeInterval)?
     /// What a response's status and headers (names lowercased) say about the account that answered.
     func reading(status: Int, headers: [String: String]) -> Reading
+    /// The account's windows as the provider reports them when asked, which keeps an account that no
+    /// request has gone through lately from showing what it last was.
+    func usage(of account: Account) async throws -> [Window]
 }
 
 public struct Reading: Sendable, Equatable {

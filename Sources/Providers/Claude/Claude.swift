@@ -13,6 +13,7 @@ public struct Claude: Provider {
     static let scopes = "user:profile user:inference"
     static let authorize = URL(string: "https://claude.ai/oauth/authorize")!
     static let token = URL(string: "https://platform.claude.com/v1/oauth/token")!
+    static let usage = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     static let profile = URL(string: "https://api.anthropic.com/api/oauth/profile")!
     static let oauthBeta = "oauth-2025-04-20"
 
@@ -134,6 +135,24 @@ public struct Claude: Provider {
         struct Organization: Decodable { var uuid: String }
         var account: Account
         var organization: Organization?
+    }
+
+    public func usage(of account: Account) async throws -> [Window] {
+        let (status, body) = try await HTTPCall.send("GET", Self.usage, headers: ["Authorization": "Bearer \(account.accessToken)", "anthropic-beta": Self.oauthBeta])
+        guard status == 200 else { throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil) }
+        return try Self.windows(inUsage: body)
+    }
+
+    /// The windows in a usage answer. One the account does not have, or has not started, has no reset.
+    static func windows(inUsage body: Data) throws -> [Window] {
+        guard let usage = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { throw ProviderError.invalidResponse }
+        let time = ISO8601DateFormatter()
+        time.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return [("five_hour", "5h"), ("seven_day", "7d")].compactMap { key, name in
+            guard let window = usage[key] as? [String: Any], let used = window["utilization"] as? Double,
+                  let reset = (window["resets_at"] as? String).flatMap(time.date) else { return nil }
+            return Window(name: name, used: used / 100, resetsAt: reset)
+        }
     }
 
     private func grant(_ fields: [String: String]) async throws -> Grant {

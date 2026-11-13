@@ -9,25 +9,36 @@ let keeperLabel = "dev.vikng.sluice.relay"
 @MainActor let keeper = SMAppService.agent(plistName: "\(keeperLabel).plist")
 @MainActor var handoverProblem = ""
 
-/// The relay's life, started when the app launches, not when its menu is first opened.
+/// The relay's life, started when the app launches, not when its panel is first opened.
 @MainActor @Observable final class Running {
-    var relay = "Starting…"
+    var state = "Starting…"
     var problem = handoverProblem
     var routed = false
-    private var server: Server?
+    var accounts: [AccountStatus] = []
+    private var sluice: (server: Server, relay: Relay)?
 
     init() {
         check()
         Task {
             do {
-                server = try await startSluice()
-                relay = "Relaying on port \(Sluice.port)"
+                sluice = try await startSluice()
+                state = "Relaying"
             } catch {
-                relay = "Not relaying: \(error)"
+                state = "Not relaying: \(error)"
                 Logger(subsystem: "dev.vikng.sluice", category: "app").error("not relaying: \(String(describing: error), privacy: .public)")
                 // Clients may be set to talk to Sluice, so a kept copy does not sit there deaf: launchd starts it again.
                 if ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == keeperLabel { exit(1) }
             }
+        }
+    }
+
+    /// Keeps the accounts current for the panel; reading them is local and asks no provider.
+    func watch() async {
+        while !Task.isCancelled {
+            if let relay = sluice?.relay {
+                do { accounts = try await relay.status() } catch { problem = "\(error)" }
+            }
+            try? await Task.sleep(for: .seconds(2))
         }
     }
 
@@ -55,16 +66,14 @@ struct SluiceApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            Text("Sluice \(Sluice.version)")
-            Text(running.relay)
-            if !running.problem.isEmpty { Text(running.problem) }
-            Divider()
-            Toggle("Route Claude Code and Codex through Sluice", isOn: Binding(get: { running.routed }, set: { running.route($0) }))
-            Divider()
-            Button("Quit, and route nothing") { running.quit() }
-                .keyboardShortcut("q")
+            Panel(
+                state: running.state, problem: running.problem, accounts: running.accounts, now: Date(),
+                routed: Binding(get: { running.routed }, set: { running.route($0) }), quit: running.quit
+            )
+            .task { await running.watch() }
         } label: {
             Image(nsImage: gateGlyph(open: running.routed))
         }
+        .menuBarExtraStyle(.window)
     }
 }
