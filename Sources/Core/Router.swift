@@ -23,17 +23,14 @@ struct Router: Codable {
 
     private var holds: [String: Hold] = [:]
 
-    /// The accounts to try, in order. A pin names the one account, pooled or not. Otherwise the pool's
-    /// unspent accounts: the one holding this conversation's warm cache first, then by whose longest
+    /// The pool's accounts to try, in order. Its unspent accounts: the one holding this conversation's warm cache first, then by whose longest
     /// window resets soonest, untouched accounts last so an idle window is not started early.
     /// With the whole pool spent, the account back soonest, so the client hears the provider's own refusal.
-    func order(_ accounts: [Account], pin: String?, pinOnly: Set<String>, conversation: String?, usage: [String: [Window]], now: Date) -> [Account] {
-        if let pin { return accounts.filter { $0.label == pin } }
+    func order(_ pool: [Account], conversation: String?, usage: [String: [Window]], now: Date) -> [Account] {
         func live(_ account: Account) -> [Window] { (usage[account.id] ?? []).filter { $0.resetsAt > now } }
         func spentUntil(_ account: Account) -> Date? { live(account).filter { $0.used >= 1 }.map(\.resetsAt).max() }
         func horizon(_ account: Account) -> Date { live(account).map(\.resetsAt).max() ?? .distantFuture }
 
-        let pool = accounts.filter { !pinOnly.contains($0.label) }
         let open = pool.filter { spentUntil($0) == nil }
         guard !open.isEmpty else { return pool.min { spentUntil($0)! < spentUntil($1)! }.map { [$0] } ?? [] }
         var ordered = open.enumerated().sorted { (horizon($0.element), $0.offset) < (horizon($1.element), $1.offset) }.map(\.element)

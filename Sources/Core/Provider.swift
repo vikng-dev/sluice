@@ -5,10 +5,14 @@ import Foundation
 public protocol Provider: Sendable {
     /// The first path segment of the provider's local address, e.g. `claude`.
     var id: String { get }
-    /// Makes the provider's client on this machine talk to `address`, or to the provider again,
+    /// The command that runs this provider's client, e.g. `claude`.
+    var client: String { get }
+    /// Where the client keeps a profile, and the variable that tells it so; nil when it keeps one folder for all.
+    func home(of profile: String) -> (variable: String, folder: URL)?
+    /// Makes the provider's client talk to `address` in each profile, or to the provider again,
     /// by editing the client's own settings.
-    func route(_ on: Bool) throws
-    func isRouted() throws -> Bool
+    func route(_ on: Bool, profiles: [String]) throws
+    func isRouted(profiles: [String]) throws -> Bool
     /// Where a relayed request's path is appended.
     var upstream: URL { get }
     /// Where the provider's sign-in must land when its OAuth client is registered to one fixed address;
@@ -114,16 +118,16 @@ public extension Provider {
     var address: String { "http://localhost:\(Sluice.port)/\(id)" }
 }
 
-/// A client's settings file that Sluice could not read or may not change.
-public struct ClientSettingsError: Error, CustomStringConvertible {
+/// A file of the user's that Sluice could not read or may not change.
+public struct UserFileError: Error, CustomStringConvertible {
     public let path: String
     public let reason: String
     public init(path: String, reason: String) { self.path = path; self.reason = reason }
     public var description: String { "\(path): \(reason)" }
 }
 
-/// A client's settings file: absent is empty, and a write goes to the file a link points at.
-public struct ClientSettings: Sendable {
+/// A file of the user's that Sluice edits: absent is empty, and a write goes to the file a link points at.
+public struct UserFile: Sendable {
     let file: URL
     public init(_ file: URL) { self.file = file.resolvingSymlinksInPath() }
     public var path: String { file.path }
@@ -135,5 +139,54 @@ public struct ClientSettings: Sendable {
     public func write(_ data: Data) throws {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: file, options: .atomic)
+    }
+}
+
+/// The commands that stand in for the clients: each is a link to Sluice, which picks the profile for the
+/// folder it is run in and then runs the real client. They work whether or not the relay is running.
+public enum StandIns {
+    static let folder = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/sluice/bin")
+    static let line = #"export PATH="$HOME/.config/sluice/bin:$PATH" # sluice"#
+
+    /// The user's shell startup file, where the line that puts the stand-ins first on PATH goes.
+    private static func startup() throws -> UserFile {
+        let shell = URL(fileURLWithPath: String(cString: getpwuid(getuid()).pointee.pw_shell)).lastPathComponent
+        guard ["zsh", "bash"].contains(shell) else {
+            throw UserFileError(path: shell, reason: "Sluice does not know this shell's startup file; add this line to it yourself: \(line)")
+        }
+        return UserFile(FileManager.default.homeDirectoryForCurrentUser.appending(path: ".\(shell)rc"))
+    }
+
+    private static func lines(of file: UserFile) throws -> [String] {
+        String(decoding: try file.read() ?? Data(), as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
+
+    public static func install(_ commands: [String], program: URL) throws {
+        try remove(commands)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for command in commands { try FileManager.default.createSymbolicLink(at: folder.appending(path: command), withDestinationURL: program) }
+        let file = try startup()
+        var lines = try lines(of: file)
+        if lines.last == "" { lines.removeLast() }
+        try file.write(Data((lines + [line, ""]).joined(separator: "\n").utf8))
+    }
+
+    public static func remove(_ commands: [String]) throws {
+        for command in commands where isInstalled(command) { try FileManager.default.removeItem(at: folder.appending(path: command)) }
+        let file = try startup(), lines = try lines(of: file)
+        if lines.contains(line) { try file.write(Data(lines.filter { $0 != line }.joined(separator: "\n").utf8)) }
+    }
+
+    public static func isInstalled(_ command: String) -> Bool {
+        (try? FileManager.default.destinationOfSymbolicLink(atPath: folder.appending(path: command).path)) != nil
+    }
+
+    /// The real `command`: the first one on `path` after the stand-ins' folder, so a wrapper ahead of
+    /// the stand-in that hands on to it is not run again; anywhere on `path` when the folder is not on it.
+    public static func real(_ command: String, path: String) -> String? {
+        let folders = path.split(separator: ":").map { URL(fileURLWithPath: String($0)).standardizedFileURL.path }
+        let own = folder.standardizedFileURL.path
+        let after = folders.firstIndex(of: own).map { Array(folders[($0 + 1)...]) } ?? folders
+        return after.filter { $0 != own }.map { $0 + "/" + command }.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 }

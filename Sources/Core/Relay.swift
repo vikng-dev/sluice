@@ -4,7 +4,7 @@ import os
 /// A local address, read as a route. The grammar:
 /// `/login/<provider>`, `/callback?code=…&state=…`, `/status`, and
 /// `/<provider>[/pin/<account>]/<the provider's own path and query>`. Without a pin in the address,
-/// the caller's folder decides: see `Config.pin`.
+/// the caller's folder decides the profile: see `Config.profile`.
 enum Route: Equatable {
     case login(provider: String)
     case callback(code: String, state: String)

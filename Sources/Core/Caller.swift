@@ -30,10 +30,10 @@ enum Caller {
 }
 
 /// The git repository a folder is in, read from its files.
-enum Repo {
+public enum Repo {
     /// The owner in the origin remote of the repository containing `folder`, lowercased:
     /// `acme` for `git@host:Acme/app.git` and for `https://host/acme/app`. Nil outside a repository, or with no origin.
-    static func owner(of folder: String) -> String? {
+    public static func owner(of folder: String) -> String? {
         var url = URL(fileURLWithPath: folder)
         while url.path != "/" {
             if let config = config(of: url.appending(path: ".git")) { return originOwner(in: config) }

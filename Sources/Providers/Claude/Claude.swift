@@ -4,6 +4,7 @@ import SluiceCore
 /// Claude subscriptions, as Claude Code reaches them. Wire facts: docs/wire.md.
 public struct Claude: Provider {
     public let id = "claude"
+    public let client = "claude"
     public let upstream = URL(string: "https://api.anthropic.com")!
     public let redirect: URL? = nil
 
@@ -17,34 +18,32 @@ public struct Claude: Provider {
 
     public init() {}
 
-    /// Claude Code's user settings, in the folder Claude Code itself would use.
-    private var settings: ClientSettings {
-        let folder = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude")
-        return ClientSettings(folder.appending(path: "settings.json"))
+    public func home(of profile: String) -> (variable: String, folder: URL)? {
+        ("CLAUDE_CONFIG_DIR", FileManager.default.homeDirectoryForCurrentUser.appending(path: profile == Config.defaultProfile ? ".claude" : ".claude-\(profile)"))
     }
 
-    public func route(_ on: Bool) throws {
-        // Nothing to take out of a file that is not there.
-        if !on, try settings.read() == nil { return }
-        try settings.write(Self.pointed(try settings.read(), at: on ? address : nil, path: settings.path))
+    private func settings(of profile: String) -> UserFile {
+        UserFile(home(of: profile)!.folder.appending(path: "settings.json"))
     }
 
-    public func isRouted() throws -> Bool {
-        let env = try Self.environment(in: try settings.read(), path: settings.path).env
-        return env["ANTHROPIC_BASE_URL"] as? String == address
-            && env["CLAUDE_CODE_OAUTH_TOKEN"] as? String == Self.placeholder
+    public func route(_ on: Bool, profiles: [String]) throws {
+        for settings in profiles.map(settings) {
+            // Nothing to take out of a file that is not there.
+            if !on, try settings.read() == nil { continue }
+            try settings.write(Self.pointed(try settings.read(), at: on ? address : nil, path: settings.path))
+        }
     }
 
-    /// What stands where Claude Code expects a subscription credential. With it Claude Code needs no
-    /// login of its own and still sends a subscription's request; the relay replaces it on every request.
-    static let placeholder = "sluice"
+    public func isRouted(profiles: [String]) throws -> Bool {
+        try profiles.map(settings).allSatisfy { try Self.environment(in: try $0.read(), path: $0.path).env["ANTHROPIC_BASE_URL"] as? String == address }
+    }
 
-    /// The settings with Sluice's `address` and the placeholder credential in `env`, or with both removed;
-    /// everything else is kept.
+    /// The settings with `env.ANTHROPIC_BASE_URL` set to `address`, or removed; everything else is kept.
+    /// Claude Code keeps its own sign-in, which the relay replaces on each request: the features it runs
+    /// outside the relay need that sign-in to be a real one.
     static func pointed(_ settings: Data?, at address: String?, path: String) throws -> Data {
         var (all, env) = try environment(in: settings, path: path)
         env["ANTHROPIC_BASE_URL"] = address
-        env["CLAUDE_CODE_OAUTH_TOKEN"] = address == nil ? nil : placeholder
         all["env"] = env.isEmpty ? nil : env
         return try JSONSerialization.data(withJSONObject: all, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
     }
@@ -52,7 +51,7 @@ public struct Claude: Provider {
     private static func environment(in settings: Data?, path: String) throws -> (all: [String: Any], env: [String: Any]) {
         guard let settings else { return ([:], [:]) }
         guard let all = try? JSONSerialization.jsonObject(with: settings) as? [String: Any], let env = all["env"] as? [String: Any]? else {
-            throw ClientSettingsError(path: path, reason: "not the JSON object Claude Code's settings should be")
+            throw UserFileError(path: path, reason: "not the JSON object Claude Code's settings should be")
         }
         return (all, env ?? [:])
     }

@@ -15,8 +15,8 @@ import Testing
         [Window(name: "week", used: used, resetsAt: now.addingTimeInterval(hours * 3600))]
     }
 
-    func order(_ router: Router = Router(), pin: String? = nil, pinOnly: Set<String> = [], conversation: String? = nil, usage: [String: [Window]]) -> [String] {
-        router.order([a, b, c], pin: pin, pinOnly: pinOnly, conversation: conversation, usage: usage, now: now).map(\.label)
+    func order(_ router: Router = Router(), conversation: String? = nil, usage: [String: [Window]]) -> [String] {
+        router.order([a, b, c], conversation: conversation, usage: usage, now: now).map(\.label)
     }
 
     @Test func theAccountResettingSoonestGoesFirstAndUntouchedOnesLast() {
@@ -47,10 +47,6 @@ import Testing
         #expect(order(usage: [c.id: week(1, resetsIn: -1)]) == ["a", "b", "c"])
     }
 
-    @Test func aPinOnlyAccountIsOutsideThePoolButReachableByPin() {
-        #expect(order(pinOnly: ["c"], usage: [c.id: week(0.2, resetsIn: 20)]) == ["a", "b"])
-        #expect(order(pin: "c", pinOnly: ["c"], usage: [c.id: week(1, resetsIn: 20)]) == ["c"])
-    }
 
     @Test func withThePoolSpentTheAccountBackSoonestAnswers() {
         #expect(order(usage: [a.id: week(1, resetsIn: 50), b.id: week(1, resetsIn: 5), c.id: week(1, resetsIn: 30)]) == ["b"])
@@ -93,7 +89,7 @@ import Testing
     }
 }
 
-@Suite struct ClientSettingsTests {
+@Suite struct UserFileTests {
     @Test func codexConfigGainsSluiceAndGivesItBackUnchanged() throws {
         let own = "model = \"x\"\n\n[projects.\"/a\"]\ntrust_level = \"trusted\"\n"
         let routed = try Codex.pointed(own, at: "A", path: "")
@@ -104,14 +100,30 @@ import Testing
     }
 
     @Test func codexConfigWithItsOwnProviderIsLeftAlone() {
-        #expect(throws: ClientSettingsError.self) { try Codex.pointed("model_provider = \"other\"\n", at: "A", path: "") }
+        #expect(throws: UserFileError.self) { try Codex.pointed("model_provider = \"other\"\n", at: "A", path: "") }
     }
 
     @Test func claudeSettingsKeepEverythingElse() throws {
         let own = Data(#"{"env":{"KEEP":"1"},"model":"x"}"#.utf8)
         let routed = try Claude.pointed(own, at: "A", path: "")
-        #expect(try JSONSerialization.jsonObject(with: routed) as? NSDictionary == ["env": ["KEEP": "1", "ANTHROPIC_BASE_URL": "A", "CLAUDE_CODE_OAUTH_TOKEN": Claude.placeholder], "model": "x"])
+        #expect(try JSONSerialization.jsonObject(with: routed) as? NSDictionary == ["env": ["KEEP": "1", "ANTHROPIC_BASE_URL": "A"], "model": "x"])
         #expect(try JSONSerialization.jsonObject(with: Claude.pointed(routed, at: nil, path: "")) as? NSDictionary == ["env": ["KEEP": "1"], "model": "x"])
-        #expect(throws: ClientSettingsError.self) { try Claude.pointed(Data("[]".utf8), at: "A", path: "") }
+        #expect(throws: UserFileError.self) { try Claude.pointed(Data("[]".utf8), at: "A", path: "") }
+    }
+}
+
+@Suite struct StandInTests {
+    @Test func theRealClientIsTheOneAfterTheStandInOnPath() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "sluice-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        for folder in ["wrapper", "real"] {
+            try FileManager.default.createDirectory(at: root.appending(path: folder), withIntermediateDirectories: true)
+            FileManager.default.createFile(atPath: root.appending(path: "\(folder)/tool").path, contents: nil, attributes: [.posixPermissions: 0o755])
+        }
+        let own = StandIns.folder.path, wrapper = root.appending(path: "wrapper").path, real = root.appending(path: "real").path
+        // A wrapper ahead of the stand-in handed on to it: running the wrapper again would loop.
+        #expect(StandIns.real("tool", path: "\(wrapper):\(own):\(real)") == real + "/tool")
+        #expect(StandIns.real("tool", path: "\(real)") == real + "/tool")
+        #expect(StandIns.real("tool", path: "\(wrapper):\(own)") == nil)
     }
 }

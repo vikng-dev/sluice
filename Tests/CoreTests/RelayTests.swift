@@ -7,8 +7,10 @@ private struct Fake: Provider {
     let id = "fake"
     let upstream: URL
     let redirect: URL? = nil
-    func route(_ on: Bool) {}
-    func isRouted() -> Bool { false }
+    let client = "fake"
+    func home(of profile: String) -> (variable: String, folder: URL)? { nil }
+    func route(_ on: Bool, profiles: [String]) {}
+    func isRouted(profiles: [String]) -> Bool { false }
     func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL { upstream }
     func signIn(code: String, state: String, redirectURI: String, verifier: String) async throws -> Account { throw ProviderError.signedOut }
     func refresh(_ account: Account) async throws -> Account { account }

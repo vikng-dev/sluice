@@ -31,14 +31,15 @@ let keeperLabel = "dev.vikng.sluice.relay"
         }
     }
 
-    /// Makes the clients talk to Sluice, or to their providers again.
+    /// Sets the clients up to use Sluice, or to talk to their providers again.
     func route(_ on: Bool) {
-        do { for provider in providers { try provider.route(on) } } catch { problem = "\(error)" }
+        // The app's own executable always exists.
+        do { if on { try setUp(program: Bundle.main.executableURL!) } else { try stopRouting(all: false) } } catch { problem = "\(error)" }
         check()
     }
 
     private func check() {
-        do { routed = try providers.allSatisfy { try $0.isRouted() } } catch { problem = "\(error)" }
+        do { routed = try isSetUp() } catch { problem = "\(error)" }
     }
 
     /// The clients would be left talking to nothing, so they go direct first; then launchd is told to let go.

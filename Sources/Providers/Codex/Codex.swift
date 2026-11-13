@@ -4,6 +4,7 @@ import SluiceCore
 /// ChatGPT subscriptions, as the Codex CLI reaches them. Wire facts: docs/wire.md.
 public struct Codex: Provider {
     public let id = "codex"
+    public let client = "codex"
     public let upstream = URL(string: "https://chatgpt.com/backend-api/codex")!
     /// The Codex CLI's OAuth client accepts only this address.
     public let redirect: URL? = URL(string: "http://localhost:1455/auth/callback")
@@ -15,17 +16,20 @@ public struct Codex: Provider {
     public init() {}
 
     /// Codex's user config, in the folder Codex itself would use. A project's own config cannot name a provider.
-    private var settings: ClientSettings {
+    private var settings: UserFile {
         let folder = ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex")
-        return ClientSettings(folder.appending(path: "config.toml"))
+        return UserFile(folder.appending(path: "config.toml"))
     }
 
-    public func route(_ on: Bool) throws {
+    /// Codex needs no sign-in of its own and keeps nothing a profile must separate, so it has one folder.
+    public func home(of profile: String) -> (variable: String, folder: URL)? { nil }
+
+    public func route(_ on: Bool, profiles: [String]) throws {
         if !on, try settings.read() == nil { return }
         try settings.write(Data(Self.pointed(try text(), at: on ? address : nil, path: settings.path).utf8))
     }
 
-    public func isRouted() throws -> Bool {
+    public func isRouted(profiles: [String]) throws -> Bool {
         let lines = try text().split(separator: "\n")
         return lines.contains(Substring(Self.choice)) && lines.contains(Substring(Self.entry(address)[2]))
     }
@@ -51,7 +55,7 @@ public struct Codex: Provider {
         while lines.last == "" { lines.removeLast() }
         guard let address else { return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n" }
         guard !lines.prefix(while: { !$0.hasPrefix("[") }).contains(where: { $0.hasPrefix("model_provider") }) else {
-            throw ClientSettingsError(path: path, reason: "already chooses a model provider; remove that line to route Codex through Sluice")
+            throw UserFileError(path: path, reason: "already chooses a model provider; remove that line to route Codex through Sluice")
         }
         return ([choice] + lines + [""] + entry(address)).joined(separator: "\n") + "\n"
     }

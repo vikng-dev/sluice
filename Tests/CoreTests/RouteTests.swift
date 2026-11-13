@@ -59,37 +59,44 @@ import Testing
     }
 }
 
-@Suite struct PinRuleTests {
+@Suite struct ProfileTests {
     func config(_ json: String) throws -> Config { try JSONDecoder().decode(Config.self, from: Data(json.utf8)) }
-
-    @Test func theDeepestFolderRuleWins() throws {
-        let config = try config(#"{"pins":{"~/work":"a","~/work/client/":"b"}}"#)
-        #expect(config.pin(for: "/home/me/work/client/repo", home: "/home/me") == "b")
-        #expect(config.pin(for: "/home/me/work/other", home: "/home/me") == "a")
-        #expect(config.pin(for: "/home/me/work", home: "/home/me") == "a")
+    func account(_ label: String, at provider: String = "p") -> Account {
+        Account(provider: provider, subject: label, organization: nil, label: label, accessToken: "", refreshToken: "", expiresAt: .distantFuture)
     }
 
-    @Test func aFolderThatOnlySharesAPrefixIsNotInside() throws {
-        #expect(try config(#"{"pins":{"/src/work":"a"}}"#).pin(for: "/src/workshop", home: "/home/me") == nil)
+    @Test func theDeepestFolderClaimWins() throws {
+        let config = try config(#"{"profiles":{"a":{"folders":["~/work"]},"b":{"folders":["~/work/client/"]}}}"#)
+        #expect(config.profile(for: "/home/me/work/client/repo", home: "/home/me") == "b")
+        #expect(config.profile(for: "/home/me/work", home: "/home/me") == "a")
+        // Sharing a prefix is not being inside.
+        #expect(config.profile(for: "/home/me/workshop", home: "/home/me") == "default")
     }
 
-    @Test func aConfigMayLeaveRulesOut() throws {
-        #expect(try config("{}").pin(for: "/anywhere", home: "/home/me") == nil)
+    @Test func aFolderClaimBeatsAnOwnerClaim() throws {
+        let config = try config(#"{"profiles":{"a":{"folders":["~/work"]},"b":{"owners":["Acme"]}}}"#)
+        #expect(config.profile(for: "/home/me/work/app", home: "/home/me", owner: { _ in "acme" }) == "a")
+        #expect(config.profile(for: "/home/me/else/app", home: "/home/me", owner: { _ in "acme" }) == "b")
+        #expect(config.profile(for: "/home/me/else/app", home: "/home/me", owner: { _ in nil }) == "default")
     }
-}
 
-@Suite struct OwnerPinTests {
+    @Test func aProfilesWorkNeverUsesAnotherProfilesAccounts() throws {
+        let config = try config(#"{"profiles":{"work":{"main":"w","accounts":["w2"]}}}"#)
+        let all = ["w", "w2", "mine"].map { account($0) }
+        #expect(config.pool(all, for: "work").map(\.label) == ["w", "w2"])
+        // An account no profile lists is the default's.
+        #expect(config.pool(all, for: "default").map(\.label) == ["mine"])
+    }
+
+    @Test func aProviderAProfileHasNoAccountAtIsServedByTheDefault() throws {
+        let config = try config(#"{"profiles":{"work":{"main":"w"}}}"#)
+        #expect(config.pool([account("mine", at: "other")], for: "work").map(\.label) == ["mine"])
+    }
+
     @Test func theOwnerIsReadFromEitherRemoteForm() {
         #expect(Repo.originOwner(in: "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = git@github.com:Acme/app.git\n") == "acme")
         #expect(Repo.originOwner(in: "[remote \"fork\"]\n\turl = https://h/x/y\n[remote \"origin\"]\n\turl = https://github.com/acme/app\n") == "acme")
         #expect(Repo.originOwner(in: "[core]\n") == nil)
-    }
-
-    @Test func aFolderRuleBeatsAnOwnerRule() throws {
-        let config = try JSONDecoder().decode(Config.self, from: Data(#"{"pins":{"~/work":"a"},"owners":{"Acme":"b"}}"#.utf8))
-        #expect(config.pin(for: "/home/me/work/app", home: "/home/me", owner: { _ in "acme" }) == "a")
-        #expect(config.pin(for: "/home/me/else/app", home: "/home/me", owner: { _ in "acme" }) == "b")
-        #expect(config.pin(for: "/home/me/else/app", home: "/home/me", owner: { _ in nil }) == nil)
     }
 }
 
