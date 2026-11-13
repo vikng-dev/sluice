@@ -74,7 +74,7 @@ struct Panel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             if !problem.isEmpty { Text(problem).font(.caption).foregroundStyle(.red) }
             if !routed {
                 HStack {
@@ -82,8 +82,8 @@ struct Panel: View {
                     Spacer()
                     Button("Turn on") { route(true) }.controlSize(.small)
                 }
-                .padding(8)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                .padding(10)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
             }
             ForEach(sections, id: \.name) { section in
                 VStack(alignment: .leading, spacing: 10) {
@@ -95,18 +95,17 @@ struct Panel: View {
                     ForEach(section.pools) { PoolView(pool: $0, now: now, carried: carried?.account.id, actions: actions) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(6)
-                // While an account is carried, the profiles it could go to are outlined, and the one under it is filled.
-                .background(Color.accentColor.opacity(target == section.name ? 0.15 : 0), in: RoundedRectangle(cornerRadius: 8))
+                .padding(10)
+                // Each profile is a card. While an account is carried, the profiles it could go to are
+                // outlined, and the one under it is filled.
+                .background(target == section.name ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                 .overlay {
                     if let carried, carried.account.profile != section.name {
-                        RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                        RoundedRectangle(cornerRadius: 10).strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                     }
                 }
                 .framed("profile:\(section.name)")
-                .padding(-6)
             }
-            Divider()
             HStack {
                 Text("Sluice \(Sluice.version)").font(.caption).foregroundStyle(.tertiary)
                 Spacer()
@@ -117,9 +116,10 @@ struct Panel: View {
                 }
                 Button("Quit", action: quit).controlSize(.small).help("The clients go back to their own providers")
             }
+            .padding(.horizontal, 6).padding(.top, 2)
         }
-        .padding(14)
-        .frame(width: 340)
+        .padding(10)
+        .frame(width: 352)
         .onPreferenceChange(Frames.self) { frames = $0 }
         .coordinateSpace(name: Frames.space)
         // The carried account's row, lifted off the panel and following the pointer.
