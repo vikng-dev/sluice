@@ -6,7 +6,9 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .target(name: "SluiceCore", path: "Sources/Core"),
-        .executableTarget(name: "SluiceApp", dependencies: ["SluiceCore"], path: "Sources/App"),
-        .executableTarget(name: "sluice", dependencies: ["SluiceCore"], path: "Sources/CLI"),
+        .target(name: "SluiceProviders", dependencies: ["SluiceCore"], path: "Sources/Providers"),
+        .executableTarget(name: "SluiceApp", dependencies: ["SluiceProviders"], path: "Sources/App"),
+        .executableTarget(name: "sluice", dependencies: ["SluiceProviders"], path: "Sources/CLI"),
+        .testTarget(name: "CoreTests", dependencies: ["SluiceCore", "SluiceProviders"], path: "Tests/CoreTests"),
     ]
 )
