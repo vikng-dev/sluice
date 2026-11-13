@@ -42,13 +42,16 @@ public struct CommandError: Error, CustomStringConvertible {
     public let description: String
 }
 
-/// A call to the running relay. One that cannot be made says the relay is not running; one it refuses
-/// says so in the relay's own words.
+/// A call to the running relay. One that cannot be made says the relay is not running, and one that got
+/// no answer says only that, since what was asked may have been done; one it refuses says so in the
+/// relay's own words.
 private func relay(_ method: String, _ path: String) async throws -> Data {
     let answer: (status: Int, body: Data)
     // `path` is made here, of plain or percent-encoded segments.
-    do { answer = try await HTTPCall.send(method, URL(string: Sluice.address + path)!) } catch {
+    do { answer = try await HTTPCall.send(method, URL(string: Sluice.address + path)!) } catch let error as URLError where error.code == .cannotConnectToHost {
         throw CommandError(description: "not running (\(error.localizedDescription)). Start the app or run: sluice serve")
+    } catch {
+        throw CommandError(description: "the relay did not answer (\(error.localizedDescription)), so what was asked may or may not have been done. See: sluice status")
     }
     guard answer.status == 200 else { throw CommandError(description: String(decoding: answer.body, as: UTF8.self).replacing("sluice: ", with: "")) }
     return answer.body

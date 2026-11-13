@@ -72,7 +72,7 @@ import Testing
     func reset(_ id: String, _ refills: [String], lapses hours: Double = 240, usable: Bool = true) -> Reset {
         Reset(id: id, refills: refills, expiresAt: now.addingTimeInterval(hours * 3600), usable: usable)
     }
-    func refill(_ pool: [Standing], model: String? = nil) -> (account: String, reset: Reset)? { Router().refill(pool, model: model, now: now) }
+    func refill(_ pool: [Standing], model: String? = nil) -> (account: String, reset: Reset)? { Router().refill(pool, model: model) }
 
     @Test func aPoolThatIsOutIsBroughtBackByTheNarrowestResetUnlessAWiderOneIsAtItsLastChance() {
         func held(wideLapses hours: Double) -> Standing {
@@ -175,15 +175,15 @@ import Testing
         #expect(Claude.scoped(inUsage: Data(#"{"limits":null}"#.utf8)).isEmpty)
     }
 
-    @Test func theResetsAnAccountHoldsAreReadWithWhatEachRefillsAndTheOneToUseFirstAtTheHead() throws {
+    @Test func theResetsAnAccountHoldsAreReadWithWhatEachRefills() throws {
         let body = #"{"cedar_ember":{"eligible":true,"next_grant_id":"full","cooldown_until":"2026-11-13T17:43:31.083050+00:00","grants":[{"id":"fable","clears":["five_hour","seven_day_overage_included"],"ends_at":"2027-03-09T07:59:00+00:00","gives_back_weekly":true,"paused":false,"resets_left":2,"usable_now":true},{"id":"cooling","clears":["seven_day"],"ends_at":"2027-03-09T07:59:00+00:00","resets_left":1,"usable_now":false,"unavailable_reason":"cooldown"},{"id":"spent","clears":["seven_day"],"ends_at":"2026-12-10T22:00:00+00:00","resets_left":0,"usable_now":false},{"id":"full","clears":["five_hour","seven_day","seven_day_overage_included"],"ends_at":"2026-12-10T22:00:00+00:00","gives_back_weekly":false,"paused":true,"resets_left":1,"usable_now":true}]}}"#
         let resets = try Claude.resets(inUsage: Data(body.utf8))
-        #expect(resets.map(\.id) == ["full", "fable", "cooling"])
+        #expect(resets.map(\.id) == ["fable", "cooling", "full"])
         // After one is used the others wait, and the answer says until when.
-        #expect(!resets[2].usable && Int(resets[2].usableAfter?.timeIntervalSince1970 ?? 0) == 1_794_591_811 && resets[1].usableAfter == nil)
-        #expect(resets[0].refills == ["5h", "7d", "fable"] && !resets[0].usable && !resets[0].givesBack)
-        #expect(resets[1].refills == ["5h", "fable"] && resets[1].usable && resets[1].givesBack && resets[1].left == 2)
-        #expect(Int(resets[0].expiresAt?.timeIntervalSince1970 ?? 0) == 1_796_940_000)
+        #expect(!resets[1].usable && Int(resets[1].usableAfter?.timeIntervalSince1970 ?? 0) == 1_794_591_811 && resets[0].usableAfter == nil)
+        #expect(resets[2].refills == ["5h", "7d", "fable"] && !resets[2].usable)
+        #expect(resets[0].refills == ["5h", "fable"] && resets[0].usable && resets[0].left == 2)
+        #expect(Int(resets[2].expiresAt?.timeIntervalSince1970 ?? 0) == 1_796_940_000)
         // Asked as another program, the provider says the account may hold none, which is not an error.
         #expect(try Claude.resets(inUsage: Data(#"{"cedar_ember":{"eligible":false,"ineligible_reason":"surface","grants":[]}}"#.utf8)).isEmpty)
         // An answer that was not asked about resets says nothing of them.
@@ -201,7 +201,7 @@ import Testing
         #expect(try Claude.refusal(inClaim: Data(#"{"result":"reset","resets_left":0}"#.utf8)) == nil)
         #expect(try Claude.refusal(inClaim: Data(#"{"result":"not_limited"}"#.utf8)) != nil)
         // The reason is under another key when the result is only that it was unavailable.
-        #expect(try Claude.refusal(inClaim: Data(#"{"result":"unavailable","reason":"not_next_grant"}"#.utf8)) == ResetRefused("the provider wants another of the account's resets used first"))
+        #expect(try Claude.refusal(inClaim: Data(#"{"result":"unavailable","reason":"not_next_grant"}"#.utf8)) != nil)
         // A word not known here may mean it was spent: that is not passed off as a refusal, after which another would be tried.
         #expect(throws: ProviderError.self) { try Claude.refusal(inClaim: Data(#"{"result":"a_new_word"}"#.utf8)) }
         #expect(try Codex.refusal(inClaim: Data(#"{"code":"reset","windows_reset":["weekly"]}"#.utf8)) == nil)

@@ -645,7 +645,7 @@ private struct Pool: Identifiable {
 
 extension AccountStatus {
     var id: String { provider + ":" + label }
-    /// The window that resets last, read as how much of the account is left; an earlier one as its pace.
+    /// The window that resets last, read as how much of the account is left.
     var budget: SluiceCore.Window? { windows.last }
     var weight: Double { Double(plan?.multiple ?? 1) }
 }
@@ -733,7 +733,7 @@ private struct AccountRow: View {
     /// The resets it holds. Those that differ only in name are one, which uses the first of them.
     private var holds: [(reset: Reset, count: Int)] {
         account.resets.reduce(into: []) { lines, reset in
-            if let same = lines.firstIndex(where: { ($0.reset.refills, $0.reset.givesBack, $0.reset.expiresAt, $0.reset.usable) == (reset.refills, reset.givesBack, reset.expiresAt, reset.usable) }) {
+            if let same = lines.firstIndex(where: { ($0.reset.refills, $0.reset.expiresAt, $0.reset.usable) == (reset.refills, reset.expiresAt, reset.usable) }) {
                 lines[same].count += reset.left
             } else {
                 lines.append((reset, reset.left))
@@ -874,11 +874,8 @@ extension SluiceCore.Window {
 }
 
 extension Reset {
-    /// What it is called for the account that holds it: a full reset when it refills every limit the
-    /// account has, and otherwise by the limits it does refill.
-    func title(for account: AccountStatus) -> String { kind(for: account) + " reset" }
-
-    /// The same without saying that it is a reset, for where only resets are listed.
+    /// What it is called for the account that holds it: full when it refills every limit the account
+    /// has, and otherwise by the limits it does refill.
     func kind(for account: AccountStatus) -> String {
         let has = Set((account.windows + account.scoped).map(\.name))
         if !has.isEmpty, has.isSubset(of: refills) { return "Full" }

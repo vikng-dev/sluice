@@ -226,11 +226,9 @@ public struct Claude: Provider {
     /// The windows in a usage answer. One the account does not have, or has not started, has no reset.
     static func windows(inUsage body: Data) throws -> [Window] {
         guard let usage = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { throw ProviderError.invalidResponse }
-        let time = ISO8601DateFormatter()
-        time.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return [("five_hour", "5h"), ("seven_day", "7d")].compactMap { key, name in
             guard let window = usage[key] as? [String: Any], let used = window["utilization"] as? Double,
-                  let reset = (window["resets_at"] as? String).flatMap(time.date) else { return nil }
+                  let reset = (window["resets_at"] as? String).flatMap(Date.init(wire:)) else { return nil }
             return Window(name: name, used: used / 100, resetsAt: reset)
         }
     }
@@ -252,26 +250,21 @@ public struct Claude: Provider {
         return try Self.resets(inUsage: body)
     }
 
-    /// The resets in a usage answer that was asked for them, the one the provider wants used first at the head.
+    /// The resets in a usage answer that was asked for them.
     static func resets(inUsage body: Data) throws -> [Reset] {
         guard let held = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["cedar_ember"] as? [String: Any] else { throw ProviderError.invalidResponse }
         guard held["eligible"] as? Bool == true else { return [] }
-        let time = ISO8601DateFormatter()
         let names = ["five_hour": "5h", "seven_day": "7d", "seven_day_overage_included": "fable"]
-        let next = held["next_grant_id"] as? String
         // After a reset is used the account's others wait out a cooldown, which the answer times as a whole.
-        let precise = ISO8601DateFormatter()
-        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let cooldown = (held["cooldown_until"] as? String).flatMap(precise.date)
+        let cooldown = (held["cooldown_until"] as? String).flatMap(Date.init(wire:))
         return (held["grants"] as? [[String: Any]] ?? []).compactMap { grant -> Reset? in
             guard let id = grant["id"] as? String, let left = grant["resets_left"] as? Int, left > 0 else { return nil }
             return Reset(
-                id: id, refills: (grant["clears"] as? [String] ?? []).map { names[$0] ?? $0 }, givesBack: grant["gives_back_weekly"] as? Bool == true, left: left,
-                expiresAt: (grant["ends_at"] as? String).flatMap(time.date), usable: grant["usable_now"] as? Bool == true && grant["paused"] as? Bool != true,
+                id: id, refills: (grant["clears"] as? [String] ?? []).map { names[$0] ?? $0 }, left: left,
+                expiresAt: (grant["ends_at"] as? String).flatMap(Date.init(wire:)), usable: grant["usable_now"] as? Bool == true && grant["paused"] as? Bool != true,
                 usableAfter: grant["unavailable_reason"] as? String == "cooldown" ? cooldown : nil
             )
         }
-        .sorted { ($0.id == next ? 0 : 1) < ($1.id == next ? 0 : 1) }
     }
 
     public func use(_ reset: Reset, of account: Account, as client: String?) async throws {
@@ -300,12 +293,10 @@ public struct Claude: Provider {
     /// A model's own share of the week in a usage answer, named as the answer names the model.
     static func scoped(inUsage body: Data) -> [Window] {
         let limits = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["limits"] as? [[String: Any]] ?? []
-        let time = ISO8601DateFormatter()
-        time.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return limits.compactMap { limit in
             guard limit["kind"] as? String == "weekly_scoped", let used = limit["percent"] as? Double,
                   let model = ((limit["scope"] as? [String: Any])?["model"] as? [String: Any])?["display_name"] as? String,
-                  let reset = (limit["resets_at"] as? String).flatMap(time.date) else { return nil }
+                  let reset = (limit["resets_at"] as? String).flatMap(Date.init(wire:)) else { return nil }
             return Window(name: model.lowercased(), used: used / 100, resetsAt: reset)
         }
     }

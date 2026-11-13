@@ -150,7 +150,7 @@ func command(_ arguments: [String]) async {
         let config: Config
         if let mode { config = change { $0.useResets(mode == "auto") } } else { do { config = try Storage.live.config() } catch { fail("\(error)") } }
         if json { return printJSON(["resets": config.autoResets ? "auto" : "manual"]) }
-        print(config.autoResets ? "auto: a pool uses the resets it holds when it is out, or one is about to lapse." : "manual: a reset is used only when told to in the panel.")
+        print(config.autoResets ? "auto: a pool uses the resets it holds when it is out, or one is about to lapse." : "manual: a reset is used only when told to, in the panel or with: sluice account refill")
     case ("setup", nil):
         do {
             if arguments.contains("--undo") {

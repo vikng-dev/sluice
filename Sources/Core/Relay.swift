@@ -81,21 +81,25 @@ public final class Relay: Sendable {
         for account in await accounts.all {
             // An account is only ever stored under a provider that signed it in.
             let provider = providers[account.provider]!
-            let fresh: Account
-            do { fresh = try await accounts.fresh(account.id, using: provider) } catch { continue }
-            do {
-                try await accounts.record(provider.usage(of: fresh), for: account.id)
-            } catch ProviderError.signedOut {
-                await accounts.failed(account.id, "Signed out. Run: sluice login \(account.provider)")
-                continue
-            } catch {
-                log("\(account.provider) \(account.label) usage check failed: \(error)")
-            }
+            // What is not read now is not acted on: a reset is never used on what an account stood at before.
+            guard let fresh = try? await accounts.fresh(account.id, using: provider), await checkUsage(of: fresh, at: provider) else { continue }
             if await accounts.owesResets(account.id) { await checkResets(of: fresh, at: provider) }
-            if let reset = await accounts.due(account) {
-                do { try await use(reset, of: fresh, at: provider) } catch { await notTaken(reset, by: fresh, error) }
-            }
+            if let reset = await accounts.due(account) { try? await use(reset, of: fresh, at: provider) }
         }
+    }
+
+    /// Asks the provider for the account's usage. False when it was not told.
+    @discardableResult
+    private func checkUsage(of account: Account, at provider: any Provider) async -> Bool {
+        do {
+            try await accounts.record(provider.usage(of: account), for: account.id)
+            return true
+        } catch ProviderError.signedOut {
+            await accounts.failed(account.id, "Signed out. Run: sluice login \(account.provider)")
+        } catch {
+            log("\(account.provider) \(account.label) usage check failed: \(error)")
+        }
+        return false
     }
 
     /// Asks which resets an account holds. An answer that fails is logged and asked again in an hour;
@@ -110,48 +114,50 @@ public final class Relay: Sendable {
         }
     }
 
-    /// Spends a reset an account holds, then asks the provider how the account stands.
-    public func use(_ reset: Reset, provider id: String, account label: String) async throws {
-        guard let provider = providers[id], let held = await accounts.all.first(where: { $0.provider == id && $0.label == label }) else {
-            throw ResetRefused("there is no \(id) account \(label)")
+    /// Uses the reset `id` that a person picked on an account. `ResetRefused` says it was not used; any
+    /// other error leaves that unknown.
+    public func use(reset id: String, provider: String, account label: String) async throws {
+        guard let at = providers[provider], let (held, reset) = await accounts.reset(id, heldBy: label, at: provider) else {
+            throw ResetRefused("the \(provider) account \(label) holds no reset \(id)")
         }
-        try await use(reset, of: accounts.fresh(held.id, using: provider), at: provider)
+        let account: Account
+        do { account = try await accounts.fresh(held.id, using: at) } catch { throw ResetRefused("\(label) could not renew its sign-in: \(error)") }
+        try await use(reset, of: account, at: at)
     }
 
+    /// Spends a reset an account holds. Whatever the provider answers, it is then asked how the account
+    /// stands: its usage and the resets it holds.
     private func use(_ reset: Reset, of account: Account, at provider: any Provider) async throws {
-        try await provider.use(reset, of: account, as: accounts.client(of: provider.id))
-        log("\(provider.id) \(account.label) used reset \(reset.id)")
-        await checkStanding(of: account, at: provider)
-    }
-
-    /// Asks the provider how the account stands: its usage and the resets it holds.
-    private func checkStanding(of account: Account, at provider: any Provider) async {
-        do { try await accounts.record(provider.usage(of: account), for: account.id) } catch { log("\(provider.id) \(account.label) usage check failed: \(error)") }
+        var failure: (any Error)?
+        do { try await provider.use(reset, of: account, as: accounts.client(of: provider.id)) } catch { failure = error }
+        await checkUsage(of: account, at: provider)
         await checkResets(of: account, at: provider)
-    }
-
-    /// A reset Sluice went to use by itself was not taken: that one is left alone until the resets are next read.
-    private func notTaken(_ reset: Reset, by account: Account, _ error: any Error) async {
+        await accounts.usedReset(on: account.id, well: failure == nil || failure is ResetRefused)
+        guard let failure else { return log("\(provider.id) \(account.label) used reset \(reset.id)") }
         await accounts.notTaken(reset, by: account.id)
-        log("\(account.provider) \(account.label) reset \(reset.id) was not used: \(error)")
+        log("\(provider.id) \(account.label) reset \(reset.id) \(failure is ResetRefused ? "was not used" : "may have been used"): \(failure)")
+        throw failure
     }
 
     /// Every one of these accounts refused. The account to send the request to again: one that is back by
-    /// itself, or one a reset was just used on. What is known may be stale, so each is asked how it stands
-    /// before a reset is spent. A reset its provider refused in so many words was not spent, so the next
-    /// is tried; any other failure ends it, so that an answer misread costs one reset at most.
+    /// itself, or one a reset was just used on. What is known may be stale, so each is asked how it stands,
+    /// and only those that answer are considered. A reset its provider refused in so many words was not
+    /// spent, so the next is tried. A use whose outcome is not known, or that did not bring the account
+    /// back, ends it and stops resets being used on that account unasked.
     private func refill(_ pool: [Account], for model: String?, at provider: any Provider) async -> Account? {
+        var read: [Account] = []
         for account in pool {
-            if let fresh = try? await accounts.fresh(account.id, using: provider) { await checkStanding(of: fresh, at: provider) }
+            if let fresh = try? await accounts.fresh(account.id, using: provider), await checkUsage(of: fresh, at: provider) { read.append(fresh) }
         }
-        if let open = await accounts.open(among: pool, model: model) { return open }
-        while let (account, reset) = await accounts.refill(for: pool, model: model), let fresh = try? await accounts.fresh(account.id, using: provider) {
-            do {
-                try await use(reset, of: fresh, at: provider)
-                return fresh
-            } catch {
-                await notTaken(reset, by: fresh, error)
-                guard error is ResetRefused else { return nil }
+        while let back = await accounts.back(among: read, model: model) {
+            switch back {
+            case .open(let account): return account
+            case .reset(let account, let reset):
+                do { try await use(reset, of: account, at: provider) } catch is ResetRefused { continue } catch {}
+                if case .open = await accounts.back(among: [account], model: model) { return account }
+                await accounts.usedReset(on: account.id, well: false)
+                log("\(provider.id) \(account.label) is not back after reset \(reset.id): no more are used on it unasked")
+                return nil
             }
         }
         return nil
@@ -171,15 +177,12 @@ public final class Relay: Sendable {
             // By address an account is forgotten, or has a reset it holds used.
             if request.method == "POST", let id = Route.query("reset", in: request.target) {
                 do {
-                    guard let reset = try await status().first(where: { $0.provider == provider && $0.label == label })?.resets.first(where: { $0.id == id }) else {
-                        return try await writer.send(404, text: "sluice: the \(provider) account \(label) holds no reset \(id)")
-                    }
-                    try await use(reset, provider: provider, account: label)
+                    try await use(reset: id, provider: provider, account: label)
                     return try await writer.send(200, text: "used")
                 } catch let refusal as ResetRefused {
                     return try await writer.send(409, text: "sluice: the reset was not used: \(refusal)")
                 } catch {
-                    return try await writer.send(502, text: "sluice: the reset may not have been used: \(error)")
+                    return try await writer.send(502, text: "sluice: the reset may have been used: \(error)")
                 }
             }
             guard request.method == "DELETE" else { return try await writer.send(405, text: "sluice: an account is removed with DELETE, and a reset used with POST and ?reset=<id>") }
@@ -227,9 +230,9 @@ public final class Relay: Sendable {
                     }
                 }
             }
-            let candidates: [Account], profile: String, refillable: [Account]
+            let candidates: [Account], profile: String, pool: [Account]
             do {
-                (profile, candidates, refillable) = try await accounts.candidates(provider: id, pin: pin, folder: request.callerFolder, conversation: conversation?.id, model: model)
+                (profile, candidates, pool) = try await accounts.candidates(provider: id, pin: pin, folder: request.callerFolder, conversation: conversation?.id, model: model)
             } catch {
                 return try await writer.send(500, text: "sluice: \(error)")
             }
@@ -269,10 +272,10 @@ public final class Relay: Sendable {
                 let reading = provider.reading(status: response.statusCode, headers: Dictionary(headers.map { ($0.0.lowercased(), $0.1) }) { $1 })
                 await accounts.answered(account.id, reporting: reading.windows)
                 log("\(id) \(account.label) \(request.method) \(target.prefix { $0 != "?" }) \(response.statusCode)\(reading.refused ? " spent" : "")")
-                // The whole pool is out. Where the user said so, a reset it holds brings an account back and
-                // the request is sent to that one, once.
-                if reading.refused, isLast, !refilled, !refillable.isEmpty {
-                    let back = await refills.one(for: "\(profile)/\(id)/\(pin ?? "")", refusedAt: Date()) { [self] in await refill(refillable, for: model, at: provider) }
+                // The whole pool is out. An account that is back after all, or that a reset the pool holds
+                // brings back where the user said to use them, is sent the request, once.
+                if reading.refused, isLast, !refilled {
+                    let back = await refills.one(for: "\(profile)/\(id)/\(pin ?? "")", refusedBy: account.id) { [self] in await refill(pool, for: model, at: provider) }
                     if let back {
                         refilled = true
                         queue = [back]
@@ -281,7 +284,7 @@ public final class Relay: Sendable {
                 } else if reading.refused, !reading.windows.contains(where: { $0.used >= 1 }) {
                     // It refused over a limit its answers do not report, such as one model's own: it is asked
                     // how it stands, so that the next such request is not sent to it.
-                    Task { await checkStanding(of: account, at: provider) }
+                    Task { await checkUsage(of: account, at: provider) }
                 }
                 if reading.refused, !isLast { continue }
                 if let conversation, !reading.refused {
@@ -302,11 +305,11 @@ public final class Relay: Sendable {
         private var running: [String: Task<Account?, Never>] = [:]
         private var last: [String: (at: Date, back: Account?)] = [:]
 
-        /// The account that is back for the pool. For five minutes after a refill its answer stands: for a
-        /// request refused before it, and nothing for one refused since.
-        func one(for pool: String, refusedAt: Date, _ refill: @escaping @Sendable () async -> Account?) async -> Account? {
+        /// The account that is back for the pool. For five minutes a refill's answer stands, except for a
+        /// request refused by the very account it brought back: for that one the pool is asked again.
+        func one(for pool: String, refusedBy account: String, _ refill: @escaping @Sendable () async -> Account?) async -> Account? {
             if let task = running[pool] { return await task.value }
-            if let last = last[pool], Date().timeIntervalSince(last.at) < 300 { return last.at > refusedAt ? last.back : nil }
+            if let last = last[pool], Date().timeIntervalSince(last.at) < 300, last.back?.id != account { return last.back }
             let task = Task { await refill() }
             running[pool] = task
             let back = await task.value

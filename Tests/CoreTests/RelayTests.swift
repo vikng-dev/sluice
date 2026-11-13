@@ -16,17 +16,22 @@ private struct Fake: Provider {
     func count(_ event: Data, into spend: inout Spend) {}
     func route(_ on: Bool, profiles: [String]) {}
     func isRouted(profiles: [String]) -> Bool { false }
-    func usage(of account: Account) async throws -> Usage { Usage(plan: nil, windows: []) }
+    /// The week is whole again once the reset "r" has been used.
+    func usage(of account: Account) async throws -> Usage {
+        Usage(plan: nil, windows: await used?.accounts.contains("reset r") == true ? [Window(name: "week", used: 0, resetsAt: .distantFuture)] : [])
+    }
     func clientName(from agent: String) -> String? { agent.hasPrefix("own/") ? agent : nil }
     func resets(of account: Account, as client: String?) async throws -> [Reset]? {
         client.map { [Reset(id: $0, refills: ["7d"], expiresAt: nil, usable: true)] } ?? (spare.isEmpty ? nil : spare)
     }
-    /// The resets its accounts hold whoever asks, and where using one is noted.
+    /// The resets its accounts hold whoever asks, and where each try at using one is noted. "barred" is
+    /// refused in so many words, and "garbled" is answered in a way that does not say whether it was used.
     var spare: [Reset] = []
     var used: Hits?
     func use(_ reset: Reset, of account: Account, as client: String?) async throws {
-        if reset.id == "barred" { throw ResetRefused("barred") }
         await used?.add("reset \(reset.id)")
+        if reset.id == "barred" { throw ResetRefused("barred") }
+        if reset.id == "garbled" { throw ProviderError.invalidResponse }
     }
     func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL {
         signsInAs == nil ? upstream : URL(string: "\(redirectURI)?code=c&state=\(state)")!
@@ -100,25 +105,30 @@ private actor Hits {
         withExtendedLifetime((provider, server)) {}
     }
 
-    /// The first reset is refused in so many words, which costs nothing, so the second is used.
+    /// A reset refused in so many words costs nothing, so the next is used. One whose outcome is not known
+    /// may have been spent, so no other is tried.
     @Test func aPoolThatIsOutAnswersAfterOneOfItsResetsIsUsedOnlyWhenToldToUseThem() async throws {
         let account = Account(provider: "fake", subject: "a", organization: nil, label: "a", accessToken: "", refreshToken: "", expiresAt: .distantFuture)
         var asked = Config()
         asked.useResets(true)
-        for (config, port, expected) in [(asked, UInt16(47620), ["a", "reset r", "a"]), (Config(), 47622, ["a"])] {
+        for (config, port, held, expected) in [
+            (asked, UInt16(47620), ["barred", "r"], ["a", "reset barred", "reset r", "a"]), (Config(), 47622, ["barred", "r"], ["a"]),
+            (asked, 47624, ["garbled", "r"], ["a", "reset garbled"]),
+        ] {
             let hits = Hits()
             let provider = try Server(port: port) { request, writer in
                 await hits.add(request.header("X-Account") ?? "")
                 try await writer.send(await hits.accounts.contains("reset r") ? 200 : 429, text: "")
             }
             try await provider.start()
-            let fake = Fake(upstream: URL(string: "http://127.0.0.1:\(port)")!, spare: ["barred", "r"].map { Reset(id: $0, refills: ["week"], expiresAt: nil, usable: true) }, used: hits)
+            let fake = Fake(upstream: URL(string: "http://127.0.0.1:\(port)")!, spare: held.map { Reset(id: $0, refills: ["week"], expiresAt: nil, usable: true) }, used: hits)
             let relay = try Relay(providers: [fake], storage: Storage(loadAccounts: { [account] }, storeAccounts: { _ in }, config: { config }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in }), port: port + 1)
             let server = try Server(port: port + 1) { try await relay.handle($0, $1) }
             try await server.start()
+            await relay.checkUsage()
 
             let answer = try await HTTPCall.send("GET", URL(string: "http://127.0.0.1:\(port + 1)/fake/v1/thing")!)
-            #expect(answer.status == (expected.count > 1 ? 200 : 429))
+            #expect(answer.status == (expected.last == "a" && expected.count > 1 ? 200 : 429))
             #expect(await hits.accounts == expected)
             withExtendedLifetime((provider, server)) {}
         }

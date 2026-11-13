@@ -173,15 +173,17 @@ private let program = Bundle.main.executableURL!
     }
 
     func useReset(_ reset: Reset, of account: AccountStatus) {
-        guard let relay = sluice?.relay else { return }
+        guard let relay = sluice?.relay else { return refusal = "The reset was not used: the relay is not running" }
         Task {
             do {
-                try await relay.use(reset, provider: account.provider, account: account.label)
+                try await relay.use(reset: reset.id, provider: account.provider, account: account.label)
                 refusal = ""
-                accounts = try await relay.status()
+            } catch let refused as ResetRefused {
+                refusal = "The reset was not used: \(refused)"
             } catch {
-                refusal = "The reset was not used: \(error)"
+                refusal = "The reset may have been used: \(error)"
             }
+            if let told = try? await relay.status() { accounts = told }
         }
     }
 

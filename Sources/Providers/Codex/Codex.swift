@@ -199,12 +199,13 @@ public struct Codex: Provider {
     static func resets(inList list: Data, usage: Data) throws -> [Reset] {
         guard let credits = (try? JSONSerialization.jsonObject(with: list) as? [String: Any])?["credits"] as? [[String: Any]] else { throw ProviderError.invalidResponse }
         let counts = (try? JSONSerialization.jsonObject(with: usage) as? [String: Any])?["rate_limit_reset_credits"] as? [String: Any]
-        let usable = counts?["applicable_available_count"] as? Int ?? 0
-        let time = ISO8601DateFormatter()
-        time.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return credits.filter { $0["status"] as? String == "available" }.enumerated().compactMap { index, credit in
-            // The one kind of reset refills every window the plan has.
-            (credit["id"] as? String).map { Reset(id: $0, refills: ["5h", "7d"], expiresAt: (credit["expires_at"] as? String).flatMap(time.date), usable: index < usable) }
+        let held = credits.filter { $0["status"] as? String == "available" }
+        // With resets held and no word on how many would be taken, none can be said to be usable or not.
+        guard let usable = counts?["applicable_available_count"] as? Int ?? (held.isEmpty ? 0 : nil) else { throw ProviderError.invalidResponse }
+        return held.enumerated().compactMap { index, credit in
+            // The one kind of reset seen is a full one, taken to refill every window the plan has; the
+            // answer counts the usable ones and does not say which, so the first that many are taken for them.
+            (credit["id"] as? String).map { Reset(id: $0, refills: ["5h", "7d"], expiresAt: (credit["expires_at"] as? String).flatMap(Date.init(wire:)), usable: index < usable) }
         }
     }
 

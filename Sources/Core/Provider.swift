@@ -58,13 +58,11 @@ public protocol Provider: Sendable {
 }
 
 /// A reset an account holds: its provider's leave to have some of its limits whole again before their time.
-public struct Reset: Codable, Sendable, Equatable, Identifiable {
+public struct Reset: Codable, Sendable, Equatable {
     /// The provider's own name for it.
     public var id: String
     /// The limits it refills, by the names the account's windows and scoped limits go by.
     public var refills: [String]
-    /// Whether it also gives the week back what the refilled limits used of it.
-    public var givesBack: Bool
     /// How many times it can still be used.
     public var left: Int
     /// Nil for one that does not lapse.
@@ -74,10 +72,9 @@ public struct Reset: Codable, Sendable, Equatable, Identifiable {
     /// When the provider said it would take it again, for one it will not take now; nil when it named no time.
     public var usableAfter: Date?
 
-    public init(id: String, refills: [String], givesBack: Bool = false, left: Int = 1, expiresAt: Date?, usable: Bool, usableAfter: Date? = nil) {
+    public init(id: String, refills: [String], left: Int = 1, expiresAt: Date?, usable: Bool, usableAfter: Date? = nil) {
         self.id = id
         self.refills = refills
-        self.givesBack = givesBack
         self.left = left
         self.expiresAt = expiresAt
         self.usable = usable
@@ -165,6 +162,16 @@ public enum ProviderError: Error, CustomStringConvertible {
         case .invalidResponse: "the provider's answer could not be read"
         case .signedOut: "the account is no longer signed in"
         }
+    }
+}
+
+public extension Date {
+    /// A time as the providers write it: ISO 8601, with fractions of a second or without.
+    init?(wire text: String) {
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let time = precise.date(from: text) ?? ISO8601DateFormatter().date(from: text) else { return nil }
+        self = time
     }
 }
 

@@ -55,6 +55,17 @@ struct Standing {
     func limits(for model: String?) -> [Window] {
         windows + scoped.filter { model?.lowercased().contains($0.name) == true }
     }
+
+    /// Of those, the ones with nothing left: while there is one, the account refuses such a request.
+    func spent(for model: String?) -> [Window] { limits(for: model).filter { $0.used >= 1 } }
+}
+
+private extension Reset {
+    /// Its provider takes it now: only where it refills every limit the account has spent.
+    func taken(over spent: [Window]) -> Bool { usable && spent.allSatisfy { refills.contains($0.name) } }
+
+    /// It lapses before a spent limit comes back by itself, so it will never refill more than it does now.
+    func isLastChance(for spent: [Window]) -> Bool { expiresAt.map { lapses in spent.contains { lapses < $0.resetsAt } } ?? false }
 }
 
 /// Decides which account answers and which reset is used. An allowance and a reset are both lost at some
@@ -79,7 +90,7 @@ struct Router: Codable {
     /// used before then. Untouched accounts go last, so an idle window is not started early.
     /// With the whole pool spent, the account back soonest, so the client hears the provider's own refusal.
     func order(_ pool: [Standing], conversation: String?, model: String?, now: Date) -> [String] {
-        func back(_ standing: Standing) -> Date? { standing.limits(for: model).filter { $0.used >= 1 }.map(\.resetsAt).max() }
+        func back(_ standing: Standing) -> Date? { standing.spent(for: model).map(\.resetsAt).max() }
         func lostAt(_ standing: Standing) -> Date {
             let drawn = Set(standing.limits(for: model).map(\.name))
             let lapses = standing.resets.filter { drawn.isEmpty || !drawn.isDisjoint(with: $0.refills) }.compactMap(\.expiresAt)
@@ -100,14 +111,14 @@ struct Router: Codable {
     /// its last chance and goes first; otherwise the one that refills the fewest limits, so that a wider
     /// one is kept for when it is needed; then the soonest to lapse, on the account out longest.
     /// A reset that refills an allowance of days is not spent to skip a sitting's wait.
-    func refill(_ pool: [Standing], model: String?, now: Date) -> (account: String, reset: Reset)? {
+    func refill(_ pool: [Standing], model: String?) -> (account: String, reset: Reset)? {
         func paces(_ name: String) -> Bool { Window.length(named: name).map { $0 < Self.sitting } ?? false }
         let picks = pool.flatMap { standing -> [(account: String, reset: Reset, last: Bool, back: Date)] in
-            let spent = standing.limits(for: model).filter { $0.used >= 1 }
+            let spent = standing.spent(for: model)
             guard let back = spent.map(\.resetsAt).max() else { return [] }
             return standing.resets.compactMap { reset in
-                guard reset.usable, spent.allSatisfy({ reset.refills.contains($0.name) }) else { return nil }
-                let last = reset.expiresAt.map { $0 < back } ?? false
+                guard reset.taken(over: spent) else { return nil }
+                let last = reset.isLastChance(for: spent)
                 guard last || spent.contains(where: { !paces($0.name) }) || reset.refills.allSatisfy(paces) else { return nil }
                 return (standing.account, reset, last, back)
             }
@@ -124,12 +135,12 @@ struct Router: Codable {
     /// spent a limit the reset does not refill.
     func due(_ standing: Standing, now: Date) -> Reset? {
         let limits = standing.windows + standing.scoped, spent = limits.filter { $0.used >= 1 }
-        return standing.resets.filter { reset in
-            guard reset.usable, let lapses = reset.expiresAt, spent.allSatisfy({ reset.refills.contains($0.name) }) else { return false }
-            return spent.contains { lapses < $0.resetsAt }
-                || lapses.timeIntervalSince(now) <= Self.soon && limits.contains { $0.used > 0 && reset.refills.contains($0.name) }
+        return standing.resets.compactMap { reset -> (reset: Reset, lapses: Date)? in
+            guard reset.taken(over: spent), let lapses = reset.expiresAt else { return nil }
+            let soon = lapses.timeIntervalSince(now) <= Self.soon && limits.contains { $0.used > 0 && reset.refills.contains($0.name) }
+            return reset.isLastChance(for: spent) || soon ? (reset, lapses) : nil
         }
-        .min { ($0.expiresAt ?? .distantFuture) < ($1.expiresAt ?? .distantFuture) }
+        .min { $0.lapses < $1.lapses }?.reset
     }
 
     /// `account` answered `conversation`, whose prompt cache now lives there for `lifetime`.

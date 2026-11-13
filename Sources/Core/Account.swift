@@ -256,6 +256,9 @@ actor Accounts {
     /// The resets each account holds, and when that was last asked, since the relay started.
     private var resets: [String: [Reset]] = [:]
     private var resetsAsked: [String: Date] = [:]
+    /// The accounts no reset is used on unasked: one is being used there now, or one was and it is not
+    /// known to have gone well.
+    private var paused: Set<String> = []
 
     init(storage: Storage) throws {
         self.storage = storage
@@ -266,10 +269,10 @@ actor Accounts {
     func status() throws -> [AccountStatus] {
         let config = try storage.config(), now = Date()
         return accounts.map {
-            AccountStatus(
+            let live = live($0.id, now: now)
+            return AccountStatus(
                 provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), plan: plans[$0.id],
-                windows: (memory.usage[$0.id] ?? []).filter { $0.resetsAt > now }.sorted { $0.resetsAt < $1.resetsAt },
-                scoped: (scoped[$0.id] ?? []).filter { $0.resetsAt > now }, resets: held(by: $0.id, now: now),
+                windows: live.windows.sorted { $0.resetsAt < $1.resetsAt }, scoped: live.scoped, resets: live.resets,
                 warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: lastAnswered[$0.id], problem: problems[$0.id]
             )
         }
@@ -283,6 +286,7 @@ actor Accounts {
         accounts = next
         memory.usage[gone.id] = nil
         (plans[gone.id], problems[gone.id], lastAnswered[gone.id], scoped[gone.id], resets[gone.id], resetsAsked[gone.id]) = (nil, nil, nil, nil, nil, nil)
+        paused.remove(gone.id)
         remember()
         return true
     }
@@ -296,15 +300,14 @@ actor Accounts {
 
     /// The profile the caller's folder belongs to, and the accounts to try for a request for `model`, in
     /// order: its pool at the provider, or of that pool the one account a pin in the address names. With
-    /// them, the accounts a reset may be used on when all of those refuse: none, unless the user said to
-    /// use resets for them.
-    func candidates(provider: String, pin: String?, folder: String?, conversation: String?, model: String?) throws -> (profile: String, accounts: [Account], refillable: [Account]) {
+    /// them, all of the accounts the request could be answered by, for when those tried all refuse.
+    func candidates(provider: String, pin: String?, folder: String?, conversation: String?, model: String?) throws -> (profile: String, accounts: [Account], pool: [Account]) {
         let config = try storage.config(), now = Date()
         let profile = folder.map { config.profile(for: $0) } ?? Config.defaultProfile
         var pool = config.pool(accounts.filter { $0.provider == provider }, for: profile)
         if let pin { pool = pool.filter { $0.label == pin } }
         let order = pin == nil ? memory.router.order(pool.map { standing($0, now: now) }, conversation: conversation, model: model, now: now) : pool.map(\.id)
-        return (profile, order.compactMap { id in pool.first { $0.id == id } }, config.autoResets ? pool : [])
+        return (profile, order.compactMap { id in pool.first { $0.id == id } }, pool)
     }
 
     var all: [Account] { accounts }
@@ -353,32 +356,60 @@ actor Accounts {
         (resets[id] ?? []).filter { $0.left > 0 && $0.expiresAt.map { $0 > now } != false }
     }
 
+    /// What is live of what the account was last told to stand at.
+    private func live(_ id: String, now: Date) -> (windows: [Window], scoped: [Window], resets: [Reset]) {
+        ((memory.usage[id] ?? []).filter { $0.resetsAt > now }, (scoped[id] ?? []).filter { $0.resetsAt > now }, held(by: id, now: now))
+    }
+
     private func standing(_ account: Account, now: Date) -> Standing {
-        Standing(
-            account: account.id, windows: (memory.usage[account.id] ?? []).filter { $0.resetsAt > now },
-            scoped: (scoped[account.id] ?? []).filter { $0.resetsAt > now }, resets: held(by: account.id, now: now)
-        )
+        let live = live(account.id, now: now)
+        return Standing(account: account.id, windows: live.windows, scoped: live.scoped, resets: live.resets)
     }
 
-    /// Of these accounts, one that has spent no limit a request for `model` draws on.
-    func open(among pool: [Account], model: String?, now: Date = Date()) -> Account? {
-        pool.first { !standing($0, now: now).limits(for: model).contains { $0.used >= 1 } }
+    /// The reset `id` that the provider's account `label` holds.
+    func reset(_ id: String, heldBy label: String, at provider: String) -> (account: Account, reset: Reset)? {
+        guard let account = accounts.first(where: { $0.provider == provider && $0.label == label }),
+              let reset = held(by: account.id, now: Date()).first(where: { $0.id == id }) else { return nil }
+        return (account, reset)
     }
 
-    /// The reset to use now that every one of these accounts refused a request for `model`, and the account it is on.
-    func refill(for pool: [Account], model: String?, now: Date = Date()) -> (account: Account, reset: Reset)? {
-        guard let pick = memory.router.refill(pool.map { standing($0, now: now) }, model: model, now: now), let account = pool.first(where: { $0.id == pick.account }) else { return nil }
-        return (account, pick.reset)
+    /// How a pool whose accounts all refused a request for `model` answers it after all.
+    enum Back {
+        /// The account has spent no limit the request draws on.
+        case open(Account)
+        /// The reset brings the account back.
+        case reset(Account, Reset)
     }
 
-    /// A reset of the account's to use with no request waiting. None unless the user said to use resets
-    /// for them, and none while the config cannot be read.
+    /// For these accounts, as each now stands. A reset only where the user said to use resets for them,
+    /// and never while the config cannot be read; its account is paused until the use is over.
+    func back(among pool: [Account], model: String?, now: Date = Date()) -> Back? {
+        let standings = pool.map { standing($0, now: now) }
+        func account(_ id: String) -> Account? { pool.first { $0.id == id } }
+        if standings.contains(where: { $0.spent(for: model).isEmpty }) {
+            return memory.router.order(standings, conversation: nil, model: model, now: now).first.flatMap(account).map(Back.open)
+        }
+        guard usesResets, let pick = memory.router.refill(standings.filter { !paused.contains($0.account) }, model: model), let account = account(pick.account) else { return nil }
+        paused.insert(account.id)
+        return .reset(account, pick.reset)
+    }
+
+    /// A reset of the account's to use with no request waiting, on the same terms.
     func due(_ account: Account, now: Date = Date()) -> Reset? {
-        guard (try? storage.config())?.autoResets == true else { return nil }
-        return memory.router.due(standing(account, now: now), now: now)
+        guard usesResets, !paused.contains(account.id), let reset = memory.router.due(standing(account, now: now), now: now) else { return nil }
+        paused.insert(account.id)
+        return reset
     }
 
-    /// The provider would not take the reset. It is not offered again until the account's resets are next read.
+    private var usesResets: Bool { (try? storage.config())?.autoResets == true }
+
+    /// A reset's use on the account is over. Resets are used on it unasked again where that went well or
+    /// the provider refused in so many words; otherwise not until a person uses one there, or the relay restarts.
+    func usedReset(on id: String, well: Bool) {
+        if well { paused.remove(id) } else { paused.insert(id) }
+    }
+
+    /// The provider did not take the reset. It is not offered again until the account's resets are next read.
     func notTaken(_ reset: Reset, by id: String) {
         if let index = resets[id]?.firstIndex(where: { $0.id == reset.id }) { resets[id]?[index].usable = false }
     }

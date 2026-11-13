@@ -44,8 +44,8 @@ window not yet started has `resets_at: null`. `limits[]` has an entry per limit,
 percent, resets_at, is_active, severity, scope}`: `session`, `weekly_all`, and `weekly_scoped` for a
 model's own share of the week, whose `scope.model.display_name` names the model (`Fable` seen) and
 whose `percent` is of that share. `weekly_scoped_shares[]` says how large the share is
-(`allowance_percent_of_weekly: 50` seen). Sluice keeps the scoped limits in its history and does not
-route on them. `extra_usage` and `spend` are the paid overage, which Sluice does not read.
+(`allowance_percent_of_weekly: 50` seen). Sluice keeps the scoped limits in its history and
+routes on them: a request for a model draws on that model's share. `extra_usage` and `spend` are the paid overage, which Sluice does not read.
 
 **Limit resets (captured 2026-11-13).** The same address with `?cedar_ember=1&skip_spend=1` fills
 `cedar_ember`: `{eligible, ineligible_reason, at_limit, cooldown_until, exhausted, grants,
@@ -55,8 +55,8 @@ cli)`, every account answered `eligible: true` with its grants, each `{id, label
 resets_left, resets_total, starts_at, ends_at, usable_now, use_requires_limit, paused,
 gives_back_weekly, percent_used, blocking, unavailable_reason}`. `clears` names windows as
 `five_hour`, `seven_day` and `seven_day_overage_included`, the last being the Fable share of the
-week; `ends_at` is ISO 8601 without fractional seconds; a used-up grant stays listed with
-`resets_left: 0`; `next_grant_id` names the one to use first. Claude Code's own requests through
+week; `ends_at` is ISO 8601 without fractional seconds and the block's `cooldown_until` is with them; a
+used-up grant stays listed with `resets_left: 0`; `next_grant_id` names the one to use first. Claude Code's own requests through
 the relay carry `User-Agent: claude-cli/<version> (external, <entrypoint>)` (`sdk-cli` seen for
 `claude -p`), which is where Sluice takes the version from.
 
@@ -74,8 +74,10 @@ with the same headers and `{program: "cedar_ember", grant_id, request_id}` answe
   "cooldown"`, with `cooldown_until` at the top of the block.
 
 Not seen: `result` may also be `already_used` (it took), `not_limited`, `cooldown`, `ineligible`,
-or `unavailable` with a `reason` such as `not_next_grant`. A `result` not named here is taken for an
-error, not a refusal, so that automatic use stops instead of trying another.
+or `unavailable` with a `reason`, for which the program has the words `not_next_grant`, `paused`,
+`low_priority_active`, `no_grant` and `unknown_grant`; Sluice reads each of those as a refusal that
+spent nothing. A `result` not named here is taken for an error, not a refusal, so that automatic
+use stops instead of trying another.
 
 **Plan (captured 2026-11-13).** `GET https://api.anthropic.com/api/oauth/profile`, same headers.
 `organization.organization_type` is `claude_max` or `claude_team`; `organization.rate_limit_tier`
@@ -169,7 +171,10 @@ reset_type, granted_at, expires_at, is_supported_by_plan, redeemed_at}`: `status
 `expires_at` ISO 8601 with fractional seconds, `title` "Full reset". Using one is not captured;
 openai/codex (69231e1, `codex-rs/backend-client/src/client/rate_limit_resets.rs`) posts
 `{redeem_request_id, credit_id}` to `…/rate-limit-reset-credits/consume` and reads `code`: `reset`,
-`already_redeemed`, `nothing_to_reset` or `no_credit`. Confirm against the first real one.
+`already_redeemed`, `nothing_to_reset` or `no_credit`. Confirm against the first real one. Two
+things are assumed until then: that a full reset refills both windows, and that of the credits
+listed the first `applicable_available_count` are the usable ones, since the answer counts them
+without saying which.
 
 **A spent account.** Not captured. Sluice treats any `429` as a refusal and tries the next account.
 

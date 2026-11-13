@@ -127,14 +127,18 @@ Within a profile's pool:
   cache lives there (an hour for Claude Code, assumed half an hour for Codex). After that it is
   placed afresh.
 - **Keep going.** When an account refuses because an allowance is spent, the request is resent on
-  the next account before the client sees anything. A plain rate limit is passed through.
+  the next account before the client sees anything. When the last one refuses too, each is asked
+  how it stands now, and one that is back after all gets the request. A plain rate limit is passed
+  through.
 - **Resets, with the bolt on.** A reset is used when it gives the most back. When every account of
   the pool has refused a request, one that refills everything an account has spent is used and the
   request is answered by that account: the one that refills the fewest limits, so that a wider one
   is kept, unless a wider one lapses before those limits come back. A reset that refills a week is
   not spent to skip a five-hour wait. With no request waiting, a reset is used when its account has
   spent a limit and the reset lapses before that limit comes back, and in its last six hours on
-  whatever it refills that is used at all.
+  whatever it refills that is used at all. A reset is only used on an account that has just said
+  how it stands. Where a use's outcome is not known, or it did not bring the account back, no more
+  are used on that account by Sluice until you use one there yourself or Sluice restarts.
 
 Sluice signs in to each account itself and keeps the tokens in its own Keychain item. What it
 observed (windows, warm conversations) is kept in `~/Library/Application Support/Sluice`, so a
