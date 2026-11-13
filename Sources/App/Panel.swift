@@ -136,8 +136,7 @@ struct Panel: View {
                         ForEach(section.pools) { pool in
                             PoolView(
                                 pool: pool, now: now, carried: carried?.account.id, actions: actions,
-                                starred: config.profiles[section.name]?.starred.contains(pool.provider) == true, star: { star(section.name, pool.provider, $0) },
-                                autoResets: config.autoResets
+                                starred: config.profiles[section.name]?.starred.contains(pool.provider) == true, star: { star(section.name, pool.provider, $0) }
                             )
                         }
                     }
@@ -600,15 +599,8 @@ private struct PoolView: View {
     let actions: RowActions
     let starred: Bool
     let star: (Bool) -> Void
-    /// Sluice uses resets without being asked.
-    let autoResets: Bool
 
     @State private var hovered = false
-    /// The accounts whose rows are open.
-    @State private var opened: Set<String> = []
-
-    /// The accounts that hold a reset.
-    private var holders: Set<String> { Set(pool.accounts.filter { !$0.resets.isEmpty }.map(\.id)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -624,28 +616,12 @@ private struct PoolView: View {
                     .opacity(hovered ? 1 : 0)
                 Spacer()
                 Share(used: pool.accounts.used, worded: true)
-                if !holders.isEmpty {
-                    // A reset is its account's, so the count opens the rows that hold one, and closes them again.
-                    Button { if holders.isSubset(of: opened) { opened.subtract(holders) } else { opened.formUnion(holders) } } label: {
-                        // The two symbols are not the same size, and nothing may move when one becomes the other.
-                        Label { Text("\(pool.accounts.flatMap(\.resets).map(\.left).reduce(0, +))") } icon: {
-                            Image(systemName: autoResets ? "bolt.fill" : "arrow.counterclockwise").frame(width: 10, height: 10)
-                        }
-                        .labelStyle(Tight())
-                            .font(.caption2.weight(.semibold)).foregroundStyle(.green)
-                            .padding(.horizontal, 6).padding(.vertical, 2).background(Color.green.opacity(0.16), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Resets its accounts hold" + (autoResets ? ", used for you when the pool is out or one is about to lapse" : "") + ". Click for the accounts that hold them")
-                }
             }
             .contentShape(Rectangle())
             .onHover { hovered = $0 }
             VStack(alignment: .leading, spacing: 9) {
                 ForEach(pool.accounts, id: \.id) { account in
-                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, actions: actions, opened: opened.contains(account.id)) {
-                        opened.formSymmetricDifference([account.id])
-                    }
+                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, actions: actions)
                         .opacity(carried == account.id ? 0.3 : 1)
                         .framed("row:\(account.id)")
                 }
@@ -685,8 +661,7 @@ private struct AccountRow: View {
     private var serving: Bool { account.lastAnswered.map { now.timeIntervalSince($0) < 60 } ?? false }
 
     /// Open, the row lists every limit the account has and the resets it holds.
-    var opened = false
-    var toggle: () -> Void = {}
+    @State private var opened = false
 
     /// The resets it holds. Those that differ only in name are one, which uses the first of them.
     private var holds: [(reset: Reset, count: Int)] {
@@ -739,7 +714,7 @@ private struct AccountRow: View {
     private var opens: Bool { limits.count > 1 || !holds.isEmpty }
 
     private func open() {
-        if opens { toggle() }
+        if opens { opened.toggle() }
     }
 
     private var details: some View {
