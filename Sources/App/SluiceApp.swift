@@ -23,11 +23,37 @@ let keeperLabel = "dev.vikng.sluice.relay"
             do {
                 sluice = try await startSluice()
                 state = "Relaying"
+                // Only launchd starts a copy that left; one run by hand stays as it is.
+                if ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == keeperLabel { await follow() }
             } catch {
                 state = "Not relaying: \(error)"
                 Logger(subsystem: "dev.vikng.sluice", category: "app").error("not relaying: \(String(describing: error), privacy: .public)")
                 // Clients may be set to talk to Sluice, so a kept copy does not sit there deaf: launchd starts it again.
                 if ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == keeperLabel { exit(1) }
+            }
+        }
+    }
+
+    /// A kept copy follows its own program file. Replaced by an upgrade, it leaves and launchd starts the
+    /// new one. It does not wait for a quiet moment: under steady traffic none comes, the relay is back
+    /// within a second, and the clients resend what was cut. Removed by an uninstall, it quits as from the menu.
+    private func follow() async {
+        let log = Logger(subsystem: "dev.vikng.sluice", category: "app")
+        // The app's own executable always exists when it starts.
+        let program = Bundle.main.executableURL!.path
+        func found() -> UInt64? { ((try? FileManager.default.attributesOfItem(atPath: program))?[.systemFileNumber] as? NSNumber)?.uint64Value }
+        var watch = ProgramWatch(launched: found())
+        while true {
+            try? await Task.sleep(for: .seconds(5))
+            switch watch.verdict(found: found(), now: Date()) {
+            case .stay:
+                continue
+            case .restart:
+                log.notice("the app was replaced: restarting into it")
+                exit(0)
+            case .leave:
+                log.notice("the app is gone: quitting")
+                return quit()
             }
         }
     }

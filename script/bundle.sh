@@ -31,7 +31,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-# launchd keeps the app running (see Sources/App/main.swift).
+# launchd keeps the app running (see Sources/App/main.swift). An installed copy keeps the job it
+# registered: a change here reaches it only when the app is next registered, not on an upgrade.
 mkdir -p "$app/Contents/Library/LaunchAgents"
 cat > "$app/Contents/Library/LaunchAgents/dev.vikng.sluice.relay.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

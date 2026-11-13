@@ -118,3 +118,28 @@ import Testing
         #expect(!request([]).isLocalCaller)
     }
 }
+
+@Suite struct ProgramWatchTests {
+    let start = Date(timeIntervalSince1970: 0)
+
+    @Test func anUpgradeThatMovesTheFileOutThenInIsARestartNotAnUninstall() {
+        var watch = ProgramWatch(launched: 1)
+        #expect(watch.verdict(found: 1, now: start) == .stay)
+        #expect(watch.verdict(found: nil, now: start + 5) == .stay)
+        #expect(watch.verdict(found: 2, now: start + 10) == .restart)
+    }
+
+    @Test func aRolledBackUpgradePutsTheSameFileBackAndChangesNothing() {
+        var watch = ProgramWatch(launched: 1)
+        #expect(watch.verdict(found: nil, now: start) == .stay)
+        #expect(watch.verdict(found: 1, now: start + 5) == .stay)
+        // The earlier absence does not count toward a later one.
+        #expect(watch.verdict(found: nil, now: start + ProgramWatch.patience + 1) == .stay)
+    }
+
+    @Test func aFileGoneForTheWholePatienceIsAnUninstall() {
+        var watch = ProgramWatch(launched: 1)
+        #expect(watch.verdict(found: nil, now: start) == .stay)
+        #expect(watch.verdict(found: nil, now: start + ProgramWatch.patience) == .leave)
+    }
+}

@@ -1,5 +1,6 @@
 import Foundation
 import ServiceManagement
+import SluiceCore
 import SluiceProviders
 
 // One program, three roles by how it is run: under a client's name it is that client's stand-in;
@@ -9,9 +10,11 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 if let provider = providers.first(where: { $0.client == name }) {
     standIn(for: provider, arguments)
 } else if arguments.isEmpty, name != "sluice" {
-    // Clients are set to talk to Sluice, so launchd keeps it running. Opened by hand, the app
-    // (re)starts that kept copy and leaves. A development build has no bundle to register and runs as it is.
+    // Clients are set to talk to Sluice, so launchd keeps it running. Opened by hand, the app leaves
+    // a copy that is serving alone (it follows upgrades itself), and otherwise (re)starts the kept copy and leaves. A development build has no bundle
+    // to register and runs as it is.
     if ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] != keeperLabel, Bundle.main.bundleIdentifier != nil {
+        if (try? Data(contentsOf: URL(string: "http://localhost:\(Sluice.port)/status")!)) != nil { exit(0) }
         do {
             if keeper.status == .enabled { try keeper.unregister() }
             try keeper.register()

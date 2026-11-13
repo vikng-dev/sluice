@@ -15,7 +15,8 @@ brew install --cask vikng-dev/tap/sluice
 ```
 
 Open Sluice once. macOS keeps it running from then on: it starts with the Mac and comes back if it
-stops. The app is also the `sluice` command, which Homebrew puts on your PATH. Then press
+stops. An upgrade needs nothing more: the running copy sees that its app was replaced and starts again
+from the new one, within a second. The app is also the `sluice` command, which Homebrew puts on your PATH. Then press
 **Turn on** in the panel, or run:
 
 ```sh
@@ -107,7 +108,7 @@ the system log, with the account and the status and nothing of the request itsel
 log stream --info --predicate 'subsystem == "dev.vikng.sluice"'
 ```
 
-To remove Sluice: quit it from the menu, then `brew uninstall --zap sluice`. The signed-in accounts
+To remove Sluice: `brew uninstall --zap sluice`; a running copy sees its app gone and quits within a minute, as from the menu. The signed-in accounts
 stay in the Keychain item `dev.vikng.sluice` until you delete it.
 
 ## Layout
