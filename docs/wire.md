@@ -49,6 +49,12 @@ swapped requests read their own cache normally, so the id rewrite does not distu
 `5h-status`, `7d-status` or `7d_oi-status` (a per-model weekly window) reads `rejected` is a spent
 allowance; any other `429` is a rate limit. Confirm against the first real one.
 
+**Requests that are not Claude Code's (probed 2026-11-13).** A plain Messages request on a
+subscription token is not served from the plan: it is refused with a bare `429` (`rate_limit_error`,
+message `Error`, no rate-limit headers), and one carrying another app's tools is answered `400`,
+"Third-party apps now draw from your extra usage, not your plan limits." Sluice therefore relays
+Claude Code's own requests and does not translate other clients' requests for Claude.
+
 ## Codex CLI 0.160.0 (captured 2026-11-13)
 
 **Pointing it at a relay.** A custom model provider, not `chatgpt_base_url`:
@@ -84,3 +90,9 @@ and `x-codex-credits-has-credits` / `-balance`.
 
 **Cache.** How long a prefix stays cached is assumed to be 30 minutes, unverified. The `response.completed` event's `usage.input_tokens_details` has `cached_tokens` and
 `cache_write_tokens`. Unlike Claude, this arrives at the end of the stream.
+
+**Requests that are not the Codex CLI's (probed 2026-11-13).** The backend serves a plain client,
+with no Codex headers, when the body is in its dialect: `stream: true`, `store: false`,
+`instructions`, and `input` as a list of messages (a bare string is refused: "Input must be a
+list"). Another app's function tools are called normally. Fields outside the dialect are refused
+by name ("Unsupported parameter: temperature").
