@@ -592,12 +592,6 @@ private struct PoolView: View {
 
     @State private var hovered = false
 
-    /// When the pool next gets allowance back.
-    private var nextReset: SluiceCore.Window? {
-        pool.accounts.compactMap(\.budget).filter { $0.used > 0 }.min { $0.resetsAt < $1.resetsAt }
-    }
-
-
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -612,13 +606,6 @@ private struct PoolView: View {
                     .opacity(hovered ? 1 : 0)
                 Spacer()
                 Share(used: pool.accounts.used, worded: true)
-                if let nextReset {
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.clockwise").font(.caption2).foregroundStyle(.tertiary)
-                        Clock(window: nextReset, now: now)
-                    }
-                    .help("When the pool next gets allowance back")
-                }
             }
             .contentShape(Rectangle())
             .onHover { hovered = $0 }
