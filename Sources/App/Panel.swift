@@ -738,6 +738,11 @@ private struct AccountRow: View {
         .onHover { hovered = $0 }
     }
 
+    /// A click on who it is or on its bar opens the row, and closes it again.
+    private func open() {
+        if limits.count > 1 { opened.toggle() }
+    }
+
     private var details: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
@@ -760,6 +765,8 @@ private struct AccountRow: View {
                         .help(plan.name + (plan.price.map { ", $\($0) a month" } ?? ""))
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: open)
             if let problem = account.problem {
                 Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             } else if shown.isEmpty {
@@ -772,7 +779,7 @@ private struct AccountRow: View {
                             Bar(used: limit.used)
                         }
                         .contentShape(Rectangle())
-                        .onTapGesture { if limits.count > 1 { opened.toggle() } }
+                        .onTapGesture(perform: open)
                         .help(limits.count == 1 ? "" : opened ? "Click for the one that stops it next" : "Click for every limit it has")
                         Share(used: limit.used).frame(width: Self.share, alignment: .trailing)
                         Clock(window: limit, now: now).frame(width: Self.clock, alignment: .trailing)
