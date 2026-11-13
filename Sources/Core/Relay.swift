@@ -75,16 +75,23 @@ public final class Relay: Sendable {
         try await accounts.status()
     }
 
-    /// Asks each provider for each account's usage, once. An account that cannot sign in is marked;
-    /// a usage address that does not answer says nothing about the account, so that is only logged.
-    public func checkUsage() async {
-        for account in await accounts.all {
-            // An account is only ever stored under a provider that signed it in.
-            let provider = providers[account.provider]!
-            // What is not read now is not acted on: a reset is never used on what an account stood at before.
-            guard let fresh = try? await accounts.fresh(account.id, using: provider), await checkUsage(of: fresh, at: provider) else { continue }
-            if await accounts.owesResets(account.id) { await checkResets(of: fresh, at: provider) }
-            if let reset = await accounts.due(account) { try? await use(reset, of: fresh, at: provider) }
+    /// Asks the providers about every account at once: for its usage where that was last told longer ago
+    /// than `age`, and then for its resets where those were last asked for longer ago than `resetsAge`;
+    /// providers answer about resets grudgingly. An account that cannot sign in is marked; a usage
+    /// address that does not answer says nothing about the account, so that is only logged.
+    public func checkUsage(olderThan age: TimeInterval = 0, resetsOlderThan resetsAge: TimeInterval = 3600) async {
+        await withTaskGroup(of: Void.self) { group in
+            for account in await accounts.all {
+                group.addTask { [self] in
+                    // An account is only ever stored under a provider that signed it in.
+                    let provider = providers[account.provider]!
+                    // What is not read now is not acted on: a reset is never used on what an account stood at before.
+                    guard await accounts.owesUsage(account.id, after: age), let fresh = try? await accounts.fresh(account.id, using: provider),
+                          await checkUsage(of: fresh, at: provider) else { return }
+                    if await accounts.owesResets(account.id, after: resetsAge) { await checkResets(of: fresh, at: provider) }
+                    if let reset = await accounts.due(account) { try? await use(reset, of: fresh, at: provider) }
+                }
+            }
         }
     }
 
@@ -102,8 +109,8 @@ public final class Relay: Sendable {
         return false
     }
 
-    /// Asks which resets an account holds. An answer that fails is logged and asked again in an hour;
-    /// a provider that cannot be asked yet is asked at the next check.
+    /// Asks which resets an account holds. An answer that fails is logged and counts as asked; a
+    /// provider that cannot be asked yet is asked at the next check.
     private func checkResets(of account: Account, at provider: any Provider) async {
         do {
             guard let held = try await provider.resets(of: account, as: accounts.client(of: provider.id)) else { return }

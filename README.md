@@ -141,9 +141,9 @@ Within a profile's pool:
   are used on that account by Sluice until you use one there yourself or Sluice restarts.
 
 Sluice signs in to each account itself and keeps the tokens in its own Keychain item. What it
-observed (windows, warm conversations) is kept in `~/Library/Application Support/Sluice`, so a
+observed (each account's plan, limits and resets, and the warm conversations) is kept in `~/Library/Application Support/Sluice`, so a
 restart forgets nothing. Two histories are kept there too, a line at a time, as numbers and never as what was asked or answered: `readings.jsonl`, an account and how full its windows and any model's own share of the week were whenever that changed, and `requests.jsonl`, each answered request with its account, profile, folder, conversation, model, how long it took and the tokens it cost as the provider counted them. Usage over time is read from these. Each answer updates the account it came through, and every five minutes
-Sluice asks the providers about all of them, so an idle account's numbers are current too. It never spends paid extra usage. What it knows about each provider's wire format is in
+Sluice asks the providers about all of them, so an idle account's numbers are current too. Opening the panel asks again for usage told more than a minute ago and for resets asked for more than ten minutes ago. It never spends paid extra usage. What it knows about each provider's wire format is in
 [docs/wire.md](docs/wire.md).
 
 Only programs on this Mac are answered. A web page can reach a local port, so a request that names

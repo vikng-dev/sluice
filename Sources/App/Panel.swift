@@ -34,6 +34,8 @@ struct Panel: View {
     let history: History
     /// Reads the histories again, for the view of use.
     let loadHistory: () -> Void
+    /// The panel was opened: what it shows is asked for again where it has grown old.
+    let refresh: () -> Void
     let quit: () -> Void
 
     private var profiles: [String] { config.names }
@@ -198,7 +200,11 @@ struct Panel: View {
         .onTapGesture { armed = nil }
         .environment(\.armed, $armed)
         .task(id: showsUse) { if showsUse { loadHistory() } }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in if showsUse { loadHistory() } }
+        .task { refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            refresh()
+            if showsUse { loadHistory() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in armed = nil }
         .onPreferenceChange(Frames.self) { frames = $0 }
         .coordinateSpace(name: Frames.space)

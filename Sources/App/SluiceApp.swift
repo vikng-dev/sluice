@@ -24,6 +24,7 @@ private let program = Bundle.main.executableURL!
     var identities: [String: [Identity]] = [:]
     var history = History()
     private var sluice: (server: Server, relay: Relay)?
+    @ObservationIgnored private var refreshing = false
 
     init() {
         check()
@@ -161,6 +162,18 @@ private let program = Bundle.main.executableURL!
         change { try $0.color(profile, tint) }
     }
 
+    /// The panel was opened. The providers are asked again about usage told more than a minute ago and
+    /// resets asked for more than ten minutes ago, so that what is looked at is current.
+    func refresh() {
+        guard let relay = sluice?.relay, !refreshing else { return }
+        refreshing = true
+        Task {
+            await relay.checkUsage(olderThan: 60, resetsOlderThan: 600)
+            if let told = try? await relay.status() { accounts = told }
+            refreshing = false
+        }
+    }
+
     /// The histories are read off the main thread: a week of requests is many lines.
     func loadHistory() {
         Task {
@@ -237,7 +250,7 @@ struct SluiceApp: App {
                 routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, star: running.star, useReset: running.useReset, autoReset: running.autoReset,
                 addProfile: running.addProfile, removeProfile: running.removeProfile,
                 claimFolders: running.claimFolders, claimOwner: running.claimOwner, unclaim: { running.unclaim($1, from: $0) },
-                history: running.history, loadHistory: running.loadHistory, quit: running.quit
+                history: running.history, loadHistory: running.loadHistory, refresh: running.refresh, quit: running.quit
             )
         } label: {
             // The glyph says whether clients are routed; while they are, the starred pools take its place.

@@ -220,13 +220,18 @@ struct Memory: Codable {
     var router = Router()
     /// By provider: how its own client last named itself. Nil in a memory from before this was kept.
     var clients: [String: String]?
+    /// By account, as its provider last told: its plan, the limits on a part of its use, and the resets
+    /// it holds. Nil in a memory from before these were kept.
+    var plans: [String: Plan]?
+    var scoped: [String: [Window]]?
+    var resets: [String: [Reset]]?
 }
 
 public struct AccountStatus: Codable, Sendable {
     public var provider: String
     public var label: String
     public var profile: String
-    /// As its provider last told it, since the relay started.
+    /// As its provider last told it.
     public var plan: Plan?
     public var windows: [Window]
     /// The limits on a part of its use, such as one model's own share of the week.
@@ -248,17 +253,30 @@ actor Accounts {
     private var memory: Memory
     private var lastAnswered: [String: Date] = [:]
     private var problems: [String: String] = [:]
-    private var plans: [String: Plan] = [:]
+    /// When each account's usage was last told, since the relay started.
+    private var usageAsked: [String: Date] = [:]
     /// What each account's windows read when its last line of history was written.
     private var sampled: [String: [Window]] = [:]
-    /// The limits on a part of each account's use, as last told.
-    private var scoped: [String: [Window]] = [:]
-    /// The resets each account holds, and when that was last asked, since the relay started.
-    private var resets: [String: [Reset]] = [:]
+    /// When each account's resets were last asked for, since the relay started.
     private var resetsAsked: [String: Date] = [:]
     /// The accounts no reset is used on unasked: one is being used there now, or one was and it is not
     /// known to have gone well.
     private var paused: Set<String> = []
+
+    private var plans: [String: Plan] {
+        get { memory.plans ?? [:] }
+        set { memory.plans = newValue }
+    }
+
+    private var scoped: [String: [Window]] {
+        get { memory.scoped ?? [:] }
+        set { memory.scoped = newValue }
+    }
+
+    private var resets: [String: [Reset]] {
+        get { memory.resets ?? [:] }
+        set { memory.resets = newValue }
+    }
 
     init(storage: Storage) throws {
         self.storage = storage
@@ -285,7 +303,7 @@ actor Accounts {
         try storage.storeAccounts(next)
         accounts = next
         memory.usage[gone.id] = nil
-        (plans[gone.id], problems[gone.id], lastAnswered[gone.id], scoped[gone.id], resets[gone.id], resetsAsked[gone.id]) = (nil, nil, nil, nil, nil, nil)
+        (plans[gone.id], problems[gone.id], lastAnswered[gone.id], scoped[gone.id], resets[gone.id], resetsAsked[gone.id], usageAsked[gone.id]) = (nil, nil, nil, nil, nil, nil, nil)
         paused.remove(gone.id)
         remember()
         return true
@@ -321,7 +339,14 @@ actor Accounts {
     func record(_ usage: Usage, for id: String) {
         plans[id] = usage.plan
         scoped[id] = usage.scoped
+        usageAsked[id] = Date()
         record(usage.windows, for: id)
+        remember()
+    }
+
+    /// Whether the account's usage was last told longer ago than `age`.
+    func owesUsage(_ id: String, after age: TimeInterval, now: Date = Date()) -> Bool {
+        usageAsked[id].map { now.timeIntervalSince($0) >= age } ?? true
     }
 
     /// A provider's own client named itself on a request. True when that is news.
@@ -334,19 +359,20 @@ actor Accounts {
 
     func client(of provider: String) -> String? { memory.clients?[provider] }
 
-    /// Providers answer about resets grudgingly, so each account is asked once an hour, and when a reset
-    /// its provider would not take until some time has reached that time.
-    func owesResets(_ id: String, now: Date = Date()) -> Bool {
+    /// Whether the account's resets were last asked for longer ago than `age`, or a reset its provider
+    /// would not take until some time has reached that time.
+    func owesResets(_ id: String, after age: TimeInterval, now: Date = Date()) -> Bool {
         guard let asked = resetsAsked[id] else { return true }
-        return now.timeIntervalSince(asked) >= 3600 || (resets[id] ?? []).contains { !$0.usable && $0.usableAfter.map { $0 <= now } == true }
+        return now.timeIntervalSince(asked) >= age || (resets[id] ?? []).contains { !$0.usable && $0.usableAfter.map { $0 <= now } == true }
     }
 
     func record(resets held: [Reset], for id: String) {
         resets[id] = held
         resetsAsked[id] = Date()
+        remember()
     }
 
-    /// The account's resets were asked for and not told. What was known stands until the next hour.
+    /// The account's resets were asked for and not told. What was known stands until they are next due.
     func resetsNotTold(_ id: String) {
         resetsAsked[id] = Date()
     }
