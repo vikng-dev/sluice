@@ -627,7 +627,11 @@ private struct PoolView: View {
                 if !holders.isEmpty {
                     // A reset is its account's, so the count opens the rows that hold one, and closes them again.
                     Button { if holders.isSubset(of: opened) { opened.subtract(holders) } else { opened.formUnion(holders) } } label: {
-                        Label("\(pool.accounts.flatMap(\.resets).map(\.left).reduce(0, +))", systemImage: autoResets ? "bolt.fill" : "arrow.counterclockwise").labelStyle(Tight())
+                        // The two symbols are not the same size, and nothing may move when one becomes the other.
+                        Label { Text("\(pool.accounts.flatMap(\.resets).map(\.left).reduce(0, +))") } icon: {
+                            Image(systemName: autoResets ? "bolt.fill" : "arrow.counterclockwise").frame(width: 10, height: 10)
+                        }
+                        .labelStyle(Tight())
                             .font(.caption2.weight(.semibold)).foregroundStyle(.green)
                             .padding(.horizontal, 6).padding(.vertical, 2).background(Color.green.opacity(0.16), in: Capsule())
                     }
