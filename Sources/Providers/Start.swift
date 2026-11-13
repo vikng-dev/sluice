@@ -21,6 +21,11 @@ public func startSluice() async throws -> (server: Server, relay: Relay) {
 /// The clients that keep a folder per profile, which is what a stand-in chooses.
 private var standIns: [String] { providers.filter { $0.home(of: Config.defaultProfile) != nil }.map(\.client) }
 
+/// The account each client that keeps a folder per profile is signed in as in `profile`; nil where it is signed out.
+public func signIns(in profile: String) throws -> [(client: String, account: String?)] {
+    try providers.filter { $0.home(of: profile) != nil }.map { (client: $0.client, account: try $0.signedIn(in: profile)) }
+}
+
 /// Sets this machine up: every client talks to Sluice in every profile, and `program` (Sluice itself)
 /// stands in for the clients to open the right profile.
 public func setUp(program: URL) throws {

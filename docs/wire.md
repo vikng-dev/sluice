@@ -155,3 +155,6 @@ Projects, voice, `/usage`. Claude Code 2.1.323:
 - `claude auth login` with `CLAUDE_CODE_OAUTH_REFRESH_TOKEN` and `CLAUDE_CODE_OAUTH_SCOPES` signs in
   with no browser and stores the result; the refresh token is rotated by it.
 - `/usage` shows the sign-in's own windows, whatever account served.
+- Whom it is signed in as is recorded in its state file, `oauthAccount.emailAddress`; signed out, there is
+  no `oauthAccount`. The file is `~/.claude.json` for the usual folder and `<folder>/.claude.json` when
+  `CLAUDE_CONFIG_DIR` names another. Each write replaces the file whole, so a read never sees half of one.

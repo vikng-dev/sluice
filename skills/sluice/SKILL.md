@@ -17,8 +17,8 @@ at once, without a restart.
 ## Read
 
 ```sh
-sluice status --json         # every account: provider, label, profile, main, plan, windows, problem
-sluice profile list --json   # every profile: name, main, accounts, folders, owners
+sluice status --json         # every account: provider, label, profile, plan, windows, problem
+sluice profile list --json   # every profile: name, signedIn, accounts, folders, owners
 ```
 
 - A window's `used` runs from 0 to 1 and `resetsAt` is ISO 8601. An account with `used` at 1 in any
@@ -26,6 +26,9 @@ sluice profile list --json   # every profile: name, main, accounts, folders, own
 - `plan.multiple` is the plan's published usage relative to the provider's basic plan, `plan.price`
   its list price in dollars a month, `plan.business` whether it is a seat in an organization.
 - `problem` is set when an account cannot serve, and says why.
+- `signedIn` names, by client, the account that client is itself signed in as in the profile. What the
+  client does outside the relay (connectors, the browser, published pages) is that account's; the
+  profile's `accounts` only share their usage. A client that is signed out there is left out.
 - A field that does not apply is left out.
 
 ## Change
@@ -36,7 +39,6 @@ sluice profile claim <name> --folder <path>      # or --owner <owner>; both may 
 sluice profile unclaim <name> --folder <path>
 sluice profile remove <name>                     # its accounts go back to default
 sluice account move <account> <profile>
-sluice account main <account>
 sluice account remove <provider> <account>       # forgets the sign-in; signing in again needs a browser
 ```
 
@@ -45,6 +47,6 @@ An account is named by its label, the email in `sluice status`.
 ## Limits
 
 - Signing an account in (`sluice login [provider]`) opens a browser and needs the person.
-- Making an account a profile's main one does not sign Claude Code in as it; the person does that
-  with `/login` inside that profile.
+- Whom Claude Code is signed in as in a profile is not Sluice's to change; the person does that with
+  `/login` inside that profile.
 - Do not remove an account or a profile unless asked to: other sessions on this Mac are served by them.

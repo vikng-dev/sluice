@@ -97,10 +97,7 @@ struct UnreadableFile: Error, CustomStringConvertible {
 
 /// One separate setup: the accounts whose usage it pools, and the work that belongs to it.
 public struct Profile: Codable, Sendable, Equatable {
-    /// The account the provider's client is signed in as in this profile; it owns what the client does
-    /// outside the relay (connectors, the browser, published pages).
-    public internal(set) var main: String?
-    /// Further accounts, used for relayed requests only.
+    /// The accounts that serve its relayed requests.
     public internal(set) var accounts: [String] = []
     /// Folders (`~` allowed) whose work belongs to this profile.
     public internal(set) var folders: [String] = []
@@ -111,7 +108,6 @@ public struct Profile: Codable, Sendable, Equatable {
 
     public init(from decoder: any Decoder) throws {
         let keys = try decoder.container(keyedBy: CodingKeys.self)
-        main = try keys.decodeIfPresent(String.self, forKey: .main)
         accounts = try keys.decodeIfPresent([String].self, forKey: .accounts) ?? []
         folders = try keys.decodeIfPresent([String].self, forKey: .folders) ?? []
         owners = try keys.decodeIfPresent([String].self, forKey: .owners) ?? []
@@ -120,13 +116,12 @@ public struct Profile: Codable, Sendable, Equatable {
     /// Only what is set is written, as a person would write it.
     public func encode(to encoder: any Encoder) throws {
         var keys = encoder.container(keyedBy: CodingKeys.self)
-        try keys.encodeIfPresent(main, forKey: .main)
         if !accounts.isEmpty { try keys.encode(accounts, forKey: .accounts) }
         if !folders.isEmpty { try keys.encode(folders, forKey: .folders) }
         if !owners.isEmpty { try keys.encode(owners, forKey: .owners) }
     }
 
-    private enum CodingKeys: CodingKey { case main, accounts, folders, owners }
+    private enum CodingKeys: CodingKey { case accounts, folders, owners }
 }
 
 /// `config.json`, written by hand or by the `sluice` command: the profiles. Work no profile claims, and
@@ -159,10 +154,8 @@ public struct Config: Codable, Sendable, Equatable {
 
     /// The profile an account belongs to.
     public func profile(ofAccount label: String) -> String {
-        profiles.first { $0.value.main == label || $0.value.accounts.contains(label) }?.key ?? Self.defaultProfile
+        profiles.first { $0.value.accounts.contains(label) }?.key ?? Self.defaultProfile
     }
-
-    func isMain(_ label: String) -> Bool { profiles.values.contains { $0.main == label } }
 
     /// The accounts that may serve `profile`: its own and no other's. A provider the profile has no
     /// account at is served by the default profile's, so one sign-in there is enough for every profile.
@@ -186,8 +179,6 @@ public struct AccountStatus: Codable, Sendable {
     public var provider: String
     public var label: String
     public var profile: String
-    /// Whether it is its profile's main account.
-    public var main: Bool
     /// As its provider last told it, since the relay started.
     public var plan: Plan?
     public var windows: [Window]
@@ -218,7 +209,7 @@ actor Accounts {
         let config = try storage.config(), now = Date()
         return accounts.map {
             AccountStatus(
-                provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), main: config.isMain($0.label), plan: plans[$0.id],
+                provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), plan: plans[$0.id],
                 windows: (memory.usage[$0.id] ?? []).filter { $0.resetsAt > now }.sorted { $0.resetsAt < $1.resetsAt },
                 warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: lastAnswered[$0.id], problem: problems[$0.id]
             )

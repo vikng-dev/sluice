@@ -81,7 +81,7 @@ import Testing
     }
 
     @Test func aProfilesWorkNeverUsesAnotherProfilesAccounts() throws {
-        let config = try config(#"{"profiles":{"work":{"main":"w","accounts":["w2"]}}}"#)
+        let config = try config(#"{"profiles":{"work":{"accounts":["w","w2"]}}}"#)
         let all = ["w", "w2", "mine"].map { account($0) }
         #expect(config.pool(all, for: "work").map(\.label) == ["w", "w2"])
         // An account no profile lists is the default's.
@@ -89,7 +89,7 @@ import Testing
     }
 
     @Test func aProviderAProfileHasNoAccountAtIsServedByTheDefault() throws {
-        let config = try config(#"{"profiles":{"work":{"main":"w"}}}"#)
+        let config = try config(#"{"profiles":{"work":{"accounts":["w"]}}}"#)
         #expect(config.pool([account("mine", at: "other")], for: "work").map(\.label) == ["mine"])
     }
 
@@ -147,22 +147,15 @@ import Testing
 @Suite struct ManageTests {
     func config(_ json: String) throws -> Config { try JSONDecoder().decode(Config.self, from: Data(json.utf8)) }
 
-    @Test func aMovedAccountLeavesItsProfileAndTheFirstOneInBecomesMain() throws {
-        var config = try config(#"{"profiles":{"default":{"main":"d"},"a":{"main":"x","accounts":["y"]},"b":{}}}"#)
+    @Test func aMovedAccountLeavesItsProfileAndJoinsTheOther() throws {
+        var config = try config(#"{"profiles":{"a":{"accounts":["x","y"]},"b":{}}}"#)
         try config.move(account: "y", to: "b")
-        try config.move(account: "x", to: "b")
-        #expect(config.profiles["a"] == (try self.config(#"{"profiles":{"a":{}}}"#)).profiles["a"])
-        #expect(config.profiles["b"]?.main == "y" && config.profiles["b"]?.accounts == ["x"])
-        // The default profile's further accounts are listed nowhere.
-        try config.move(account: "x", to: "default")
-        #expect(config.profile(ofAccount: "x") == "default" && config.profiles["default"]?.accounts == [])
+        #expect(config.profiles["a"]?.accounts == ["x"] && config.profiles["b"]?.accounts == ["y"])
+        // The default profile's accounts are listed nowhere.
+        try config.move(account: "y", to: "default")
+        #expect(config.profile(ofAccount: "y") == "default" && config.profiles["b"]?.accounts == [])
         #expect(throws: ConfigError.self) { try config.move(account: "x", to: "nowhere") }
-    }
-
-    @Test func theMainAccountItReplacesStaysInTheProfile() throws {
-        var config = try config(#"{"profiles":{"a":{"main":"x","accounts":["y"]}}}"#)
-        config.makeMain("y")
-        #expect(config.profiles["a"]?.main == "y" && config.profile(ofAccount: "x") == "a")
+        #expect(config.profile(ofAccount: "x") == "a")
     }
 
     @Test func aFolderBelongsToOneProfileHoweverItIsWritten() throws {
@@ -176,7 +169,7 @@ import Testing
     }
 
     @Test func whatIsWrittenReadsBackTheSame() throws {
-        var config = try config(#"{"profiles":{"default":{"main":"d"},"a":{"main":"x","folders":["~/w"],"owners":["Acme"]}}}"#)
+        var config = try config(#"{"profiles":{"a":{"accounts":["x"],"folders":["~/w"],"owners":["Acme"]}}}"#)
         try config.add(profile: "b")
         #expect(try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(config)) == config)
         #expect(throws: ConfigError.self) { try config.add(profile: "b") }

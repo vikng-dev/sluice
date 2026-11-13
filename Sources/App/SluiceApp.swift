@@ -15,6 +15,7 @@ let keeperLabel = "dev.vikng.sluice.relay"
     var problem = handoverProblem
     var routed = false
     var accounts: [AccountStatus] = []
+    var signIns: [String: [(client: String, account: String?)]] = [:]
     private var sluice: (server: Server, relay: Relay)?
 
     init() {
@@ -62,7 +63,12 @@ let keeperLabel = "dev.vikng.sluice.relay"
     func watch() async {
         while !Task.isCancelled {
             if let relay = sluice?.relay {
-                do { accounts = try await relay.status() } catch { problem = "\(error)" }
+                do {
+                    accounts = try await relay.status()
+                    signIns = try Dictionary(uniqueKeysWithValues: Set(accounts.map(\.profile)).map { ($0, try SluiceProviders.signIns(in: $0)) })
+                } catch {
+                    problem = "\(error)"
+                }
             }
             try? await Task.sleep(for: .seconds(2))
         }
@@ -93,7 +99,7 @@ struct SluiceApp: App {
     var body: some Scene {
         MenuBarExtra {
             Panel(
-                state: running.state, problem: running.problem, accounts: running.accounts, now: Date(),
+                state: running.state, problem: running.problem, accounts: running.accounts, signIns: running.signIns, now: Date(),
                 routed: running.routed, route: running.route, quit: running.quit
             )
             .task { await running.watch() }

@@ -9,6 +9,10 @@ public protocol Provider: Sendable {
     var client: String { get }
     /// Where the client keeps a profile, and the variable that tells it so; nil when it keeps one folder for all.
     func home(of profile: String) -> (variable: String, folder: URL)?
+    /// The account the client is itself signed in as in a profile, as the client records it; nil when it is
+    /// signed out there. What the client does outside the relay is this account's, whichever account serves
+    /// its requests. Asked only of a client that keeps a folder per profile.
+    func signedIn(in profile: String) throws -> String?
     /// Makes the provider's client talk to `address` in each profile, or to the provider again,
     /// by editing the client's own settings.
     func route(_ on: Bool, profiles: [String]) throws

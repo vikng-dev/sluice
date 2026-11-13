@@ -110,6 +110,13 @@ import Testing
         #expect(Claude.plan(inProfile: Data(#"{"account":{}}"#.utf8)) == nil)
     }
 
+    @Test func claudeCodesOwnSignInIsReadFromItsStateAndASignedOutOneHasNone() throws {
+        #expect(try Claude.account(inState: Data(#"{"oauthAccount":{"emailAddress":"me@home.example"},"numStartups":3}"#.utf8), path: "") == "me@home.example")
+        #expect(try Claude.account(inState: Data(#"{"numStartups":3}"#.utf8), path: "") == nil)
+        // A file cut short is not taken for a signed-out client.
+        #expect(throws: UserFileError.self) { try Claude.account(inState: Data(#"{"oauthAccount":{"#.utf8), path: "") }
+    }
+
     @Test func codexWindowsAreNamedByTheirLength() throws {
         let body = #"{"plan_type":"prolite","rate_limit":{"primary_window":{"used_percent":3,"limit_window_seconds":604800,"reset_at":1795144120},"secondary_window":null}}"#
         let usage = try Codex.usage(in: Data(body.utf8))

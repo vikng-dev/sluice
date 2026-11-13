@@ -57,8 +57,7 @@ by that profile's accounts. They are changed with the `sluice` command, and a ch
 ```sh
 sluice profile add work
 sluice profile claim work --folder ~/work --owner acme
-sluice account move me@work.example work     # the first account in becomes the profile's main one
-sluice account main spare@work.example       # or choose another
+sluice account move me@work.example work
 sluice profile list
 ```
 
@@ -72,10 +71,8 @@ edited by hand too:
 ```json
 {
   "profiles": {
-    "default": { "main": "me@home.example" },
     "work": {
-      "main": "me@work.example",
-      "accounts": ["spare@work.example"],
+      "accounts": ["me@work.example", "spare@work.example"],
       "folders": ["~/work"],
       "owners": ["acme"]
     }
@@ -83,13 +80,18 @@ edited by hand too:
 }
 ```
 
-- **`main`** is the account Claude Code is signed in as in that profile. **`accounts`** are further
-  ones, used for relayed requests only. An account no profile lists belongs to `default`.
+- **`accounts`** are the ones whose usage the profile shares. An account no profile lists belongs to
+  `default`.
 - **`folders`** and **`owners`** say what work is the profile's: anything under a folder, the deepest
   claim winning; failing that, any git repository whose origin remote has that owner. Everything
   else is `default`'s.
 - `default` keeps Claude Code's usual folder, `~/.claude`; another profile keeps `~/.claude-<name>`.
 - A provider a profile has no account at is served by `default`'s accounts.
+
+Claude Code is itself signed in as one account in each profile, with `/login` there. That account owns
+what Claude Code does outside the relay: connectors, the browser, published pages. Sluice does not set
+it; it reads it from Claude Code and shows it beside the profile's name, in the panel and in
+`sluice profile list`. A profile's other accounts only share their usage.
 
 The relay finds the profile itself: it asks macOS which program sent a request and which folder that
 program runs in. So a client started some way that skips the stand-in still has its requests served

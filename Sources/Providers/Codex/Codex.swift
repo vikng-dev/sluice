@@ -24,6 +24,7 @@ public struct Codex: Provider {
 
     /// Codex needs no sign-in of its own and keeps nothing a profile must separate, so it has one folder.
     public func home(of profile: String) -> (variable: String, folder: URL)? { nil }
+    public func signedIn(in profile: String) throws -> String? { nil }
 
     public func route(_ on: Bool, profiles: [String]) throws {
         if !on, try settings.read() == nil { return }

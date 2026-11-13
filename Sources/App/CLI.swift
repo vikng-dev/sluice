@@ -47,10 +47,16 @@ private func printJSON(_ value: some Encodable) {
 /// A profile as `sluice profile list` reports it.
 private struct ProfileReport: Encodable {
     var name: String
-    var main: String?
+    /// By client: the account it is itself signed in as in the profile.
+    var signedIn: [String: String]
     var accounts: [String]
     var folders: [String]
     var owners: [String]
+}
+
+/// A client's own sign-in in a profile, in words.
+private func said(_ signIn: (client: String, account: String?)) -> String {
+    signIn.account.map { "\(signIn.client) signed in as \($0)" } ?? "\(signIn.client) not signed in"
 }
 
 /// Changes the profiles on disk. The relay reads them at each request, so a change holds at once.
@@ -79,7 +85,7 @@ sluice \(Sluice.version)
   sluice status [--json]                         each profile's accounts: plan, usage windows, warm conversations
   sluice login [provider]                        sign an account in through the browser (default: claude)
 
-  sluice profile list [--json]                   the profiles and what each claims
+  sluice profile list [--json]                   the profiles: who the client is signed in as, and what each claims
   sluice profile add <name>                      a new, empty profile
   sluice profile remove <name>                   its accounts go back to the default profile
   sluice profile claim <name> --folder <path>    work in that folder belongs to the profile
@@ -87,7 +93,6 @@ sluice \(Sluice.version)
   sluice profile unclaim <name> --folder <path> | --owner <owner>
 
   sluice account move <account> <profile>        the account serves that profile from now on
-  sluice account main <account>                  make it its profile's main account
   sluice account remove <provider> <account>     forget the sign-in
 
   sluice setup [--undo]                          make Claude Code and Codex talk to Sluice and open the right profile
@@ -123,11 +128,13 @@ func command(_ arguments: [String]) async {
         let rows = await accounts(at: address)
         if json { return printJSON(rows) }
         for (profile, rows) in Dictionary(grouping: rows, by: \.profile).sorted(by: { ($0.key == Config.defaultProfile ? "" : $0.key) < ($1.key == Config.defaultProfile ? "" : $1.key) }) {
-            print(profile)
+            let signedIn: [String]
+            do { signedIn = try signIns(in: profile).map(said) } catch { fail("\(error)") }
+            print(([profile] + signedIn).joined(separator: "  "))
             for row in rows {
                 let windows = row.windows.map { "\($0.name) \($0.percentText) → \($0.resetText)" }
                 let plan = row.plan.map { ($0.business ? "business " : "") + $0.tier }
-                print("  " + [row.provider, row.label + (row.main ? " (main)" : ""), plan, row.problem ?? (windows.isEmpty ? "no usage reported" : windows.joined(separator: ", ")), "\(row.warmConversations) warm"].compactMap { $0 }.joined(separator: "  "))
+                print("  " + [row.provider, row.label, plan, row.problem ?? (windows.isEmpty ? "no usage reported" : windows.joined(separator: ", ")), "\(row.warmConversations) warm"].compactMap { $0 }.joined(separator: "  "))
             }
         }
         if rows.isEmpty { print("No accounts. Run: sluice login") }
@@ -145,15 +152,20 @@ func command(_ arguments: [String]) async {
             fail("\(error)")
         }
     case ("profile", "list"):
-        let config: Config
-        do { config = try Storage.live.config() } catch { fail("\(error)") }
-        let reports = config.names.map { name in
-            let profile = config.profiles[name]
-            return ProfileReport(name: name, main: profile?.main, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? [])
+        let reports: [(report: ProfileReport, signIns: [(client: String, account: String?)])]
+        do {
+            let config = try Storage.live.config()
+            reports = try config.names.map { name in
+                let profile = config.profiles[name], signIns = try signIns(in: name)
+                let signedIn = Dictionary(uniqueKeysWithValues: signIns.compactMap { signIn in signIn.account.map { (signIn.client, $0) } })
+                return (ProfileReport(name: name, signedIn: signedIn, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? []), signIns)
+            }
+        } catch {
+            fail("\(error)")
         }
-        if json { return printJSON(reports) }
-        for report in reports {
-            print(report.name + (report.main.map { "  main \($0)" } ?? ""))
+        if json { return printJSON(reports.map(\.report)) }
+        for (report, signIns) in reports {
+            print(([report.name] + signIns.map(said)).joined(separator: "  "))
             for (title, items) in [("accounts", report.accounts), ("folders", report.folders), ("owners", report.owners)] where !items.isEmpty {
                 print("  \(title): \(items.joined(separator: ", "))")
             }
@@ -191,12 +203,6 @@ func command(_ arguments: [String]) async {
         guard known.contains(words[2]) else { fail("no account \(words[2]); there is: \(Set(known).sorted().joined(separator: ", "))") }
         _ = change { try $0.move(account: words[2], to: words[3]) }
         print("\(words[2]) now serves profile \(words[3]).")
-    case ("account", "main"):
-        guard words.count == 3 else { fail("usage: sluice account main <account>") }
-        let known = await accounts(at: address).map(\.label)
-        guard known.contains(words[2]) else { fail("no account \(words[2]); there is: \(Set(known).sorted().joined(separator: ", "))") }
-        let config = change { $0.makeMain(words[2]) }
-        print("\(words[2]) is now the main account of profile \(config.profile(ofAccount: words[2])). Sign the client in as it there: run claude in that profile and use /login.")
     case ("account", "remove"):
         guard words.count == 4 else { fail("usage: sluice account remove <provider> <account>") }
         do {

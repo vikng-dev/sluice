@@ -57,34 +57,17 @@ public extension Config {
         profiles[profile]?.owners.removeAll { $0.lowercased() == owner.lowercased() }
     }
 
-    /// The account leaves the profile it is in and joins `profile`, as its main account when it has none.
+    /// The account leaves the profile it is in and joins `profile`.
     mutating func move(account label: String, to profile: String) throws {
         try require(profile)
         forget(account: label)
-        if profiles[profile]?.main == nil {
-            profiles[profile, default: Profile()].main = label
-        } else if profile != Self.defaultProfile {
-            // The default profile's further accounts are the ones listed nowhere.
-            profiles[profile]?.accounts.append(label)
-        }
-    }
-
-    /// The account becomes its profile's main one; the one it replaces stays in the profile.
-    mutating func makeMain(_ label: String) {
-        let name = profile(ofAccount: label)
-        var profile = profiles[name] ?? Profile()
-        if let old = profile.main, old != label, name != Self.defaultProfile { profile.accounts.append(old) }
-        profile.accounts.removeAll { $0 == label }
-        profile.main = label
-        profiles[name] = profile
+        // The default profile's accounts are the ones listed nowhere.
+        if profile != Self.defaultProfile { profiles[profile, default: Profile()].accounts.append(label) }
     }
 
     /// No profile lists the account any more.
     mutating func forget(account label: String) {
-        for name in profiles.keys {
-            if profiles[name]?.main == label { profiles[name]?.main = nil }
-            profiles[name]?.accounts.removeAll { $0 == label }
-        }
+        for name in profiles.keys { profiles[name]?.accounts.removeAll { $0 == label } }
     }
 
     private func require(_ profile: String) throws {

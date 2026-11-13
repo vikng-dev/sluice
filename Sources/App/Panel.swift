@@ -6,6 +6,8 @@ struct Panel: View {
     let state: String
     let problem: String
     let accounts: [AccountStatus]
+    /// By profile: the account each client is itself signed in as there, nil where it is signed out.
+    let signIns: [String: [(client: String, account: String?)]]
     let now: Date
     /// Whether the clients are set up to talk to Sluice, and how to change that.
     let routed: Bool
@@ -14,7 +16,7 @@ struct Panel: View {
 
     private var profiles: [(name: String, accounts: [AccountStatus])] {
         Dictionary(grouping: accounts, by: \.profile)
-            .map { (name: $0.key, accounts: $0.value.sorted { ($0.provider, $1.main ? 1 : 0, $0.label) < ($1.provider, $0.main ? 1 : 0, $1.label) }) }
+            .map { (name: $0.key, accounts: $0.value.sorted { ($0.provider, $0.label) < ($1.provider, $1.label) }) }
             .sorted { ($0.name == Config.defaultProfile ? "" : $0.name) < ($1.name == Config.defaultProfile ? "" : $1.name) }
     }
 
@@ -38,7 +40,13 @@ struct Panel: View {
             if accounts.isEmpty { Text("No accounts yet. Run: sluice login").font(.callout).foregroundStyle(.secondary) }
             ForEach(profiles, id: \.name) { profile in
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(profile.name.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(profile.name.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
+                        Spacer()
+                        ForEach(signIns[profile.name] ?? [], id: \.client) {
+                            SignIn(client: $0.client, account: $0.account, pooled: profile.accounts.map(\.label))
+                        }
+                    }
                     ForEach(profile.accounts, id: \.id) { AccountRow(account: $0, now: now) }
                 }
             }
@@ -67,6 +75,27 @@ private extension AccountStatus {
     var id: String { provider + ":" + label }
 }
 
+/// Whom a client is itself signed in as in a profile, which is not a setting of Sluice's but the client's own.
+private struct SignIn: View {
+    let client: String
+    let account: String?
+    /// The accounts whose usage the profile shares.
+    let pooled: [String]
+
+    private static let owns = "What it does outside Sluice (connectors, the browser, published pages) is this account's. The accounts below only share their usage."
+
+    var body: some View {
+        if let account {
+            let shared = pooled.contains(account)
+            Text("signed in as \(account)").font(.caption2).foregroundStyle(shared ? .secondary : Color.orange).lineLimit(1).truncationMode(.middle)
+                .help("\(client) is signed in as \(account) in this profile. \(Self.owns)" + (shared ? "" : " Its own usage is not shared here: it is not one of this profile's accounts."))
+        } else {
+            Text("\(client) is not signed in").font(.caption2).foregroundStyle(.orange)
+                .help("Run \(client) in this profile and use /login. Connectors, the browser and published pages need its own sign-in.")
+        }
+    }
+}
+
 private struct AccountRow: View {
     let account: AccountStatus
     let now: Date
@@ -83,9 +112,7 @@ private struct AccountRow: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    // The main account is the first of its provider and the one in heavier type.
-                    Text(account.label).font(.callout.weight(account.main ? .semibold : .regular)).lineLimit(1).truncationMode(.middle)
-                        .help(account.main ? "Main account of this profile" : "")
+                    Text(account.label).font(.callout).lineLimit(1).truncationMode(.middle)
                     if serving { Circle().fill(.green).frame(width: 6, height: 6).help("Answering requests now") }
                     Spacer()
                     if providerMark(account.provider) == nil { Text(account.provider).font(.caption).foregroundStyle(.secondary) }
@@ -129,10 +156,9 @@ private struct Badge: View {
     let symbol: String?
 
     var body: some View {
-        HStack(spacing: 3) {
-            if let symbol { Image(systemName: symbol).imageScale(.small).foregroundStyle(.secondary) }
-            Text(text).lineLimit(1).fixedSize()
-        }
-        .font(.caption2).padding(.horizontal, 5).padding(.vertical, 1).background(.quaternary, in: Capsule())
+        // A symbol inside the text takes the text's size and sits on its baseline.
+        ((symbol.map { Text("\(Image(systemName: $0)) ").foregroundStyle(.secondary) } ?? Text("")) + Text(text))
+            .lineLimit(1).fixedSize()
+            .font(.caption2).padding(.horizontal, 5).padding(.vertical, 1).background(.quaternary, in: Capsule())
     }
 }

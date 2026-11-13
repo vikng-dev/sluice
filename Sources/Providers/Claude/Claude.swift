@@ -23,6 +23,21 @@ public struct Claude: Provider {
         ("CLAUDE_CONFIG_DIR", FileManager.default.homeDirectoryForCurrentUser.appending(path: profile == Config.defaultProfile ? ".claude" : ".claude-\(profile)"))
     }
 
+    public func signedIn(in profile: String) throws -> String? {
+        // Claude Code keeps its state beside its usual folder, and inside any other.
+        let folder = home(of: profile)!.folder
+        let state = UserFile((profile == Config.defaultProfile ? folder.deletingLastPathComponent() : folder).appending(path: ".claude.json"))
+        guard let data = try state.read() else { return nil }
+        return try Self.account(inState: data, path: state.path)
+    }
+
+    static func account(inState data: Data, path: String) throws -> String? {
+        guard let all = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw UserFileError(path: path, reason: "not the JSON object Claude Code's state should be")
+        }
+        return (all["oauthAccount"] as? [String: Any])?["emailAddress"] as? String
+    }
+
     private func settings(of profile: String) -> UserFile {
         UserFile(home(of: profile)!.folder.appending(path: "settings.json"))
     }
