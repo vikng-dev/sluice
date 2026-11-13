@@ -59,13 +59,20 @@ model_provider = "sluice"
 name = "sluice"
 base_url = "http://127.0.0.1:<port>/backend-api/codex"
 wire_api = "responses"
-requires_openai_auth = true
 ```
 
-It then sends `GET /backend-api/codex/models` and `POST /backend-api/codex/responses` as SSE over
-plain HTTP, with the ChatGPT login's `authorization` and `chatgpt-account-id` headers.
-`chatgpt_base_url` is the wrong lever: it refuses a non-HTTPS origin for turns, tries WebSockets
-first, and carries plugin, settings and analytics traffic as well.
+It then sends `POST /backend-api/codex/responses` as SSE over plain HTTP. `chatgpt_base_url` is the
+wrong lever: it refuses a non-HTTPS origin for turns, tries WebSockets first, and carries plugin,
+settings and analytics traffic as well.
+
+**It needs no login of its own.** With no login it sends the same headers and body keys, minus
+`authorization` and `chatgpt-account-id`; the relay adds both and the turn is served. With
+`requires_openai_auth = true` it sends its own two headers and also `GET …/models`.
+
+**Sign-in.** The Codex CLI's OAuth client (`app_EMoamEEZ73f0CkXaXp7hrann`) redirects only to
+`http://localhost:1455/auth/callback`. The token endpoint takes form posts; the access token is a
+JWT whose `exp` is its expiry and whose `https://api.openai.com/auth` claim holds
+`chatgpt_account_id`; the email is in the id token.
 
 **Conversation identity.** `session-id` and `thread-id` headers, and `prompt_cache_key` in the body.
 
@@ -73,5 +80,7 @@ first, and carries plugin, settings and analytics traffic as well.
 `x-codex-primary-reset-at` (Unix seconds), the same three for `secondary`, `x-codex-plan-type`,
 and `x-codex-credits-has-credits` / `-balance`.
 
-**Cache.** The `response.completed` event's `usage.input_tokens_details` has `cached_tokens` and
+**A spent account.** Not captured. Sluice treats any `429` as a refusal and tries the next account.
+
+**Cache.** How long a prefix stays cached is assumed to be 30 minutes, unverified. The `response.completed` event's `usage.input_tokens_details` has `cached_tokens` and
 `cache_write_tokens`. Unlike Claude, this arrives at the end of the stream.

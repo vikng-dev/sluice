@@ -3,14 +3,15 @@
 A macOS menu bar app that pools your AI coding subscriptions behind one local address.
 Claude Code and Codex talk to Sluice on localhost; Sluice decides which of your accounts answers.
 
-**Status: early.** Claude Code is relayed across a pool of accounts, from the terminal. Codex and
-the menu bar view are not built yet.
+**Status: early.** Claude Code and Codex are relayed across pools of accounts, from the terminal.
+The menu bar view is not built yet.
 
 ## Use it
 
 ```sh
 sluice serve                  # or open Sluice.app
-sluice login                  # sign an account in through the browser; repeat per account
+sluice login                  # sign a Claude account in through the browser; repeat per account
+sluice login codex            # the same for a ChatGPT account
 sluice status                 # accounts, their windows, and warm conversations
 ANTHROPIC_BASE_URL=http://localhost:7483/claude claude
 ```
@@ -18,16 +19,29 @@ ANTHROPIC_BASE_URL=http://localhost:7483/claude claude
 Claude Code stays signed in to any one subscription. Sluice replaces its credential and account id
 on the way out, with the tokens of the account it picked.
 
+Codex needs no login of its own. Point it at Sluice in `~/.codex/config.toml`:
+
+```toml
+model_provider = "sluice"
+
+[model_providers.sluice]
+name = "sluice"
+base_url = "http://localhost:7483/codex"
+wire_api = "responses"
+```
+
 ## How an account is picked
 
 - **Pool.** Every signed-in account is in the pool. A request goes to the unspent account whose
   longest window resets soonest; an account with no usage yet goes last, so an idle window is not
   started early.
 - **Stay warm.** A conversation stays on the account that last served it for as long as its prompt
-  cache lives there (an hour for Claude Code). After that it is placed afresh.
+  cache lives there (an hour for Claude Code, assumed half an hour for Codex). After that it is
+  placed afresh.
 - **Keep going.** When an account refuses because an allowance is spent, the request is resent on
   the next account before the client sees anything. A plain rate limit is passed through.
-- **Pin.** `http://localhost:7483/claude/pin/<email>` uses that one account and no other.
+- **Pin.** `http://localhost:7483/claude/pin/<email>` uses that one account and no other; the same
+  after `/codex`.
 - **Pin-only.** An account listed in `~/.config/sluice/config.json` is outside the pool and
   reachable only by pin. The file is read on every request:
 
@@ -35,8 +49,9 @@ on the way out, with the tokens of the account it picked.
   { "pinOnly": ["me@work.example"] }
   ```
 
-Sluice signs in to each account itself and keeps the tokens in its own Keychain item. It never
-spends paid extra usage. What it knows about each provider's wire format is in
+Sluice signs in to each account itself and keeps the tokens in its own Keychain item. What it
+observed (windows, warm conversations) is kept in `~/Library/Application Support/Sluice`, so a
+restart forgets nothing. It never spends paid extra usage. What it knows about each provider's wire format is in
 [docs/wire.md](docs/wire.md).
 
 ## Layout
