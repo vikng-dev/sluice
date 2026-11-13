@@ -21,7 +21,7 @@ struct Panel: View {
     let remove: (AccountStatus) -> Void
     let quit: () -> Void
 
-    /// A profile has a pool where it has accounts, and a profile with no pool is not shown.
+    /// Every profile, with a pool at each provider it has accounts at.
     private var sections: [(name: String, pools: [Pool])] {
         let providers = Set(accounts.map(\.provider)).sorted()
         return profiles.map { profile in
@@ -36,7 +36,6 @@ struct Panel: View {
                 )
             })
         }
-        .filter { !$0.pools.isEmpty }
     }
 
     var body: some View {
@@ -51,18 +50,11 @@ struct Panel: View {
                 .padding(8)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
-            if accounts.isEmpty, problem.isEmpty { Text("No accounts yet. Sign one in from the menu below.").font(.callout).foregroundStyle(.secondary) }
             ForEach(sections, id: \.name) { section in
                 VStack(alignment: .leading, spacing: 10) {
-                    // One profile needs no name.
-                    if sections.count > 1 {
-                        Text(section.name.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
-                    }
+                    ProfileCaption(name: section.name, empty: section.pools.isEmpty, titles: titles) { signIn($0, section.name) }
                     ForEach(section.pools) { pool in
-                        PoolView(
-                            pool: pool, now: now, others: profiles.filter { $0 != section.name },
-                            signIn: { signIn(pool.provider, section.name) }, move: move, remove: remove
-                        )
+                        PoolView(pool: pool, now: now, others: profiles.filter { $0 != section.name }, move: move, remove: remove)
                     }
                 }
             }
@@ -70,28 +62,52 @@ struct Panel: View {
             HStack {
                 Text("Sluice \(Sluice.version)").font(.caption).foregroundStyle(.tertiary)
                 Spacer()
-                Menu {
-                    // Every provider and profile, so a first account anywhere starts here.
-                    ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
-                        if profiles.count > 1 {
-                            Menu("Sign in to \(title)") { ForEach(profiles, id: \.self) { name in Button(name) { signIn(provider, name) } } }
-                        } else {
-                            Button("Sign in to \(title)") { signIn(provider, Config.defaultProfile) }
-                        }
+                if routed {
+                    Menu {
+                        Button("Stop routing") { route(false) }
+                    } label: {
+                        Image(systemName: "ellipsis")
                     }
-                    if routed {
-                        Divider()
-                        Button("Stop routing") { route(false) }.help("Clients started from now on talk to their own providers")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .help("Clients started from now on talk to their own providers")
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 Button("Quit", action: quit).controlSize(.small).help("The clients go back to their own providers")
             }
         }
         .padding(14)
         .frame(width: 340)
+    }
+}
+
+/// A profile's name, and on it the way to give the profile another account: the provider is picked there.
+/// What can be done to a thing shows when the pointer is on it; an empty profile shows it always.
+private struct ProfileCaption: View {
+    let name: String
+    let empty: Bool
+    let titles: [String: String]
+    let signIn: (_ provider: String) -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(name.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
+                Spacer()
+                Menu {
+                    ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
+                        Button("Sign in a \(title) account") { signIn(provider) }
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help("Add an account to this profile")
+                .opacity(hovered || empty ? 1 : 0)
+            }
+            if empty { Text("No accounts").font(.callout).foregroundStyle(.secondary) }
+        }
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
     }
 }
 
@@ -120,7 +136,6 @@ private struct PoolView: View {
     let now: Date
     /// The profiles an account here could move to.
     let others: [String]
-    let signIn: () -> Void
     let move: (AccountStatus, String) -> Void
     let remove: (AccountStatus) -> Void
 
@@ -141,20 +156,11 @@ private struct PoolView: View {
                 if let nextReset {
                     Text("next reset \(nextReset.resetText)").font(.caption).foregroundStyle(.secondary)
                 }
-                Button(action: signIn) { Image(systemName: "plus") }
-                    .buttonStyle(.borderless).font(.caption).help("Sign in another \(pool.title) account for this profile")
             }
             VStack(alignment: .leading, spacing: 6) {
                 PoolBar(accounts: pool.accounts)
                 ForEach(pool.accounts, id: \.id) { account in
-                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now)
-                        .contentShape(Rectangle())
-                        .contextMenu {
-                            if !others.isEmpty {
-                                Menu("Move to") { ForEach(others, id: \.self) { name in Button(name) { move(account, name) } } }
-                            }
-                            Button("Remove…", role: .destructive) { remove(account) }
-                        }
+                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, others: others, move: move, remove: remove)
                 }
                 if let identity = pool.identity, !pool.accounts.contains(where: { $0.label == identity }) {
                     Label("\(pool.client) is signed in as \(identity)", systemImage: "person.crop.circle")
@@ -196,6 +202,11 @@ private struct AccountRow: View {
     /// The client that is itself signed in as this account in the profile, if one is.
     let client: String?
     let now: Date
+    /// The profiles it could move to.
+    let others: [String]
+    let move: (AccountStatus, String) -> Void
+    let remove: (AccountStatus) -> Void
+    @State private var hovered = false
 
     /// It answered a request within the last minute.
     private var serving: Bool { account.lastAnswered.map { now.timeIntervalSince($0) < 60 } ?? false }
@@ -216,6 +227,16 @@ private struct AccountRow: View {
                         .help("\(client) itself is signed in as this account in this profile. What \(client) does outside Sluice is this account's; its requests are paid by the whole pool.")
                 }
                 if serving { Circle().fill(.green).frame(width: 6, height: 6).help("Answering requests now") }
+                Menu {
+                    if !others.isEmpty {
+                        Menu("Move to") { ForEach(others, id: \.self) { name in Button(name) { move(account, name) } } }
+                    }
+                    Button("Remove…", role: .destructive) { remove(account) }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .opacity(hovered ? 1 : 0)
                 Spacer(minLength: 4)
                 if let plan = account.plan { Badge(text: plan.tier, symbol: plan.business ? "briefcase.fill" : nil).help(plan.name + (plan.price.map { ", $\($0) a month" } ?? "")) }
                 if let budget = account.budget {
@@ -230,6 +251,8 @@ private struct AccountRow: View {
                 Text(note.text).font(.caption).foregroundStyle(note.color)
             }
         }
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
     }
 }
 
