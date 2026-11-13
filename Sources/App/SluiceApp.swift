@@ -18,8 +18,6 @@ private let program = Bundle.main.executableURL!
     var problem = handoverProblem
     /// Why the last change to the profiles was refused.
     var refusal = ""
-    /// The repository owners a profile could claim, looked up when the panel opens.
-    var owners: [String] = []
     var routed = false
     var accounts: [AccountStatus] = []
     var config = Config()
@@ -120,10 +118,6 @@ private let program = Bundle.main.executableURL!
         change { config in for folder in chooser.urls { try config.claim(folder: folder.path, for: profile) } }
     }
 
-    func lookUpOwners() {
-        owners = knownOwners()
-    }
-
     func claim(owner: String, for profile: String) {
         change { try $0.claim(owner: owner, for: profile) }
     }
@@ -179,11 +173,10 @@ struct SluiceApp: App {
         MenuBarExtra {
             Panel(
                 problem: running.problem.isEmpty ? running.refusal : running.problem, accounts: running.accounts, config: running.config, identities: running.identities, titles: titles, now: Date(),
-                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, owners: running.owners,
+                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, owners: knownOwners, search: githubOwners,
                 claimFolders: running.claimFolders, claimOwner: { running.claim(owner: $1, for: $0) }, unclaim: { running.unclaim($1, from: $0) }, quit: running.quit
             )
             .task { await running.watch() }
-            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in running.lookUpOwners() }
         } label: {
             Image(nsImage: gateGlyph(open: running.routed))
         }

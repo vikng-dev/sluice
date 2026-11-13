@@ -19,7 +19,9 @@ struct Panel: View {
     let rename: (_ profile: String, _ label: String) -> Void
     let tint: (_ profile: String, Tint?) -> Void
     /// The owners of the repositories the clients have worked in.
-    let owners: [String]
+    let owners: () -> [String]
+    /// The owners elsewhere whose name is like what was typed.
+    let search: (String) async -> [String]
     /// Asks which folders, and claims them.
     let claimFolders: (_ profile: String) -> Void
     let claimOwner: (_ profile: String, _ owner: String) -> Void
@@ -27,8 +29,8 @@ struct Panel: View {
     let quit: () -> Void
 
     private var profiles: [String] { config.names }
-    /// The known owners no profile claims yet.
-    private var unclaimed: [String] {
+    /// Of the owners offered, those no profile claims yet.
+    private func unclaimed(_ owners: [String]) -> [String] {
         let claimed = Set(config.profiles.values.flatMap(\.owners).map { $0.lowercased() })
         return owners.filter { !claimed.contains($0.lowercased()) }
     }
@@ -100,7 +102,8 @@ struct Panel: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ProfileCaption(
                         name: section.name, profile: config.profiles[section.name],
-                        takesTheRest: section.name == Config.defaultProfile && profiles.count > 1, empty: section.pools.isEmpty, titles: titles, owners: unclaimed,
+                        takesTheRest: section.name == Config.defaultProfile && profiles.count > 1, empty: section.pools.isEmpty, titles: titles,
+                        owners: { unclaimed(owners()) }, search: { unclaimed(await search($0)) },
                         signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) },
                         claimFolders: { claimFolders(section.name) }, claimOwner: { claimOwner(section.name, $0) }, unclaim: { unclaim(section.name, $0) }
                     )
@@ -208,8 +211,10 @@ private struct ProfileCaption: View {
     let takesTheRest: Bool
     let empty: Bool
     let titles: [String: String]
-    /// The owners offered for claiming; any other is typed.
-    let owners: [String]
+    /// The owners this Mac's repositories have, and those elsewhere like what was typed: what is
+    /// offered while an owner is typed.
+    let owners: () -> [String]
+    let search: (String) async -> [String]
     let signIn: (_ provider: String) -> Void
     let rename: (_ label: String) -> Void
     let setTint: (Tint?) -> Void
@@ -225,8 +230,16 @@ private struct ProfileCaption: View {
     @State private var typed: Typed?
     @State private var draft = ""
     @FocusState private var typing: Bool
+    @State private var known: [String] = []
+    @State private var found: [String] = []
 
     private enum Typed { case label, owner }
+
+    /// The owners offered for what is typed so far: this Mac's first.
+    private var offered: [String] {
+        let near = known.filter { draft.isEmpty || $0.localizedCaseInsensitiveContains(draft) }
+        return Array((near + found.filter { name in !near.contains { $0.lowercased() == name.lowercased() } }).prefix(6))
+    }
 
     private var claims: [Claim] { (profile?.folders ?? []).map(Claim.folder) + (profile?.owners ?? []).map(Claim.owner) }
 
@@ -259,13 +272,25 @@ private struct ProfileCaption: View {
         typed = nil
     }
 
+    /// Typing that is walked away from: a label is kept, as it is one the profile already has; an owner
+    /// half typed is not claimed.
+    private func leave() {
+        if typed == .label { keep() } else { typed = nil }
+    }
+
     private func field(_ placeholder: String) -> some View {
         TextField(placeholder, text: $draft)
             .textFieldStyle(.plain).focused($typing)
             .onAppear { typing = true }
             .onSubmit(keep)
             .onExitCommand { typed = nil }
-            .onChange(of: typing) { _, typing in if !typing { keep() } }
+            .onChange(of: typing) { _, typing in if !typing { leave() } }
+    }
+
+    private func typeAnOwner() {
+        known = owners()
+        found = []
+        type(.owner, from: "")
     }
 
     var body: some View {
@@ -325,30 +350,45 @@ private struct ProfileCaption: View {
                             field("owner").frame(width: 110)
                         }
                         .chip()
-                    }
-                    Menu {
-                        Button(action: claimFolders) { Label("Folders…", systemImage: "folder") }
-                        Divider()
-                        ForEach(owners, id: \.self) { owner in
-                            Button { claimOwner(owner) } label: { Label { Text(owner) } icon: { githubMark().map(Image.init(nsImage:)) } }
+                        // Asked once the typing has paused, so that a name is one search and not one a letter.
+                        .task(id: draft) {
+                            guard draft.count > 1, (try? await Task.sleep(for: .milliseconds(350))) != nil else { return }
+                            let found = await search(draft)
+                            if !Task.isCancelled { self.found = found }
                         }
-                        Button { type(.owner, from: "") } label: {
-                            Label { Text(owners.isEmpty ? "A repository owner…" : "Another owner…") } icon: { githubMark().map(Image.init(nsImage:)) }
+                        ForEach(offered, id: \.self) { owner in
+                            Button {
+                                claimOwner(owner)
+                                typed = nil
+                            } label: {
+                                Text(owner).lineLimit(1).padding(.horizontal, 6).padding(.vertical, 3)
+                                    .overlay { Capsule().strokeBorder(Color.primary.opacity(0.2), style: StrokeStyle(lineWidth: 1, dash: [3, 2])) }
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain).foregroundStyle(.secondary).help("Claim \(owner)'s repositories for this profile")
                         }
-                    } label: {
-                        Image(systemName: "plus").font(.caption2)
+                    } else {
+                        // A chip as tall as the claims', with the menu on it.
+                        Text("+").hidden().padding(.horizontal, 5).chip().overlay {
+                            Menu {
+                                Button(action: claimFolders) { Label("Folders…", systemImage: "folder") }
+                                Button(action: typeAnOwner) { Label { Text("A repository owner…") } icon: { githubMark().map(Image.init(nsImage:)) } }
+                            } label: {
+                                Image(systemName: "plus").font(.caption)
+                            }
+                            .bare().font(.body)
+                        }
+                        .help("Add work that belongs to this profile")
                     }
-                    .bare().controlSize(.mini).chip()
-                    .help("Add work that belongs to this profile")
                 }
-                .font(.caption2).foregroundStyle(.tertiary)
+                .font(.caption2)
             }
         }
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
         // The panel closes when it stops being the key window, and is the same view when it opens again.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
-            keep()
+            leave()
             picking = false
             open = false
         }
@@ -389,7 +429,7 @@ private struct ClaimChip: View {
 
 private extension View {
     func chip() -> some View {
-        padding(.horizontal, 6).padding(.vertical, 2).background(Color.primary.opacity(0.06), in: Capsule())
+        padding(.horizontal, 6).padding(.vertical, 3).background(Color.primary.opacity(0.06), in: Capsule())
     }
 }
 

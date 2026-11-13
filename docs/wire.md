@@ -166,3 +166,10 @@ Projects, voice, `/usage`. Claude Code 2.1.323:
   `CLAUDE_CONFIG_DIR` names another. Each write replaces the file whole, so a read never sees half of one.
 - The folders it has worked in are the keys of `projects` in the same file, each an absolute path
   (checked 2026-11-13).
+
+## GitHub's account search (checked 2026-11-13)
+
+`GET https://api.github.com/search/users?q=<text>+in:login&per_page=<n>` with
+`Accept: application/vnd.github+json` and no sign-in answers 200 with `items[].login`, users and
+organizations alike. Asked as nobody it allows ten searches a minute (`x-ratelimit-limit: 10`,
+`x-ratelimit-resource: search`).
