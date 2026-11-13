@@ -15,6 +15,10 @@ struct Panel: View {
     /// Whether the clients are set up to talk to Sluice, and how to change that.
     let routed: Bool
     let route: (Bool) -> Void
+    /// Signs another account in at a provider, for a profile.
+    let signIn: (_ provider: String, _ profile: String) -> Void
+    let move: (AccountStatus, _ profile: String) -> Void
+    let remove: (AccountStatus) -> Void
     let quit: () -> Void
 
     /// A profile has a pool where it has accounts, and a profile with no pool is not shown.
@@ -47,29 +51,42 @@ struct Panel: View {
                 .padding(8)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
-            if accounts.isEmpty, problem.isEmpty { Text("No accounts yet. Run: sluice login").font(.callout).foregroundStyle(.secondary) }
+            if accounts.isEmpty, problem.isEmpty { Text("No accounts yet. Sign one in from the menu below.").font(.callout).foregroundStyle(.secondary) }
             ForEach(sections, id: \.name) { section in
                 VStack(alignment: .leading, spacing: 10) {
                     // One profile needs no name.
                     if sections.count > 1 {
                         Text(section.name.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
                     }
-                    ForEach(section.pools) { PoolView(pool: $0, now: now) }
+                    ForEach(section.pools) { pool in
+                        PoolView(
+                            pool: pool, now: now, others: profiles.filter { $0 != section.name },
+                            signIn: { signIn(pool.provider, section.name) }, move: move, remove: remove
+                        )
+                    }
                 }
             }
             Divider()
             HStack {
                 Text("Sluice \(Sluice.version)").font(.caption).foregroundStyle(.tertiary)
                 Spacer()
-                if routed {
-                    Menu {
-                        Button("Stop routing") { route(false) }
-                    } label: {
-                        Image(systemName: "ellipsis")
+                Menu {
+                    // Every provider and profile, so a first account anywhere starts here.
+                    ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
+                        if profiles.count > 1 {
+                            Menu("Sign in to \(title)") { ForEach(profiles, id: \.self) { name in Button(name) { signIn(provider, name) } } }
+                        } else {
+                            Button("Sign in to \(title)") { signIn(provider, Config.defaultProfile) }
+                        }
                     }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                    .help("Clients started from now on talk to their own providers")
+                    if routed {
+                        Divider()
+                        Button("Stop routing") { route(false) }.help("Clients started from now on talk to their own providers")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
                 }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 Button("Quit", action: quit).controlSize(.small).help("The clients go back to their own providers")
             }
         }
@@ -101,6 +118,11 @@ private extension AccountStatus {
 private struct PoolView: View {
     let pool: Pool
     let now: Date
+    /// The profiles an account here could move to.
+    let others: [String]
+    let signIn: () -> Void
+    let move: (AccountStatus, String) -> Void
+    let remove: (AccountStatus) -> Void
 
     /// When the pool next gets allowance back.
     private var nextReset: SluiceCore.Window? {
@@ -119,10 +141,21 @@ private struct PoolView: View {
                 if let nextReset {
                     Text("next reset \(nextReset.resetText)").font(.caption).foregroundStyle(.secondary)
                 }
+                Button(action: signIn) { Image(systemName: "plus") }
+                    .buttonStyle(.borderless).font(.caption).help("Sign in another \(pool.title) account for this profile")
             }
             VStack(alignment: .leading, spacing: 6) {
                 PoolBar(accounts: pool.accounts)
-                ForEach(pool.accounts, id: \.id) { AccountRow(account: $0, client: pool.identity == $0.label ? pool.client : nil, now: now) }
+                ForEach(pool.accounts, id: \.id) { account in
+                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now)
+                        .contentShape(Rectangle())
+                        .contextMenu {
+                            if !others.isEmpty {
+                                Menu("Move to") { ForEach(others, id: \.self) { name in Button(name) { move(account, name) } } }
+                            }
+                            Button("Remove…", role: .destructive) { remove(account) }
+                        }
+                }
                 if let identity = pool.identity, !pool.accounts.contains(where: { $0.label == identity }) {
                     Label("\(pool.client) is signed in as \(identity)", systemImage: "person.crop.circle")
                         .font(.caption).foregroundStyle(pool.identityIsAnothers ? Color.orange : .secondary).lineLimit(1).truncationMode(.middle)

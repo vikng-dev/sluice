@@ -26,6 +26,30 @@ public func signIns(in profile: String) throws -> [(provider: String, client: St
     try providers.filter { $0.home(of: profile) != nil }.map { (provider: $0.id, client: $0.client, account: try $0.signedIn(in: profile)) }
 }
 
+/// What a command could not do, in words that say what to do instead.
+public struct CommandError: Error, CustomStringConvertible {
+    public let description: String
+}
+
+/// Forgets a sign-in: the running relay drops it, and the profiles stop listing a name no account has any more.
+public func forget(provider: String, account label: String) async throws {
+    let address = "http://localhost:\(Sluice.port)"
+    // The account's name is one segment of the address, whatever characters it has.
+    guard let segment = label.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { throw CommandError(description: "unreadable account name") }
+    let remaining: [AccountStatus]
+    do {
+        let (status, body) = try await HTTPCall.send("DELETE", URL(string: "\(address)/accounts/\(provider)/\(segment)")!)
+        guard status == 200 else { throw CommandError(description: String(decoding: body, as: UTF8.self).replacing("sluice: ", with: "")) }
+        remaining = try JSONDecoder().decode([AccountStatus].self, from: try await HTTPCall.send("GET", URL(string: "\(address)/status")!).body)
+    } catch let error as CommandError {
+        throw error
+    } catch {
+        throw CommandError(description: "not running (\(error.localizedDescription)). Start the app or run: sluice serve")
+    }
+    // The same name may still be signed in at another provider, and then the profiles keep it.
+    if !remaining.contains(where: { $0.label == label }) { try Storage.live.change { $0.forget(account: label) } }
+}
+
 /// Sets this machine up: every client talks to Sluice in every profile, and `program` (Sluice itself)
 /// stands in for the clients to open the right profile.
 public func setUp(program: URL) throws {

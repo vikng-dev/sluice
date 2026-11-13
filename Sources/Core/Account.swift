@@ -246,6 +246,13 @@ actor Accounts {
 
     var all: [Account] { accounts }
 
+    func profiles() throws -> [String] { try storage.config().names }
+
+    /// The account joins `profile`, leaving the one it was in.
+    func move(_ label: String, to profile: String) throws {
+        try storage.change { try $0.move(account: label, to: profile) }
+    }
+
     /// The account could not be used, for a reason worth showing until it next works.
     func failed(_ id: String, _ problem: String) {
         problems[id] = problem

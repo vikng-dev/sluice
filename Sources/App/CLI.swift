@@ -59,16 +59,9 @@ private func said(_ signIn: (provider: String, client: String, account: String?)
     signIn.account.map { "\(signIn.client) signed in as \($0)" } ?? "\(signIn.client) not signed in"
 }
 
-/// Changes the profiles on disk. The relay reads them at each request, so a change holds at once.
+/// Changes the profiles on disk, or says why not.
 private func change(_ edit: (inout Config) throws -> Void) -> Config {
-    do {
-        var config = try Storage.live.config()
-        try edit(&config)
-        try Storage.live.storeConfig(config)
-        return config
-    } catch {
-        fail("\(error)")
-    }
+    do { return try Storage.live.change(edit) } catch { fail("\(error)") }
 }
 
 /// The values given for a repeatable option, e.g. every `--folder <path>`.
@@ -83,7 +76,8 @@ private let usage = """
 sluice \(Sluice.version)
 
   sluice status [--json]                         each profile's accounts: plan, usage windows, warm conversations
-  sluice login [provider]                        sign an account in through the browser (default: claude)
+  sluice login [provider] [--profile <name>]     sign an account in through the browser (default: claude),
+                                                 for that profile (default: where it is, or the default profile)
 
   sluice profile list [--json]                   the profiles: who the client is signed in as, and what each claims
   sluice profile add <name>                      a new, empty profile
@@ -117,8 +111,10 @@ func command(_ arguments: [String]) async {
         } catch {
             fail("\(error)")
         }
-    case ("login", let provider):
-        let url = "\(address)/login/\(provider ?? "claude")"
+    case ("login", _):
+        let profile = values(of: "--profile", in: arguments).first
+        let provider = words.dropFirst().first { $0 != profile } ?? "claude"
+        let url = "\(address)/login/\(provider)" + (profile.map { "?profile=\($0)" } ?? "")
         print("Opening \(url)")
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -205,16 +201,7 @@ func command(_ arguments: [String]) async {
         print("\(words[2]) now serves profile \(words[3]).")
     case ("account", "remove"):
         guard words.count == 4 else { fail("usage: sluice account remove <provider> <account>") }
-        do {
-            // The account's name is one segment of the address, whatever characters it has.
-            guard let label = words[3].addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { fail("unreadable account name") }
-            let (status, body) = try await HTTPCall.send("DELETE", URL(string: "\(address)/accounts/\(words[2])/\(label)")!)
-            guard status == 200 else { fail(String(decoding: body, as: UTF8.self).replacing("sluice: ", with: "")) }
-        } catch {
-            fail("not running (\(error.localizedDescription)). Start the app or run: sluice serve")
-        }
-        // The same name may still be signed in at another provider, and then the profiles keep it.
-        if await !accounts(at: address).contains(where: { $0.label == words[3] }) { _ = change { $0.forget(account: words[3]) } }
+        do { try await forget(provider: words[2], account: words[3]) } catch { fail("\(error)") }
         print("Removed the \(words[2]) account \(words[3]).")
     default:
         if let first = words.first, !["help"].contains(first) { fail("no such command: \(words.joined(separator: " ")). Run sluice for the list.") }

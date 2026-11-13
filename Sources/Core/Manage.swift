@@ -5,6 +5,16 @@ public struct ConfigError: Error, CustomStringConvertible, Equatable {
     public let description: String
 }
 
+public extension Storage {
+    /// Changes the profiles on disk. The relay reads them at each request, so a change holds at once.
+    @discardableResult func change(_ edit: (inout Config) throws -> Void) throws -> Config {
+        var next = try config()
+        try edit(&next)
+        try storeConfig(next)
+        return next
+    }
+}
+
 /// The changes a person or an agent makes to the profiles. Each leaves the config valid or throws.
 public extension Config {
     /// A profile's name is also the end of its client folder's name, so it is kept to plain characters.

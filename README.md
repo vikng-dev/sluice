@@ -7,7 +7,9 @@ Claude Code and Codex talk to Sluice on localhost; Sluice decides which of your 
 each profile's pools, one per provider: a bar with a part for every account, as wide as its plan is
 large and as full as its week is used, and under it each account's plan, the share of its week used,
 which one a client is itself signed in as, and which is answering now. It also says when the clients
-are not going through Sluice. `sluice status` prints the same accounts.
+are not going through Sluice. `sluice status` prints the same accounts. The **+** on a pool signs another account in for that
+profile, the panel's menu signs one in anywhere, and a right-click on an account moves it to another
+profile or removes it.
 
 ## Use it
 

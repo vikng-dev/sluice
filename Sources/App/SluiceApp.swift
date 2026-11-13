@@ -87,6 +87,30 @@ let keeperLabel = "dev.vikng.sluice.relay"
         do { routed = try isSetUp() } catch { problem = "\(error)" }
     }
 
+    /// The provider's sign-in page, in the browser; the account lands in `profile`.
+    func signIn(provider: String, profile: String) {
+        // A provider's id and a profile's name are plain characters.
+        NSWorkspace.shared.open(URL(string: "http://localhost:\(Sluice.port)/login/\(provider)?profile=\(profile)")!)
+    }
+
+    func move(_ account: AccountStatus, to profile: String) {
+        do { try Storage.live.change { try $0.move(account: account.label, to: profile) } } catch { problem = "\(error)" }
+    }
+
+    /// Asks first: signing in again needs the browser and the person.
+    func remove(_ account: AccountStatus) {
+        let alert = NSAlert()
+        alert.messageText = "Remove \(account.label)?"
+        alert.informativeText = "Sluice forgets this sign-in and stops using the account. Signing it in again needs the browser."
+        alert.addButton(withTitle: "Remove").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task {
+            do { try await forget(provider: account.provider, account: account.label) } catch { problem = "\(error)" }
+        }
+    }
+
     /// The clients would be left talking to nothing, so they go direct first; then launchd is told to let go.
     func quit() {
         route(false)
@@ -103,7 +127,7 @@ struct SluiceApp: App {
             Panel(
                 problem: running.problem, accounts: running.accounts, profiles: running.profiles, signIns: running.signIns,
                 titles: Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0.name) }), now: Date(),
-                routed: running.routed, route: running.route, quit: running.quit
+                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, quit: running.quit
             )
             .task { await running.watch() }
         } label: {

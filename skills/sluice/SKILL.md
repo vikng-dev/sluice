@@ -48,7 +48,8 @@ An account is named by its label, the email in `sluice status`.
 
 - A profile's work is paid only by its own accounts. At a provider where it has none, requests are
   refused with 403 and a message naming the profile; that is the wall working, not a fault.
-- Signing an account in (`sluice login [provider]`) opens a browser and needs the person.
+- Signing an account in (`sluice login [provider] [--profile <name>]`) opens a browser and needs the
+  person. With `--profile` the account lands in that profile; without, it stays where it is.
 - Whom Claude Code is signed in as in a profile is not Sluice's to change; the person does that with
   `/login` inside that profile.
 - Do not remove an account or a profile unless asked to: other sessions on this Mac are served by them.

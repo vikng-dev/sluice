@@ -6,7 +6,7 @@ import os
 /// `/<provider>[/pin/<account>]/<the provider's own path and query>`. Without a pin in the address,
 /// the caller's folder decides the profile: see `Config.profile`.
 enum Route: Equatable {
-    case login(provider: String)
+    case login(provider: String, profile: String?)
     case callback(code: String, state: String)
     case status
     case account(provider: String, label: String)
@@ -40,7 +40,7 @@ enum Route: Equatable {
             rest = rest.dropFirst()
             let provider = String(segment())
             guard !provider.isEmpty, rest.isEmpty else { return nil }
-            self = .login(provider: provider)
+            self = .login(provider: provider, profile: URLComponents(string: target)?.queryItems?.first { $0.name == "profile" }?.value)
         default:
             var pin: String?
             if rest.hasPrefix("/pin/") {
@@ -113,8 +113,13 @@ public final class Relay: Sendable {
             } catch {
                 try await writer.send(500, text: "sluice: \(error)")
             }
-        case .login(let id):
+        case .login(let id, let profile):
             guard let provider = providers[id] else { return try await writer.send(404, text: "sluice: no provider \(id)") }
+            do {
+                if let profile, try await !accounts.profiles().contains(profile) { return try await writer.send(404, text: "sluice: no profile named \(profile)") }
+            } catch {
+                return try await writer.send(500, text: "sluice: \(error)")
+            }
             if let port = provider.redirect?.port {
                 do {
                     try await signIns.listen(on: port) {
@@ -132,7 +137,7 @@ public final class Relay: Sendable {
                     return try await writer.send(500, text: "sluice: \(id) signs in on port \(port), which is in use: \(error.localizedDescription)")
                 }
             }
-            let (state, challenge) = await signIns.begin(provider: id)
+            let (state, challenge) = await signIns.begin(provider: id, profile: profile)
             try await writer.redirect(to: provider.authorizeURL(redirectURI: provider.redirect?.absoluteString ?? redirectURI, state: state, challenge: challenge))
         case .callback(let code, let state):
             try await finishSignIn(code: code, state: state, writer)
@@ -197,7 +202,8 @@ public final class Relay: Sendable {
         do {
             let account = try await provider.signIn(code: code, state: state, redirectURI: provider.redirect?.absoluteString ?? redirectURI, verifier: pending.verifier)
             try await accounts.save(account)
-            try await writer.send(200, text: "Signed in to \(provider.id) as \(account.label). You can close this tab.")
+            if let profile = pending.profile { try await accounts.move(account.label, to: profile) }
+            try await writer.send(200, text: "Signed in to \(provider.name) as \(account.label)\(pending.profile.map { ", for profile \($0)" } ?? ""). You can close this tab.")
         } catch {
             try await writer.send(502, text: "sluice: sign-in failed: \(error)")
         }

@@ -15,8 +15,15 @@ private struct Fake: Provider {
     func route(_ on: Bool, profiles: [String]) {}
     func isRouted(profiles: [String]) -> Bool { false }
     func usage(of account: Account) async throws -> Usage { Usage(plan: nil, windows: []) }
-    func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL { upstream }
-    func signIn(code: String, state: String, redirectURI: String, verifier: String) async throws -> Account { throw ProviderError.signedOut }
+    func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL {
+        signsInAs == nil ? upstream : URL(string: "\(redirectURI)?code=c&state=\(state)")!
+    }
+    /// With a name, the sign-in page is the relay's own callback and the sign-in is that account's.
+    var signsInAs: String?
+    func signIn(code: String, state: String, redirectURI: String, verifier: String) async throws -> Account {
+        guard let signsInAs else { throw ProviderError.signedOut }
+        return Account(provider: id, subject: signsInAs, organization: nil, label: signsInAs, accessToken: "", refreshToken: "", expiresAt: .distantFuture)
+    }
     func refresh(_ account: Account) async throws -> Account { account }
     func prepare(_ request: inout HTTPRequest, for account: Account) { request.setHeader("X-Account", account.label) }
     func conversation(of request: HTTPRequest) -> (id: String, cacheLifetime: TimeInterval)? { nil }
@@ -57,6 +64,26 @@ private actor Hits {
         let pinned = try await HTTPCall.send("GET", URL(string: "http://127.0.0.1:47612/fake/pin/a/v1/thing")!)
         #expect(pinned.status == 429)
         withExtendedLifetime((provider, server)) {}
+    }
+
+    @Test func aSignInStartedForAProfileLandsThereAndOneForNoProfileStaysPut() async throws {
+        let work = try JSONDecoder().decode(Config.self, from: Data(#"{"profiles":{"work":{}}}"#.utf8))
+        let stored = OSAllocatedUnfairLock(initialState: (accounts: [Account](), config: work))
+        let storage = Storage(
+            loadAccounts: { stored.withLock { $0.accounts } }, storeAccounts: { next in stored.withLock { $0.accounts = next } },
+            config: { stored.withLock { $0.config } }, storeConfig: { next in stored.withLock { $0.config = next } }, loadMemory: { Memory() }, storeMemory: { _ in }
+        )
+        let relay = try Relay(providers: [Fake(upstream: URL(string: "http://127.0.0.1:1")!, signsInAs: "w")], storage: storage, port: 47616)
+        let server = try Server(port: 47616) { try await relay.handle($0, $1) }
+        try await server.start()
+
+        #expect(try await HTTPCall.send("GET", URL(string: "http://localhost:47616/login/fake?profile=nowhere")!).status == 404)
+        #expect(try await HTTPCall.send("GET", URL(string: "http://localhost:47616/login/fake?profile=work")!).status == 200)
+        #expect(try await relay.status().map(\.profile) == ["work"])
+        // Signing the same account in again, for no profile, renews it where it is.
+        #expect(try await HTTPCall.send("GET", URL(string: "http://localhost:47616/login/fake")!).status == 200)
+        #expect(try await relay.status().map(\.profile) == ["work"])
+        withExtendedLifetime(server) {}
     }
 
     @Test func aPinDoesNotReachIntoAnotherProfile() async throws {
