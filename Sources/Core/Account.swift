@@ -37,10 +37,11 @@ public struct Storage: Sendable {
     var storeAccounts: @Sendable ([Account]) throws -> Void
     /// Read at each placement, so an edit takes effect at once.
     public var config: @Sendable () throws -> Config
+    public var storeConfig: @Sendable (Config) throws -> Void
     var loadMemory: @Sendable () throws -> Memory
     var storeMemory: @Sendable (Memory) throws -> Void
 
-    /// Accounts in one Keychain item, so a save is atomic; the hand-edited config in `~/.config/sluice`;
+    /// Accounts in one Keychain item, so a save is atomic; the config in `~/.config/sluice`;
     /// what was observed in Application Support.
     public static let live: Storage = {
         let query: [String: any Sendable] = [
@@ -68,6 +69,11 @@ public struct Storage: Sendable {
                 guard status == errSecSuccess else { throw VaultError(status: status) }
             },
             config: { try readJSON(configFile, or: Config()) },
+            storeConfig: { config in
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+                try UserFile(configFile).write(encoder.encode(config) + Data("\n".utf8))
+            },
             loadMemory: { try readJSON(memoryFile, or: Memory()) },
             storeMemory: { memory in
                 try FileManager.default.createDirectory(at: memoryFile.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -90,16 +96,16 @@ struct UnreadableFile: Error, CustomStringConvertible {
 }
 
 /// One separate setup: the accounts whose usage it pools, and the work that belongs to it.
-public struct Profile: Decodable, Sendable {
+public struct Profile: Codable, Sendable, Equatable {
     /// The account the provider's client is signed in as in this profile; it owns what the client does
     /// outside the relay (connectors, the browser, published pages).
-    var main: String?
+    public internal(set) var main: String?
     /// Further accounts, used for relayed requests only.
-    var accounts: [String] = []
+    public internal(set) var accounts: [String] = []
     /// Folders (`~` allowed) whose work belongs to this profile.
-    var folders: [String] = []
+    public internal(set) var folders: [String] = []
     /// Owners, as in a repository's origin remote, whose repositories belong to this profile.
-    var owners: [String] = []
+    public internal(set) var owners: [String] = []
 
     init() {}
 
@@ -111,14 +117,24 @@ public struct Profile: Decodable, Sendable {
         owners = try keys.decodeIfPresent([String].self, forKey: .owners) ?? []
     }
 
+    /// Only what is set is written, as a person would write it.
+    public func encode(to encoder: any Encoder) throws {
+        var keys = encoder.container(keyedBy: CodingKeys.self)
+        try keys.encodeIfPresent(main, forKey: .main)
+        if !accounts.isEmpty { try keys.encode(accounts, forKey: .accounts) }
+        if !folders.isEmpty { try keys.encode(folders, forKey: .folders) }
+        if !owners.isEmpty { try keys.encode(owners, forKey: .owners) }
+    }
+
     private enum CodingKeys: CodingKey { case main, accounts, folders, owners }
 }
 
-/// `config.json`, written by hand: the profiles. Work no profile claims, and an account no profile
-/// lists, belong to the profile named `default`, which exists whether or not it is written down.
-public struct Config: Decodable, Sendable {
+/// `config.json`, written by hand or by the `sluice` command: the profiles. Work no profile claims, and
+/// an account no profile lists, belong to the profile named `default`, which exists whether or not it
+/// is written down.
+public struct Config: Codable, Sendable, Equatable {
     public static let defaultProfile = "default"
-    var profiles: [String: Profile] = [:]
+    public internal(set) var profiles: [String: Profile] = [:]
 
     init() {}
 
@@ -142,7 +158,7 @@ public struct Config: Decodable, Sendable {
     }
 
     /// The profile an account belongs to.
-    func profile(ofAccount label: String) -> String {
+    public func profile(ofAccount label: String) -> String {
         profiles.first { $0.value.main == label || $0.value.accounts.contains(label) }?.key ?? Self.defaultProfile
     }
 
@@ -207,6 +223,18 @@ actor Accounts {
                 warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: lastAnswered[$0.id], problem: problems[$0.id]
             )
         }
+    }
+
+    /// Forgets a sign-in, and what was observed about it. False when there is no such account.
+    func remove(provider: String, label: String) throws -> Bool {
+        guard let gone = accounts.first(where: { $0.provider == provider && $0.label == label }) else { return false }
+        let next = accounts.filter { $0.id != gone.id }
+        try storage.storeAccounts(next)
+        accounts = next
+        memory.usage[gone.id] = nil
+        (plans[gone.id], problems[gone.id], lastAnswered[gone.id]) = (nil, nil, nil)
+        remember()
+        return true
     }
 
     func save(_ account: Account) throws {

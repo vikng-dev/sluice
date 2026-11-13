@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import SluiceCore
 
@@ -39,7 +40,7 @@ private actor Hits {
         }
         try await provider.start()
         let accounts = ["a", "b"].map { Account(provider: "fake", subject: $0, organization: nil, label: $0, accessToken: "", refreshToken: "", expiresAt: .distantFuture) }
-        let relay = try Relay(providers: [Fake(upstream: URL(string: "http://127.0.0.1:47611")!)], storage: Storage(loadAccounts: { accounts }, storeAccounts: { _ in }, config: { Config() }, loadMemory: { Memory() }, storeMemory: { _ in }), port: 47612)
+        let relay = try Relay(providers: [Fake(upstream: URL(string: "http://127.0.0.1:47611")!)], storage: Storage(loadAccounts: { accounts }, storeAccounts: { _ in }, config: { Config() }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in }), port: 47612)
         let server = try Server(port: 47612) { try await relay.handle($0, $1) }
         try await server.start()
 
@@ -54,5 +55,21 @@ private actor Hits {
         let pinned = try await HTTPCall.send("GET", URL(string: "http://127.0.0.1:47612/fake/pin/a/v1/thing")!)
         #expect(pinned.status == 429)
         withExtendedLifetime((provider, server)) {}
+    }
+
+    @Test func aRemovedAccountIsForgottenAndOnlyDeleteRemoves() async throws {
+        let stored = OSAllocatedUnfairLock(initialState: ["a", "b"].map { Account(provider: "fake", subject: $0, organization: nil, label: $0, accessToken: "", refreshToken: "", expiresAt: .distantFuture) })
+        let storage = Storage(loadAccounts: { stored.withLock { $0 } }, storeAccounts: { next in stored.withLock { $0 = next } }, config: { Config() }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in })
+        let relay = try Relay(providers: [Fake(upstream: URL(string: "http://127.0.0.1:1")!)], storage: storage, port: 47614)
+        let server = try Server(port: 47614) { try await relay.handle($0, $1) }
+        try await server.start()
+
+        let address = URL(string: "http://127.0.0.1:47614/accounts/fake/a")!
+        #expect(try await HTTPCall.send("GET", address).status == 405)
+        #expect(try await HTTPCall.send("DELETE", address).status == 200)
+        #expect(stored.withLock { $0.map(\.label) } == ["b"])
+        #expect(try await relay.status().map(\.label) == ["b"])
+        #expect(try await HTTPCall.send("DELETE", address).status == 404)
+        withExtendedLifetime(server) {}
     }
 }

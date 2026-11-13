@@ -52,8 +52,22 @@ included. A client that calls Anthropic's API itself is not; see [docs/wire.md](
 
 A profile is a separate setup: its own Claude Code folder (history, memory, sign-in, connectors) and
 its own pool of accounts. Work belongs to one profile, and a profile's requests are only ever served
-by that profile's accounts. They are written in `~/.config/sluice/config.json`, read on every request
-and launch:
+by that profile's accounts. They are changed with the `sluice` command, and a change holds at once:
+
+```sh
+sluice profile add work
+sluice profile claim work --folder ~/work --owner acme
+sluice account move me@work.example work     # the first account in becomes the profile's main one
+sluice account main spare@work.example       # or choose another
+sluice profile list
+```
+
+Every command is listed by `sluice` alone. `status` and `profile list` take `--json`, nothing asks a
+question, and a failure says what to do, so an agent can run them: [skills/sluice/SKILL.md](skills/sluice/SKILL.md)
+is the skill to give it.
+
+The profiles are kept in `~/.config/sluice/config.json`, read on every request and launch, and may be
+edited by hand too:
 
 ```json
 {
@@ -120,6 +134,7 @@ One Swift package, no dependencies.
 | `Sources/Core` | Accounts, Keychain storage, relay, router, the provider contract. No UI. |
 | `Sources/Providers` | One folder per provider (Claude, Codex), each answering the contract. |
 | `Sources/App` | The one program: the menu bar app and the `sluice` command. |
+| `skills` | A skill that teaches an agent to run the `sluice` command. |
 | `Assets` | The app icon: its drawing, and the built `.icns`. The menu bar glyph is drawn in code from the same shapes. Each provider's mark, named by provider. |
 
 ## Build

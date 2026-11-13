@@ -24,11 +24,86 @@ func standIn(for provider: any Provider, _ arguments: [String]) -> Never {
     fail("could not run \(real): \(String(cString: strerror(errno)))")
 }
 
+/// The relay's account list, which every command that names an account checks against.
+private func accounts(at address: String) async -> [AccountStatus] {
+    do {
+        let (status, body) = try await HTTPCall.send("GET", URL(string: "\(address)/status")!)
+        guard status == 200 else { fail(String(decoding: body, as: UTF8.self)) }
+        return try JSONDecoder().decode([AccountStatus].self, from: body)
+    } catch {
+        fail("not running (\(error.localizedDescription)). Start the app or run: sluice serve")
+    }
+}
+
+/// Results go to standard output as JSON an agent can read: sorted keys, and dates as ISO 8601.
+private func printJSON(_ value: some Encodable) {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    encoder.dateEncodingStrategy = .iso8601
+    // These are plain values of strings, numbers and dates.
+    print(String(decoding: try! encoder.encode(value), as: UTF8.self))
+}
+
+/// A profile as `sluice profile list` reports it.
+private struct ProfileReport: Encodable {
+    var name: String
+    var main: String?
+    var accounts: [String]
+    var folders: [String]
+    var owners: [String]
+}
+
+/// Changes the profiles on disk. The relay reads them at each request, so a change holds at once.
+private func change(_ edit: (inout Config) throws -> Void) -> Config {
+    do {
+        var config = try Storage.live.config()
+        try edit(&config)
+        try Storage.live.storeConfig(config)
+        return config
+    } catch {
+        fail("\(error)")
+    }
+}
+
+/// The values given for a repeatable option, e.g. every `--folder <path>`.
+private func values(of option: String, in arguments: [String]) -> [String] {
+    arguments.indices.filter { arguments[$0] == option }.map { index in
+        guard index + 1 < arguments.count else { fail("\(option) needs a value") }
+        return arguments[index + 1]
+    }
+}
+
+private let usage = """
+sluice \(Sluice.version)
+
+  sluice status [--json]                         each profile's accounts: plan, usage windows, warm conversations
+  sluice login [provider]                        sign an account in through the browser (default: claude)
+
+  sluice profile list [--json]                   the profiles and what each claims
+  sluice profile add <name>                      a new, empty profile
+  sluice profile remove <name>                   its accounts go back to the default profile
+  sluice profile claim <name> --folder <path>    work in that folder belongs to the profile
+  sluice profile claim <name> --owner <owner>    so do repositories whose origin has that owner
+  sluice profile unclaim <name> --folder <path> | --owner <owner>
+
+  sluice account move <account> <profile>        the account serves that profile from now on
+  sluice account main <account>                  make it its profile's main account
+  sluice account remove <provider> <account>     forget the sign-in
+
+  sluice setup [--undo]                          make Claude Code and Codex talk to Sluice and open the right profile
+  sluice serve                                   run the relay in the foreground
+
+Nothing asks a question. Results are on standard output, messages on standard error, and a failure
+exits with 1 and says what to do. A change holds at once, without a restart.
+"""
+
 /// The `sluice` command.
 func command(_ arguments: [String]) async {
     let address = "http://localhost:\(Sluice.port)"
-    switch arguments.first {
-    case "serve":
+    let json = arguments.contains("--json")
+    let words = arguments.filter { !$0.hasPrefix("--") }
+    switch (words.first, words.dropFirst().first) {
+    case ("serve", nil):
         do {
             let server = try await startSluice().server
             print("sluice \(Sluice.version) on \(address)")
@@ -37,32 +112,28 @@ func command(_ arguments: [String]) async {
         } catch {
             fail("\(error)")
         }
-    case "login":
-        let url = "\(address)/login/\(arguments.dropFirst().first ?? "claude")"
+    case ("login", let provider):
+        let url = "\(address)/login/\(provider ?? "claude")"
         print("Opening \(url)")
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         open.arguments = [url]
         do { try open.run() } catch { fail("\(error)") }
-    case "status":
-        do {
-            let (status, body) = try await HTTPCall.send("GET", URL(string: "\(address)/status")!)
-            guard status == 200 else { fail(String(decoding: body, as: UTF8.self)) }
-            let rows = try JSONDecoder().decode([AccountStatus].self, from: body)
-            for (profile, rows) in Dictionary(grouping: rows, by: \.profile).sorted(by: { ($0.key == Config.defaultProfile ? "" : $0.key) < ($1.key == Config.defaultProfile ? "" : $1.key) }) {
-                print(profile)
-                for row in rows {
-                    let windows = row.windows.map { "\($0.name) \($0.percentText) → \($0.resetText)" }
-                    print("  " + [row.provider, row.label + (row.main ? " (main)" : ""), row.plan.map { ($0.business ? "business " : "") + $0.tier }, row.problem ?? (windows.isEmpty ? "no usage reported" : windows.joined(separator: ", ")), "\(row.warmConversations) warm"].compactMap { $0 }.joined(separator: "  "))
-                }
+    case ("status", nil):
+        let rows = await accounts(at: address)
+        if json { return printJSON(rows) }
+        for (profile, rows) in Dictionary(grouping: rows, by: \.profile).sorted(by: { ($0.key == Config.defaultProfile ? "" : $0.key) < ($1.key == Config.defaultProfile ? "" : $1.key) }) {
+            print(profile)
+            for row in rows {
+                let windows = row.windows.map { "\($0.name) \($0.percentText) → \($0.resetText)" }
+                let plan = row.plan.map { ($0.business ? "business " : "") + $0.tier }
+                print("  " + [row.provider, row.label + (row.main ? " (main)" : ""), plan, row.problem ?? (windows.isEmpty ? "no usage reported" : windows.joined(separator: ", ")), "\(row.warmConversations) warm"].compactMap { $0 }.joined(separator: "  "))
             }
-            if rows.isEmpty { print("No accounts. Run: sluice login") }
-        } catch {
-            fail("not running (\(error.localizedDescription)). Start the app or run: sluice serve")
         }
-    case "setup":
+        if rows.isEmpty { print("No accounts. Run: sluice login") }
+    case ("setup", nil):
         do {
-            if arguments.dropFirst().first == "--undo" {
+            if arguments.contains("--undo") {
                 try stopRouting(all: true)
                 print("Claude Code and Codex talk to their providers directly again, and open one profile everywhere.")
             } else {
@@ -73,14 +144,74 @@ func command(_ arguments: [String]) async {
         } catch {
             fail("\(error)")
         }
+    case ("profile", "list"):
+        let config: Config
+        do { config = try Storage.live.config() } catch { fail("\(error)") }
+        let reports = config.names.map { name in
+            let profile = config.profiles[name]
+            return ProfileReport(name: name, main: profile?.main, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? [])
+        }
+        if json { return printJSON(reports) }
+        for report in reports {
+            print(report.name + (report.main.map { "  main \($0)" } ?? ""))
+            for (title, items) in [("accounts", report.accounts), ("folders", report.folders), ("owners", report.owners)] where !items.isEmpty {
+                print("  \(title): \(items.joined(separator: ", "))")
+            }
+        }
+    case ("profile", "add"):
+        guard words.count == 3 else { fail("usage: sluice profile add <name>") }
+        do {
+            // A new profile has its own client folder, which is set to talk to Sluice like the others.
+            let routed = try isSetUp()
+            _ = change { try $0.add(profile: words[2]) }
+            if routed, let me = Bundle.main.executableURL?.resolvingSymlinksInPath() { try setUp(program: me) }
+        } catch {
+            fail("\(error)")
+        }
+        print("Added profile \(words[2]). Give it work with: sluice profile claim \(words[2]) --folder <path>")
+    case ("profile", "remove"):
+        guard words.count == 3 else { fail("usage: sluice profile remove <name>") }
+        _ = change { try $0.remove(profile: words[2]) }
+        print("Removed profile \(words[2]). Its accounts serve the default profile; its client folder is left as it is.")
+    case ("profile", let verb) where verb == "claim" || verb == "unclaim":
+        let folders = values(of: "--folder", in: arguments), owners = values(of: "--owner", in: arguments)
+        // The name comes right after the verb, so that an option's value is never taken for it.
+        guard arguments.count > 2, !arguments[2].hasPrefix("--"), !(folders.isEmpty && owners.isEmpty) else {
+            fail("usage: sluice profile \(verb!) <name> --folder <path> | --owner <owner>")
+        }
+        let name = arguments[2]
+        _ = change { config in
+            for folder in folders { if verb == "claim" { try config.claim(folder: folder, for: name) } else { try config.unclaim(folder: folder, from: name) } }
+            for owner in owners { if verb == "claim" { try config.claim(owner: owner, for: name) } else { try config.unclaim(owner: owner, from: name) } }
+        }
+        print("Profile \(name) \(verb == "claim" ? "now claims" : "no longer claims") \((folders + owners).joined(separator: ", ")).")
+    case ("account", "move"):
+        guard words.count == 4 else { fail("usage: sluice account move <account> <profile>") }
+        let known = await accounts(at: address).map(\.label)
+        guard known.contains(words[2]) else { fail("no account \(words[2]); there is: \(Set(known).sorted().joined(separator: ", "))") }
+        _ = change { try $0.move(account: words[2], to: words[3]) }
+        print("\(words[2]) now serves profile \(words[3]).")
+    case ("account", "main"):
+        guard words.count == 3 else { fail("usage: sluice account main <account>") }
+        let known = await accounts(at: address).map(\.label)
+        guard known.contains(words[2]) else { fail("no account \(words[2]); there is: \(Set(known).sorted().joined(separator: ", "))") }
+        let config = change { $0.makeMain(words[2]) }
+        print("\(words[2]) is now the main account of profile \(config.profile(ofAccount: words[2])). Sign the client in as it there: run claude in that profile and use /login.")
+    case ("account", "remove"):
+        guard words.count == 4 else { fail("usage: sluice account remove <provider> <account>") }
+        do {
+            // The account's name is one segment of the address, whatever characters it has.
+            guard let label = words[3].addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { fail("unreadable account name") }
+            let (status, body) = try await HTTPCall.send("DELETE", URL(string: "\(address)/accounts/\(words[2])/\(label)")!)
+            guard status == 200 else { fail(String(decoding: body, as: UTF8.self).replacing("sluice: ", with: "")) }
+        } catch {
+            fail("not running (\(error.localizedDescription)). Start the app or run: sluice serve")
+        }
+        // The same name may still be signed in at another provider, and then the profiles keep it.
+        if await !accounts(at: address).contains(where: { $0.label == words[3] }) { _ = change { $0.forget(account: words[3]) } }
+        print("Removed the \(words[2]) account \(words[3]).")
     default:
-        print("""
-        sluice \(Sluice.version)
-
-          sluice serve              run the relay in the foreground
-          sluice login [provider]   sign an account in (default: claude)
-          sluice status             each profile's accounts, their windows, and warm conversations
-          sluice setup [--undo]     make Claude Code and Codex talk to Sluice and open the right profile
-        """)
+        if let first = words.first, !["help"].contains(first) { fail("no such command: \(words.joined(separator: " ")). Run sluice for the list.") }
+        print(usage)
     }
 }

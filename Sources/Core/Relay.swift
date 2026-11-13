@@ -2,13 +2,14 @@ import Foundation
 import os
 
 /// A local address, read as a route. The grammar:
-/// `/login/<provider>`, `/callback?code=…&state=…`, `/status`, and
+/// `/login/<provider>`, `/callback?code=…&state=…`, `/status`, `/accounts/<provider>/<account>`, and
 /// `/<provider>[/pin/<account>]/<the provider's own path and query>`. Without a pin in the address,
 /// the caller's folder decides the profile: see `Config.profile`.
 enum Route: Equatable {
     case login(provider: String)
     case callback(code: String, state: String)
     case status
+    case account(provider: String, label: String)
     case relay(provider: String, pin: String?, target: String)
 
     init?(target: String) {
@@ -29,6 +30,12 @@ enum Route: Equatable {
             func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
             guard let code = value("code"), let state = value("state") else { return nil }
             self = .callback(code: code, state: state)
+        case ("accounts", _):
+            rest = rest.dropFirst()
+            let provider = String(segment())
+            rest = rest.dropFirst()
+            guard !provider.isEmpty, let label = String(rest).removingPercentEncoding, !label.isEmpty, !label.contains("/") else { return nil }
+            self = .account(provider: provider, label: label)
         case ("login", _):
             rest = rest.dropFirst()
             let provider = String(segment())
@@ -93,6 +100,16 @@ public final class Relay: Sendable {
         case .status:
             do {
                 try await writer.send(200, contentType: "application/json", text: String(decoding: JSONEncoder().encode(status()), as: UTF8.self))
+            } catch {
+                try await writer.send(500, text: "sluice: \(error)")
+            }
+        case .account(let provider, let label):
+            // The one thing asked of an account by address is to forget it.
+            guard request.method == "DELETE" else { return try await writer.send(405, text: "sluice: an account is removed with DELETE") }
+            do {
+                guard try await accounts.remove(provider: provider, label: label) else { return try await writer.send(404, text: "sluice: no \(provider) account \(label)") }
+                log("\(provider) \(label) removed")
+                try await writer.send(200, text: "removed")
             } catch {
                 try await writer.send(500, text: "sluice: \(error)")
             }

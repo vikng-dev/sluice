@@ -143,3 +143,49 @@ import Testing
         #expect(watch.verdict(found: nil, now: start + ProgramWatch.patience) == .leave)
     }
 }
+
+@Suite struct ManageTests {
+    func config(_ json: String) throws -> Config { try JSONDecoder().decode(Config.self, from: Data(json.utf8)) }
+
+    @Test func aMovedAccountLeavesItsProfileAndTheFirstOneInBecomesMain() throws {
+        var config = try config(#"{"profiles":{"default":{"main":"d"},"a":{"main":"x","accounts":["y"]},"b":{}}}"#)
+        try config.move(account: "y", to: "b")
+        try config.move(account: "x", to: "b")
+        #expect(config.profiles["a"] == (try self.config(#"{"profiles":{"a":{}}}"#)).profiles["a"])
+        #expect(config.profiles["b"]?.main == "y" && config.profiles["b"]?.accounts == ["x"])
+        // The default profile's further accounts are listed nowhere.
+        try config.move(account: "x", to: "default")
+        #expect(config.profile(ofAccount: "x") == "default" && config.profiles["default"]?.accounts == [])
+        #expect(throws: ConfigError.self) { try config.move(account: "x", to: "nowhere") }
+    }
+
+    @Test func theMainAccountItReplacesStaysInTheProfile() throws {
+        var config = try config(#"{"profiles":{"a":{"main":"x","accounts":["y"]}}}"#)
+        config.makeMain("y")
+        #expect(config.profiles["a"]?.main == "y" && config.profile(ofAccount: "x") == "a")
+    }
+
+    @Test func aFolderBelongsToOneProfileHoweverItIsWritten() throws {
+        var config = try config(#"{"profiles":{"a":{"folders":["~/work/"]},"b":{}}}"#)
+        #expect(throws: ConfigError.self) { try config.claim(folder: "/home/me/work", for: "b", home: "/home/me") }
+        try config.claim(folder: "/home/me/play/../other", for: "b", home: "/home/me")
+        #expect(config.profiles["b"]?.folders == ["~/other"])
+        try config.unclaim(folder: "/home/me/work", from: "a", home: "/home/me")
+        #expect(config.profiles["a"]?.folders == [])
+        #expect(throws: ConfigError.self) { try config.claim(owner: "Acme", for: "missing") }
+    }
+
+    @Test func whatIsWrittenReadsBackTheSame() throws {
+        var config = try config(#"{"profiles":{"default":{"main":"d"},"a":{"main":"x","folders":["~/w"],"owners":["Acme"]}}}"#)
+        try config.add(profile: "b")
+        #expect(try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(config)) == config)
+        #expect(throws: ConfigError.self) { try config.add(profile: "b") }
+        #expect(throws: ConfigError.self) { try config.add(profile: "Not Plain") }
+        #expect(throws: ConfigError.self) { try config.remove(profile: "default") }
+    }
+
+    @Test func anAccountsAddressIsItsProviderAndName() {
+        #expect(Route(target: "/accounts/claude/a%40b.c") == .account(provider: "claude", label: "a@b.c"))
+        #expect(Route(target: "/accounts/claude") == nil)
+    }
+}
