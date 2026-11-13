@@ -99,10 +99,31 @@ import Testing
         #expect(try Claude.windows(inUsage: Data(#"{"five_hour":null,"seven_day":null}"#.utf8)).isEmpty)
     }
 
+    @Test func claudePlanIsReadFromTheOrganizationAndItsTier() {
+        func plan(_ organization: String) -> Plan? { Claude.plan(inProfile: Data(#"{"organization":\#(organization)}"#.utf8)) }
+        #expect(plan(#"{"organization_type":"claude_max","rate_limit_tier":"default_claude_max_20x","plan_display_name":"Ultra"}"#)
+            == Plan(name: "Ultra", multiple: 20, business: false, price: 200))
+        // A Team seat is on a person's tier, and is still a seat.
+        #expect(plan(#"{"organization_type":"claude_team","rate_limit_tier":"default_claude_max_5x","seat_tier":"team_tier_1"}"#)
+            == Plan(name: "Team", multiple: 5, business: true, price: 125))
+        #expect(plan(#"{"organization_type":"claude_enterprise","rate_limit_tier":null}"#) == Plan(name: "Enterprise", multiple: nil, business: true, price: nil))
+        #expect(Claude.plan(inProfile: Data(#"{"account":{}}"#.utf8)) == nil)
+    }
+
     @Test func codexWindowsAreNamedByTheirLength() throws {
-        let body = #"{"rate_limit":{"primary_window":{"used_percent":3,"limit_window_seconds":604800,"reset_at":1795144120},"secondary_window":null}}"#
-        #expect(try Codex.windows(inUsage: Data(body.utf8)) == [Window(name: "7d", used: 0.03, resetsAt: Date(timeIntervalSince1970: 1_795_144_120))])
-        #expect(throws: ProviderError.self) { try Codex.windows(inUsage: Data("{}".utf8)) }
+        let body = #"{"plan_type":"prolite","rate_limit":{"primary_window":{"used_percent":3,"limit_window_seconds":604800,"reset_at":1795144120},"secondary_window":null}}"#
+        let usage = try Codex.usage(in: Data(body.utf8))
+        #expect(usage.windows == [Window(name: "7d", used: 0.03, resetsAt: Date(timeIntervalSince1970: 1_795_144_120))])
+        #expect(usage.plan?.multiple == 5)
+        // A plan that is not listed keeps the provider's word.
+        #expect(try Codex.usage(in: Data(#"{"plan_type":"self_serve_business","rate_limit":{}}"#.utf8)).plan?.name == "Self Serve Business")
+        #expect(throws: ProviderError.self) { try Codex.usage(in: Data("{}".utf8)) }
+    }
+
+    @Test func aTierShowsTheMultipleOrElseTheName() {
+        #expect(Plan(name: "Ultra", multiple: 20, business: false, price: 200).tier == "20x $200")
+        #expect(Plan(name: "Go", multiple: nil, business: false, price: 8).tier == "Go $8")
+        #expect(Plan(name: "Enterprise", multiple: nil, business: true, price: nil).tier == "Enterprise")
     }
 }
 

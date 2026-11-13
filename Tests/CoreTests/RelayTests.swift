@@ -11,7 +11,7 @@ private struct Fake: Provider {
     func home(of profile: String) -> (variable: String, folder: URL)? { nil }
     func route(_ on: Bool, profiles: [String]) {}
     func isRouted(profiles: [String]) -> Bool { false }
-    func usage(of account: Account) async throws -> [Window] { [] }
+    func usage(of account: Account) async throws -> Usage { Usage(plan: nil, windows: []) }
     func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL { upstream }
     func signIn(code: String, state: String, redirectURI: String, verifier: String) async throws -> Account { throw ProviderError.signedOut }
     func refresh(_ account: Account) async throws -> Account { account }

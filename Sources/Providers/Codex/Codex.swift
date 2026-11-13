@@ -121,20 +121,34 @@ public struct Codex: Provider {
         switch minutes { case 300: "5h"; case 10080: "7d"; default: "\(Int(minutes))m" }
     }
 
-    public func usage(of account: Account) async throws -> [Window] {
+    public func usage(of account: Account) async throws -> Usage {
         let (status, body) = try await HTTPCall.send("GET", Self.usage, headers: ["Authorization": "Bearer \(account.accessToken)", "chatgpt-account-id": account.subject])
         guard status == 200 else { throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil) }
-        return try Self.windows(inUsage: body)
+        return try Self.usage(in: body)
     }
 
-    /// The windows in a usage answer; a slot the plan does not have is null.
-    static func windows(inUsage body: Data) throws -> [Window] {
-        guard let limit = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["rate_limit"] as? [String: Any] else { throw ProviderError.invalidResponse }
-        return ["primary_window", "secondary_window"].compactMap { slot in
+    /// The plans by `plan_type`. `prolite` was captured; the other names are OpenUsage's reading (35e88e9).
+    /// Multiples are of Plus, or of a Standard seat, as published; prices are those of 2026-11-13.
+    static let plans = [
+        "go": Plan(name: "Go", multiple: nil, business: false, price: 8),
+        "plus": Plan(name: "Plus", multiple: 1, business: false, price: 20),
+        "prolite": Plan(name: "Pro", multiple: 5, business: false, price: 100),
+        "pro": Plan(name: "Pro", multiple: 20, business: false, price: 200),
+        "promax": Plan(name: "Pro", multiple: nil, business: false, price: 500),
+        "team": Plan(name: "Business", multiple: 1, business: true, price: 25),
+        "self_serve_business_prolite": Plan(name: "Business", multiple: 5, business: true, price: 125),
+    ]
+
+    /// What a usage answer says: the plan, which when not listed keeps its own word with underscores
+    /// read as spaces, and the windows; a slot the plan does not have is null.
+    static func usage(in body: Data) throws -> Usage {
+        guard let answer = try? JSONSerialization.jsonObject(with: body) as? [String: Any], let limit = answer["rate_limit"] as? [String: Any] else { throw ProviderError.invalidResponse }
+        let plan = (answer["plan_type"] as? String).map { plans[$0] ?? Plan(name: $0.replacing("_", with: " ").capitalized, multiple: nil, business: false, price: nil) }
+        return Usage(plan: plan, windows: ["primary_window", "secondary_window"].compactMap { slot in
             guard let window = limit[slot] as? [String: Any], let used = window["used_percent"] as? Double,
                   let seconds = window["limit_window_seconds"] as? Double, let reset = window["reset_at"] as? Double else { return nil }
             return Window(name: name(minutes: seconds / 60), used: used / 100, resetsAt: Date(timeIntervalSince1970: reset))
-        }
+        })
     }
 
     private func grant(_ fields: [String: String]) async throws -> Grant {

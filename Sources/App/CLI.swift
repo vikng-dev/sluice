@@ -53,7 +53,7 @@ func command(_ arguments: [String]) async {
                 print(profile)
                 for row in rows {
                     let windows = row.windows.map { "\($0.name) \($0.percentText) → \($0.resetText)" }
-                    print("  " + [row.provider, row.label + (row.main ? " (main)" : ""), row.problem ?? (windows.isEmpty ? "no usage reported" : windows.joined(separator: ", ")), "\(row.warmConversations) warm"].joined(separator: "  "))
+                    print("  " + [row.provider, row.label + (row.main ? " (main)" : ""), row.plan.map { ($0.business ? "business " : "") + $0.tier }, row.problem ?? (windows.isEmpty ? "no usage reported" : windows.joined(separator: ", ")), "\(row.warmConversations) warm"].compactMap { $0 }.joined(separator: "  "))
                 }
             }
             if rows.isEmpty { print("No accounts. Run: sluice login") }

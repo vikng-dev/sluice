@@ -77,7 +77,7 @@ public final class Relay: Sendable {
                 continue
             }
             do {
-                try await accounts.record(provider.usage(of: fresh), for: account.id, answeringARequest: false)
+                try await accounts.record(provider.usage(of: fresh), for: account.id)
             } catch ProviderError.signedOut {
                 await accounts.failed(account.id, "Signed out. Run: sluice login \(account.provider)")
             } catch {
@@ -159,7 +159,7 @@ public final class Relay: Sendable {
                 }
                 let headers = response.allHeaderFields.compactMap { name, value in (name as? String).map { ($0, "\(value)") } }
                 let reading = provider.reading(status: response.statusCode, headers: Dictionary(headers.map { ($0.0.lowercased(), $0.1) }) { $1 })
-                await accounts.record(reading.windows, for: account.id, answeringARequest: true)
+                await accounts.answered(account.id, reporting: reading.windows)
                 log("\(id) \(account.label) \(request.method) \(target.prefix { $0 != "?" }) \(response.statusCode)\(reading.refused ? " spent" : "")")
                 if reading.refused, !isLast { continue }
                 if let conversation, !reading.refused {

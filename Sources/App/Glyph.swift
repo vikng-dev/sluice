@@ -30,3 +30,15 @@ func gateGlyph(open: Bool) -> NSImage {
     image.isTemplate = true
     return image
 }
+
+/// A provider's mark, drawn in the text colour. The drawings are in Assets/providers, named by provider;
+/// a provider without one is shown by name.
+@MainActor func providerMark(_ provider: String) -> NSImage? {
+    if let known = marks[provider] { return known }
+    guard let url = Bundle.main.url(forResource: provider, withExtension: "svg", subdirectory: "providers"), let mark = NSImage(contentsOf: url) else { return nil }
+    mark.isTemplate = true
+    marks[provider] = mark
+    return mark
+}
+
+@MainActor private var marks: [String: NSImage] = [:]

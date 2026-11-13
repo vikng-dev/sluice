@@ -7,7 +7,9 @@ struct Panel: View {
     let problem: String
     let accounts: [AccountStatus]
     let now: Date
-    @Binding var routed: Bool
+    /// Whether the clients are set up to talk to Sluice, and how to change that.
+    let routed: Bool
+    let route: (Bool) -> Void
     let quit: () -> Void
 
     private var profiles: [(name: String, accounts: [AccountStatus])] {
@@ -24,6 +26,15 @@ struct Panel: View {
                 Text(state).font(.caption).foregroundStyle(.secondary)
             }
             if !problem.isEmpty { Text(problem).font(.caption).foregroundStyle(.red) }
+            if !routed {
+                HStack {
+                    Text("Claude Code and Codex are not going through Sluice.").font(.callout).fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Turn on") { route(true) }.controlSize(.small)
+                }
+                .padding(8)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            }
             if accounts.isEmpty { Text("No accounts yet. Run: sluice login").font(.callout).foregroundStyle(.secondary) }
             ForEach(profiles, id: \.name) { profile in
                 VStack(alignment: .leading, spacing: 8) {
@@ -32,10 +43,18 @@ struct Panel: View {
                 }
             }
             Divider()
-            Toggle("Route Claude Code and Codex through Sluice", isOn: $routed).toggleStyle(.switch).controlSize(.small).font(.callout)
             HStack {
                 Text("Sluice \(Sluice.version)").font(.caption).foregroundStyle(.tertiary)
                 Spacer()
+                if routed {
+                    Menu {
+                        Button("Stop routing") { route(false) }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .help("Clients started from now on talk to their own providers")
+                }
                 Button("Quit", action: quit).controlSize(.small).help("The clients go back to their own providers")
             }
         }
@@ -56,25 +75,34 @@ private struct AccountRow: View {
     private var serving: Bool { account.lastAnswered.map { now.timeIntervalSince($0) < 60 } ?? false }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text(account.label).font(.callout).lineLimit(1).truncationMode(.middle)
-                if account.main { Text("main").font(.caption2).padding(.horizontal, 5).padding(.vertical, 1).background(.quaternary, in: Capsule()) }
-                if serving { Circle().fill(.green).frame(width: 6, height: 6).help("Answering requests now") }
-                Spacer()
-                Text(account.provider).font(.caption).foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            if let mark = providerMark(account.provider) {
+                Image(nsImage: mark).resizable().frame(width: 13, height: 13).foregroundStyle(.secondary)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
+                    .help(account.provider).accessibilityLabel(account.provider)
             }
-            if let problem = account.problem {
-                Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-            } else if account.windows.isEmpty {
-                Text("No usage reported").font(.caption).foregroundStyle(.secondary)
-            }
-            ForEach(account.windows, id: \.name) { window in
-                HStack(spacing: 8) {
-                    Text(window.name).font(.caption.monospaced()).foregroundStyle(.secondary).frame(width: 20, alignment: .leading)
-                    Bar(used: window.used)
-                    Text(window.percentText).font(.caption.monospacedDigit()).frame(width: 34, alignment: .trailing)
-                    Text(window.resetText).font(.caption).foregroundStyle(.secondary).frame(width: 74, alignment: .trailing)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    // The main account is the first of its provider and the one in heavier type.
+                    Text(account.label).font(.callout.weight(account.main ? .semibold : .regular)).lineLimit(1).truncationMode(.middle)
+                        .help(account.main ? "Main account of this profile" : "")
+                    if serving { Circle().fill(.green).frame(width: 6, height: 6).help("Answering requests now") }
+                    Spacer()
+                    if providerMark(account.provider) == nil { Text(account.provider).font(.caption).foregroundStyle(.secondary) }
+                    if let plan = account.plan { Badge(text: plan.tier, symbol: plan.business ? "briefcase.fill" : nil).help(plan.name) }
+                }
+                if let problem = account.problem {
+                    Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                } else if account.windows.isEmpty {
+                    Text("No usage reported").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(account.windows, id: \.name) { window in
+                    HStack(spacing: 8) {
+                        Text(window.name).font(.caption.monospaced()).foregroundStyle(.secondary).frame(width: 20, alignment: .leading)
+                        Bar(used: window.used)
+                        Text(window.percentText).font(.caption.monospacedDigit()).frame(width: 34, alignment: .trailing)
+                        Text(window.resetText).font(.caption).foregroundStyle(.secondary).frame(width: 74, alignment: .trailing)
+                    }
                 }
             }
         }
@@ -93,5 +121,18 @@ private struct Bar: View {
             }
         }
         .frame(height: 5)
+    }
+}
+
+private struct Badge: View {
+    let text: String
+    let symbol: String?
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if let symbol { Image(systemName: symbol).imageScale(.small).foregroundStyle(.secondary) }
+            Text(text).lineLimit(1).fixedSize()
+        }
+        .font(.caption2).padding(.horizontal, 5).padding(.vertical, 1).background(.quaternary, in: Capsule())
     }
 }

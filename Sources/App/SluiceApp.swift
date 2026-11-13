@@ -68,7 +68,7 @@ struct SluiceApp: App {
         MenuBarExtra {
             Panel(
                 state: running.state, problem: running.problem, accounts: running.accounts, now: Date(),
-                routed: Binding(get: { running.routed }, set: { running.route($0) }), quit: running.quit
+                routed: running.routed, route: running.route, quit: running.quit
             )
             .task { await running.watch() }
         } label: {

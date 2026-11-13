@@ -17,7 +17,9 @@ public struct Window: Sendable, Codable, Equatable {
 public extension Window {
     /// When the window resets, as a person reads it: the time today, or the weekday and time.
     var resetText: String {
-        resetsAt.formatted(resetsAt.timeIntervalSinceNow < 86400 ? Date.FormatStyle(date: .omitted, time: .shortened) : Date.FormatStyle().weekday(.abbreviated).hour().minute())
+        // The same reset is reported a second or so apart from one answer to the next.
+        let resetsAt = Date(timeIntervalSinceReferenceDate: (resetsAt.timeIntervalSinceReferenceDate / 60).rounded() * 60)
+        return resetsAt.formatted(resetsAt.timeIntervalSinceNow < 86400 ? Date.FormatStyle(date: .omitted, time: .shortened) : Date.FormatStyle().weekday(.abbreviated).hour().minute())
     }
 
     var percentText: String { "\(Int((used * 100).rounded()))%" }

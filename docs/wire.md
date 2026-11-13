@@ -40,6 +40,11 @@ the bearer token and `anthropic-beta: oauth-2025-04-20`; the `user:inference` sc
 not yet started has `resets_at: null`. `limits[]` carries the per-model weekly windows, and
 `extra_usage` the paid overage, neither of which Sluice reads.
 
+**Plan (captured 2026-11-13).** `GET https://api.anthropic.com/api/oauth/profile`, same headers.
+`organization.organization_type` is `claude_max` or `claude_team`; `organization.rate_limit_tier`
+ends in the multiple (`default_claude_max_20x`, and `default_claude_max_5x` on a Team seat). A Max
+20x account also carried `plan_display_name: "Ultra"`; the Team accounts carried none.
+
 **Cache.** Claude Code marks its system blocks `cache_control: {type: ephemeral, ttl: 1h}`. The
 first SSE event, `message_start`, carries `usage.cache_read_input_tokens` and
 `usage.cache_creation_input_tokens` (split into `ephemeral_5m` and `ephemeral_1h`), so the relay
@@ -108,7 +113,7 @@ and `x-codex-credits-has-credits` / `-balance`.
 **Usage, on request (captured 2026-11-13).** `GET https://chatgpt.com/backend-api/wham/usage` with
 the bearer token and `chatgpt-account-id`. `rate_limit.primary_window` and `.secondary_window` are
 each `{used_percent, limit_window_seconds, reset_at}` or null: `used_percent` is 0–100, `reset_at`
-Unix seconds.
+Unix seconds. `plan_type` names the plan in one lowercase word (`prolite` seen, on the $100 Pro tier).
 
 **A spent account.** Not captured. Sluice treats any `429` as a refusal and tries the next account.
 

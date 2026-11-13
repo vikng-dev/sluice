@@ -4,8 +4,9 @@ A macOS menu bar app that pools your AI coding subscriptions behind one local ad
 Claude Code and Codex talk to Sluice on localhost; Sluice decides which of your accounts answers.
 
 **Status: early.** Claude Code and Codex are relayed across pools of accounts. The menu bar panel shows
-each profile's accounts with how much of each allowance is used and when it resets, marks the
-account answering now, and switches the routing on and off. `sluice status` prints the same.
+each profile's accounts with the tier each is on, how much of each allowance is used and when it
+resets, marks the
+account answering now, and says when the clients are not going through Sluice. `sluice status` prints the same.
 
 ## Use it
 
@@ -14,8 +15,8 @@ brew install --cask vikng-dev/tap/sluice
 ```
 
 Open Sluice once. macOS keeps it running from then on: it starts with the Mac and comes back if it
-stops. The app is also the `sluice` command, which Homebrew puts on your PATH. Then turn on
-**Route Claude Code and Codex through Sluice** in the menu, or run:
+stops. The app is also the `sluice` command, which Homebrew puts on your PATH. Then press
+**Turn on** in the panel, or run:
 
 ```sh
 sluice setup
@@ -29,7 +30,7 @@ That does two things, and `sluice setup --undo` reverses both:
   PATH with one marked line in your shell's startup file. The stand-in opens the profile the
   current folder belongs to, then runs the real Claude Code.
 
-The menu switch, and quitting from the menu, turn only the address off: the clients go back to
+**Stop routing** in the panel's menu, and quitting, turn only the address off: the clients go back to
 their providers, and work still opens in its own profile.
 
 ```sh
@@ -118,7 +119,7 @@ One Swift package, no dependencies.
 | `Sources/Core` | Accounts, Keychain storage, relay, router, the provider contract. No UI. |
 | `Sources/Providers` | One folder per provider (Claude, Codex), each answering the contract. |
 | `Sources/App` | The one program: the menu bar app and the `sluice` command. |
-| `Assets` | The app icon: its drawing, and the built `.icns`. The menu bar glyph is drawn in code from the same shapes. |
+| `Assets` | The app icon: its drawing, and the built `.icns`. The menu bar glyph is drawn in code from the same shapes. Each provider's mark, named by provider. |
 
 ## Build
 

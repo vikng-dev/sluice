@@ -137,10 +137,38 @@ public struct Claude: Provider {
         var organization: Organization?
     }
 
-    public func usage(of account: Account) async throws -> [Window] {
-        let (status, body) = try await HTTPCall.send("GET", Self.usage, headers: ["Authorization": "Bearer \(account.accessToken)", "anthropic-beta": Self.oauthBeta])
-        guard status == 200 else { throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil) }
-        return try Self.windows(inUsage: body)
+    /// The windows come from one address and the plan from another; both must answer.
+    public func usage(of account: Account) async throws -> Usage {
+        let headers = ["Authorization": "Bearer \(account.accessToken)", "anthropic-beta": Self.oauthBeta]
+        async let usage = HTTPCall.send("GET", Self.usage, headers: headers)
+        async let profile = HTTPCall.send("GET", Self.profile, headers: headers)
+        for status in try await [usage.0, profile.0] where status != 200 {
+            throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil)
+        }
+        return try await Usage(plan: Self.plan(inProfile: profile.1), windows: Self.windows(inUsage: usage.1))
+    }
+
+    /// The plan in a profile. The tier's name ends in the multiple (`default_claude_max_20x`), and a Team
+    /// seat is on the same tiers as a person. Prices are claude.com/pricing on 2026-11-13, where a seat
+    /// with five times the usage is a Premium one. The basic plans were not captured: `claude_pro` is
+    /// OpenUsage's reading (35e88e9), and a basic tier is assumed to name no multiple.
+    static func plan(inProfile body: Data) -> Plan? {
+        guard let organization = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["organization"] as? [String: Any],
+              let kind = organization["organization_type"] as? String else { return nil }
+        let named = (organization["rate_limit_tier"] as? String)?.firstMatch(of: /_(\d+)x$/).flatMap { Int($0.1) }
+        let multiple = named ?? (["claude_pro", "claude_team"].contains(kind) ? 1 : nil)
+        let price: Int? = switch (kind, multiple) {
+        case ("claude_pro", 1): 20
+        case ("claude_max", 5): 100
+        case ("claude_max", 20): 200
+        case ("claude_team", 1): 25
+        case ("claude_team", 5): 125
+        default: nil
+        }
+        return Plan(
+            name: organization["plan_display_name"] as? String ?? String(kind.trimmingPrefix("claude_")).capitalized,
+            multiple: multiple, business: ["claude_team", "claude_enterprise"].contains(kind), price: price
+        )
     }
 
     /// The windows in a usage answer. One the account does not have, or has not started, has no reset.

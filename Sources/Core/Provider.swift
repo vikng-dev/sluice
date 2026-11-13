@@ -29,9 +29,44 @@ public protocol Provider: Sendable {
     func conversation(of request: HTTPRequest) -> (id: String, cacheLifetime: TimeInterval)?
     /// What a response's status and headers (names lowercased) say about the account that answered.
     func reading(status: Int, headers: [String: String]) -> Reading
-    /// The account's windows as the provider reports them when asked, which keeps an account that no
-    /// request has gone through lately from showing what it last was.
-    func usage(of account: Account) async throws -> [Window]
+    /// What the provider says about the account when asked, which keeps an account that no request
+    /// has gone through lately from showing what it last was.
+    func usage(of account: Account) async throws -> Usage
+}
+
+public struct Usage: Sendable, Equatable {
+    /// Nil when the provider names no plan.
+    public var plan: Plan?
+    public var windows: [Window]
+
+    public init(plan: Plan?, windows: [Window]) {
+        self.plan = plan
+        self.windows = windows
+    }
+}
+
+/// The tier an account is on. What the tier promises, not what the account is seen to get.
+public struct Plan: Sendable, Codable, Equatable {
+    /// The provider's name for it.
+    public var name: String
+    /// Its usage as a multiple of the provider's basic plan of the same kind; nil when none is published.
+    public var multiple: Int?
+    /// Sold by the seat to an organization, not to a person.
+    public var business: Bool
+    /// Dollars a month at list price; nil when not known.
+    public var price: Int?
+
+    public init(name: String, multiple: Int?, business: Bool, price: Int?) {
+        self.name = name
+        self.multiple = multiple
+        self.business = business
+        self.price = price
+    }
+
+    /// The tier in a few characters: the multiple where there is one, the name where there is not.
+    public var tier: String {
+        ([multiple.map { "\($0)x" } ?? name] + (price.map { ["$\($0)"] } ?? [])).joined(separator: " ")
+    }
 }
 
 public struct Reading: Sendable, Equatable {

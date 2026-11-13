@@ -172,6 +172,8 @@ public struct AccountStatus: Codable, Sendable {
     public var profile: String
     /// Whether it is its profile's main account.
     public var main: Bool
+    /// As its provider last told it, since the relay started.
+    public var plan: Plan?
     public var windows: [Window]
     public var warmConversations: Int
     /// When it last answered a relayed request, since the relay started.
@@ -188,6 +190,7 @@ actor Accounts {
     private var memory: Memory
     private var lastAnswered: [String: Date] = [:]
     private var problems: [String: String] = [:]
+    private var plans: [String: Plan] = [:]
 
     init(storage: Storage) throws {
         self.storage = storage
@@ -199,7 +202,7 @@ actor Accounts {
         let config = try storage.config(), now = Date()
         return accounts.map {
             AccountStatus(
-                provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), main: config.isMain($0.label),
+                provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), main: config.isMain($0.label), plan: plans[$0.id],
                 windows: (memory.usage[$0.id] ?? []).filter { $0.resetsAt > now }.sorted { $0.resetsAt < $1.resetsAt },
                 warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: lastAnswered[$0.id], problem: problems[$0.id]
             )
@@ -230,10 +233,20 @@ actor Accounts {
         problems[id] = problem
     }
 
-    /// What the provider just said about the account, in answer to a relayed request or to a usage check.
-    func record(_ windows: [Window], for id: String, answeringARequest: Bool) {
+    /// What the provider said about the account when asked.
+    func record(_ usage: Usage, for id: String) {
+        plans[id] = usage.plan
+        record(usage.windows, for: id)
+    }
+
+    /// The account answered a relayed request, reporting these windows.
+    func answered(_ id: String, reporting windows: [Window]) {
+        lastAnswered[id] = Date()
+        record(windows, for: id)
+    }
+
+    private func record(_ windows: [Window], for id: String) {
         problems[id] = nil
-        if answeringARequest { lastAnswered[id] = Date() }
         for window in windows {
             memory.usage[id, default: []].removeAll { $0.name == window.name }
             memory.usage[id, default: []].append(window)
