@@ -111,15 +111,7 @@ struct Panel: View {
                 .padding(10)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
             }
-            if showsUse {
-                // It scrolls where it is taller than a small screen has room for.
-                let use = UsageView(accounts: accounts, config: config, titles: titles, history: history, now: now)
-                ViewThatFits(in: .vertical) {
-                    use
-                    ScrollView { use }
-                }
-                .frame(maxHeight: 640)
-            }
+            if showsUse { UsageView(accounts: accounts, config: config, titles: titles, history: history, now: now) }
             ForEach(showsUse ? [] : sections, id: \.name) { section in
                 VStack(alignment: .leading, spacing: 6) {
                     ProfileCaption(
