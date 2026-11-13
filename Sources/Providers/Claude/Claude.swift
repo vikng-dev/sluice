@@ -15,6 +15,7 @@ public struct Claude: Provider {
     static let authorize = URL(string: "https://claude.ai/oauth/authorize")!
     static let token = URL(string: "https://platform.claude.com/v1/oauth/token")!
     static let usage = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+    static let grants = URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1")!
     static let profile = URL(string: "https://api.anthropic.com/api/oauth/profile")!
     static let oauthBeta = "oauth-2025-04-20"
 
@@ -227,6 +228,62 @@ public struct Claude: Provider {
             guard let window = usage[key] as? [String: Any], let used = window["utilization"] as? Double,
                   let reset = (window["resets_at"] as? String).flatMap(time.date) else { return nil }
             return Window(name: name, used: used / 100, resetsAt: reset)
+        }
+    }
+
+    /// Resets are told to Claude Code alone, by its name and version (docs/wire.md), so they are asked for
+    /// under the version the client itself last came through the relay with.
+    public func clientName(from agent: String) -> String? {
+        agent.firstMatch(of: /^claude-cli\/[0-9.]+/).map { "\($0.0) (external, cli)" }
+    }
+
+    private func asClient(_ account: Account, _ client: String) -> [String: String] {
+        ["Authorization": "Bearer \(account.accessToken)", "anthropic-beta": Self.oauthBeta, "User-Agent": client]
+    }
+
+    public func resets(of account: Account, as client: String?) async throws -> [Reset]? {
+        guard let client else { return nil }
+        let (status, body) = try await HTTPCall.send("GET", Self.grants, headers: asClient(account, client))
+        guard status == 200 else { throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil) }
+        return try Self.resets(inUsage: body)
+    }
+
+    /// The resets in a usage answer that was asked for them, the one the provider wants used first at the head.
+    static func resets(inUsage body: Data) throws -> [Reset] {
+        guard let held = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["cedar_ember"] as? [String: Any] else { throw ProviderError.invalidResponse }
+        guard held["eligible"] as? Bool == true else { return [] }
+        let time = ISO8601DateFormatter()
+        let names = ["five_hour": "5h", "seven_day": "7d", "seven_day_overage_included": "fable"]
+        let next = held["next_grant_id"] as? String
+        return (held["grants"] as? [[String: Any]] ?? []).compactMap { grant -> Reset? in
+            guard let id = grant["id"] as? String, let left = grant["resets_left"] as? Int, left > 0 else { return nil }
+            return Reset(
+                id: id, refills: (grant["clears"] as? [String] ?? []).map { names[$0] ?? $0 }, givesBack: grant["gives_back_weekly"] as? Bool == true, left: left,
+                expiresAt: (grant["ends_at"] as? String).flatMap(time.date), usable: grant["usable_now"] as? Bool == true && grant["paused"] as? Bool != true
+            )
+        }
+        .sorted { ($0.id == next ? 0 : 1) < ($1.id == next ? 0 : 1) }
+    }
+
+    public func use(_ reset: Reset, of account: Account, as client: String?) async throws {
+        guard let client, let organization = account.organization else { throw ResetRefused("Claude Code has not come through Sluice yet, and a reset is used in its name") }
+        // A fixed host and an id the provider gave.
+        let address = URL(string: "https://api.anthropic.com/api/organizations/\(organization)/reset_rate_limits")!
+        let (status, body) = try await HTTPCall.send("POST", address, headers: asClient(account, client), json: ["program": "cedar_ember", "grant_id": reset.id, "request_id": UUID().uuidString])
+        guard status == 200 else { throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil) }
+        if let refusal = try Self.refusal(inClaim: body) { throw refusal }
+    }
+
+    /// Why a claim's answer says the reset was not used; nil when it was.
+    static func refusal(inClaim body: Data) throws -> ResetRefused? {
+        guard let answer = try? JSONSerialization.jsonObject(with: body) as? [String: Any], let result = answer["result"] as? String else { throw ProviderError.invalidResponse }
+        switch result == "unavailable" ? answer["reason"] as? String ?? result : result {
+        case "reset", "already_used": return nil
+        case "not_limited": return ResetRefused("nothing of the account is used yet")
+        case "not_next_grant": return ResetRefused("the provider wants another of the account's resets used first")
+        case "cooldown", "paused", "low_priority_active": return ResetRefused("the provider does not take a reset from the account just now")
+        case "no_grant", "unknown_grant", "ineligible": return ResetRefused("the account no longer holds that reset")
+        case let other: return ResetRefused("the provider did not take it (\(other))")
         }
     }
 

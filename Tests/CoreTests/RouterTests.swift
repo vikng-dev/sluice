@@ -107,6 +107,36 @@ import Testing
         #expect(Claude.scoped(inUsage: Data(#"{"limits":null}"#.utf8)).isEmpty)
     }
 
+    @Test func theResetsAnAccountHoldsAreReadWithWhatEachRefillsAndTheOneToUseFirstAtTheHead() throws {
+        let body = #"{"cedar_ember":{"eligible":true,"next_grant_id":"full","grants":[{"id":"fable","clears":["five_hour","seven_day_overage_included"],"ends_at":"2027-03-09T07:59:00+00:00","gives_back_weekly":true,"paused":false,"resets_left":2,"usable_now":true},{"id":"spent","clears":["seven_day"],"ends_at":"2026-12-10T22:00:00+00:00","resets_left":0,"usable_now":false},{"id":"full","clears":["five_hour","seven_day","seven_day_overage_included"],"ends_at":"2026-12-10T22:00:00+00:00","gives_back_weekly":false,"paused":true,"resets_left":1,"usable_now":true}]}}"#
+        let resets = try Claude.resets(inUsage: Data(body.utf8))
+        #expect(resets.map(\.id) == ["full", "fable"])
+        #expect(resets[0].refills == ["5h", "7d", "fable"] && !resets[0].usable && !resets[0].givesBack)
+        #expect(resets[1].refills == ["5h", "fable"] && resets[1].usable && resets[1].givesBack && resets[1].left == 2)
+        #expect(Int(resets[0].expiresAt?.timeIntervalSince1970 ?? 0) == 1_796_940_000)
+        // Asked as another program, the provider says the account may hold none, which is not an error.
+        #expect(try Claude.resets(inUsage: Data(#"{"cedar_ember":{"eligible":false,"ineligible_reason":"surface","grants":[]}}"#.utf8)).isEmpty)
+        // An answer that was not asked about resets says nothing of them.
+        #expect(throws: ProviderError.self) { try Claude.resets(inUsage: Data(#"{"cedar_ember":null}"#.utf8)) }
+
+        let list = #"{"available_count":1,"credits":[{"id":"c1","status":"available","expires_at":"2026-12-12T22:18:10.270687Z"},{"id":"c0","status":"redeemed","expires_at":null}]}"#
+        func held(usableNow: Int) throws -> [Reset] {
+            try Codex.resets(inList: Data(list.utf8), usage: Data(#"{"rate_limit_reset_credits":{"available_count":1,"applicable_available_count":\#(usableNow)}}"#.utf8))
+        }
+        #expect(try held(usableNow: 0).map(\.id) == ["c1"] && !held(usableNow: 0)[0].usable && held(usableNow: 1)[0].usable)
+        #expect(Int(try held(usableNow: 0)[0].expiresAt?.timeIntervalSince1970 ?? 0) == 1_797_113_890)
+    }
+
+    @Test func aResetTheProviderDidNotTakeIsSaidAndNotTakenForUsed() throws {
+        #expect(try Claude.refusal(inClaim: Data(#"{"result":"reset","resets_left":0}"#.utf8)) == nil)
+        #expect(try Claude.refusal(inClaim: Data(#"{"result":"not_limited"}"#.utf8)) != nil)
+        // The reason is under another key when the result is only that it was unavailable.
+        #expect(try Claude.refusal(inClaim: Data(#"{"result":"unavailable","reason":"not_next_grant"}"#.utf8)) == ResetRefused("the provider wants another of the account's resets used first"))
+        #expect(try Codex.refusal(inClaim: Data(#"{"code":"reset","windows_reset":["weekly"]}"#.utf8)) == nil)
+        #expect(try Codex.refusal(inClaim: Data(#"{"code":"nothing_to_reset"}"#.utf8)) != nil)
+        #expect(throws: ProviderError.self) { try Codex.refusal(inClaim: Data("<html>".utf8)) }
+    }
+
     @Test func aLineOfHistoryFromBeforeAFieldWasKeptIsStillRead() throws {
         let file = FileManager.default.temporaryDirectory.appending(path: "sluice-history-\(UUID().uuidString).jsonl")
         defer { try? FileManager.default.removeItem(at: file) }

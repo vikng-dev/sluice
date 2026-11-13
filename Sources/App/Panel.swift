@@ -19,6 +19,8 @@ struct Panel: View {
     let rename: (_ profile: String, _ label: String) -> Void
     let tint: (_ profile: String, Tint?) -> Void
     let star: (_ profile: String, _ provider: String, Bool) -> Void
+    /// Asks first, and spends the reset.
+    let useReset: (Reset, AccountStatus) -> Void
     /// Makes a profile, and when it is made for an account, with that account in it.
     let addProfile: (_ shownAs: String, _ founder: AccountStatus?) -> Void
     let removeProfile: (_ profile: String) -> Void
@@ -53,7 +55,7 @@ struct Panel: View {
     }
 
     private var actions: RowActions {
-        RowActions(remove: remove, carry: { carry($0, client: $1, $2) }, drop: drop, putBack: putBack)
+        RowActions(remove: remove, useReset: useReset, carry: { carry($0, client: $1, $2) }, drop: drop, putBack: putBack)
     }
 
     private func carry(_ account: AccountStatus, client: String?, _ drag: DragGesture.Value) {
@@ -234,6 +236,7 @@ private extension Menu {
 /// What can be done to an account's row. The copy that follows the pointer has none.
 private struct RowActions {
     let remove: (AccountStatus) -> Void
+    let useReset: (Reset, AccountStatus) -> Void
     let carry: (AccountStatus, _ client: String?, DragGesture.Value) -> Void
     let drop: () -> Void
     let putBack: () -> Void
@@ -591,6 +594,24 @@ private struct PoolView: View {
     let star: (Bool) -> Void
 
     @State private var hovered = false
+    @State private var showsResets = false
+
+    /// The resets the pool's accounts hold, the soonest to lapse first. An account's resets that differ
+    /// only in name are one line, which uses the first of them.
+    private var held: [(id: String, reset: Reset, count: Int, account: AccountStatus)] {
+        pool.accounts.flatMap { account in
+            var lines: [(id: String, reset: Reset, count: Int, account: AccountStatus)] = []
+            for reset in account.resets {
+                if let same = lines.firstIndex(where: { ($0.reset.refills, $0.reset.givesBack, $0.reset.expiresAt, $0.reset.usable) == (reset.refills, reset.givesBack, reset.expiresAt, reset.usable) }) {
+                    lines[same].count += reset.left
+                } else {
+                    lines.append(("\(account.id):\(reset.id)", reset, reset.left, account))
+                }
+            }
+            return lines
+        }
+        .sorted { ($0.reset.expiresAt ?? .distantFuture) < ($1.reset.expiresAt ?? .distantFuture) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -606,9 +627,23 @@ private struct PoolView: View {
                     .opacity(hovered ? 1 : 0)
                 Spacer()
                 Share(used: pool.accounts.used, worded: true)
+                if !held.isEmpty {
+                    Button { showsResets.toggle() } label: {
+                        Label("\(held.map(\.count).reduce(0, +))", systemImage: "arrow.counterclockwise").labelStyle(Tight())
+                            .font(.caption2.weight(.semibold)).foregroundStyle(.green)
+                            .padding(.horizontal, 6).padding(.vertical, 2).background(Color.green.opacity(0.16), in: Capsule())
+                    }
+                    .buttonStyle(.plain).help("Resets its accounts hold. Click to see them")
+                }
             }
             .contentShape(Rectangle())
             .onHover { hovered = $0 }
+            if showsResets, !held.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(held, id: \.id) { ResetRow(reset: $0.reset, count: $0.count, account: $0.account, now: now, use: actions.useReset) }
+                }
+                .padding(.vertical, 2)
+            }
             VStack(alignment: .leading, spacing: 6) {
                 PoolBar(accounts: pool.accounts).padding(.leading, AccountRow.gutter)
                 ForEach(pool.accounts, id: \.id) { account in
@@ -671,8 +706,17 @@ private struct AccountRow: View {
     /// It answered a request within the last minute.
     private var serving: Bool { account.lastAnswered.map { now.timeIntervalSince($0) < 60 } ?? false }
 
-    /// A shorter window that is spent or nearly so: what keeps the account from serving for now, or soon will.
-    private var pace: SluiceCore.Window? { account.windows.dropLast().first { $0.used >= 0.85 } }
+    /// Open, the row lists every limit the account has.
+    @State private var opened = false
+
+    /// The week, then the shorter windows, then the limits on a part of its use.
+    private var limits: [SluiceCore.Window] { account.windows.reversed() + account.scoped }
+
+    /// What stops the account next: its budget, unless another of its limits is fuller and near its end.
+    private var tightest: SluiceCore.Window? {
+        guard let budget = account.budget else { return nil }
+        return limits.dropFirst().filter { $0.used > budget.used && $0.used >= 0.7 }.max { $0.used < $1.used } ?? budget
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -699,6 +743,9 @@ private struct AccountRow: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 Text(account.label).font(.callout).lineLimit(1).truncationMode(.middle)
+                    .contentShape(Rectangle())
+                    .onTapGesture { if limits.count > 1 { opened.toggle() } }
+                    .help(limits.count > 1 ? "Click for every limit it has" : "")
                 if let client {
                     Image(systemName: "person.crop.circle.fill").font(.caption).foregroundStyle(.secondary)
                         .help("\(client) itself is signed in as this account in this profile. What \(client) does outside Sluice is this account's; its requests are paid by the whole pool.")
@@ -711,9 +758,14 @@ private struct AccountRow: View {
                 }
                 Spacer(minLength: 4)
                 if let plan = account.plan { Badge(text: plan.tier, symbol: plan.business ? "briefcase.fill" : nil).help(plan.name + (plan.price.map { ", $\($0) a month" } ?? "")) }
-                if let budget = account.budget {
-                    Share(used: budget.used).frame(width: Self.share, alignment: .trailing)
-                    Clock(window: budget, now: now).frame(width: Self.clock, alignment: .trailing)
+                if let tightest {
+                    if tightest.name != account.budget?.name {
+                        Text(tightest.name == tightest.title.lowercased() ? tightest.title : tightest.name).font(.caption2.weight(.semibold))
+                            .foregroundStyle(tightest.used >= 1 ? Color.red : tightest.used >= 0.85 ? .orange : .secondary)
+                            .help("Its \(tightest.title) limit is the one closest to stopping it")
+                    }
+                    Share(used: tightest.used).frame(width: Self.share, alignment: .trailing)
+                    Clock(window: tightest, now: now).frame(width: Self.clock, alignment: .trailing)
                 } else {
                     Text("unused").font(.caption).foregroundStyle(.tertiary).frame(width: Self.share + Self.clock + 6, alignment: .trailing)
                         .help("Nothing was used in its current windows, or its provider has not said")
@@ -721,14 +773,65 @@ private struct AccountRow: View {
             }
             if let problem = account.problem {
                 Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-            } else if let pace {
-                HStack(spacing: 6) {
-                    Spacer()
-                    Text(pace.name).font(.caption2).foregroundStyle(.secondary)
-                    Share(used: pace.used).frame(width: Self.share, alignment: .trailing)
-                    Clock(window: pace, now: now).frame(width: Self.clock, alignment: .trailing)
+            } else if opened {
+                VStack(spacing: 4) {
+                    ForEach(limits, id: \.name) { limit in
+                        HStack(spacing: 6) {
+                            Text(limit.title).font(.caption).foregroundStyle(.secondary).frame(width: 48, alignment: .leading)
+                            Bar(used: limit.used).frame(width: 120)
+                            Spacer(minLength: 4)
+                            Share(used: limit.used).frame(width: Self.share, alignment: .trailing)
+                            Clock(window: limit, now: now).frame(width: Self.clock, alignment: .trailing)
+                        }
+                    }
                 }
+                .padding(.leading, 10).padding(.vertical, 2)
             }
+        }
+    }
+}
+
+extension SluiceCore.Window {
+    /// What a limit is called where an account's limits are listed.
+    var title: String { name == "7d" ? "Week" : name == "5h" ? "5-hour" : name.capitalized }
+}
+
+extension Reset {
+    /// What it is called for the account that holds it: a full reset when it refills every limit the
+    /// account has, and otherwise by the limits it does refill.
+    func title(for account: AccountStatus) -> String {
+        let has = Set((account.windows + account.scoped).map(\.name))
+        if !has.isEmpty, has.isSubset(of: refills) { return "Full reset" }
+        return ListFormatter.localizedString(byJoining: refills.map { SluiceCore.Window(name: $0, used: 0, resetsAt: .distantFuture).title }) + " reset"
+    }
+}
+
+/// A reset an account holds: what it refills, whose it is, when it lapses, and using it.
+private struct ResetRow: View {
+    let reset: Reset
+    /// How many the account holds that are the same in all but name.
+    let count: Int
+    let account: AccountStatus
+    let now: Date
+    let use: (Reset, AccountStatus) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.counterclockwise").font(.caption.weight(.bold)).foregroundStyle(.green).frame(width: AccountRow.gutter - 8, alignment: .leading)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(reset.title(for: account) + (count > 1 ? " ×\(count)" : "")).font(.callout)
+                    .help(reset.givesBack ? "It also gives the week back what that used of it" : "")
+                Text(account.label).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            }
+            Spacer(minLength: 4)
+            if let expires = reset.expiresAt {
+                Clock(window: SluiceCore.Window(name: "", used: 0, resetsAt: expires), now: now, lapses: true)
+            }
+            Button("Use") { use(reset, account) }
+                .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(reset.usable ? Color.green : Color.secondary.opacity(0.6))
+                .padding(.horizontal, 9).padding(.vertical, 2).background(Color.green.opacity(reset.usable ? 0.2 : 0.06), in: Capsule())
+                .disabled(!reset.usable)
+                .help(reset.usable ? "Refill now. This cannot be taken back" : "Its provider would not take it now")
         }
     }
 }
@@ -754,6 +857,8 @@ struct Share: View {
 struct Clock: View {
     let window: SluiceCore.Window
     let now: Date
+    /// It is a reset that lapses then, and not a window that resets.
+    var lapses = false
     @AppStorage("readsResetTimes") private var times = false
 
     var body: some View {
@@ -761,7 +866,7 @@ struct Clock: View {
             .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
             .contentShape(Rectangle())
             .onTapGesture { times.toggle() }
-            .help(times ? "Resets then. Click for the time left" : "Resets in this long. Click for the time")
+            .help(times ? "\(lapses ? "Lapses" : "Resets") then. Click for the time left" : "\(lapses ? "Lapses" : "Resets") in this long. Click for the time")
     }
 }
 

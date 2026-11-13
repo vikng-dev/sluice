@@ -47,7 +47,21 @@ route on them. `extra_usage` and `spend` are the paid overage, which Sluice does
 **Limit resets (captured 2026-11-13).** The same address with `?cedar_ember=1&skip_spend=1` fills
 `cedar_ember`: `{eligible, ineligible_reason, at_limit, cooldown_until, exhausted, grants,
 next_grant_id, weekly_resets_at}`. Asked as Sluice, every account answered `eligible: false,
-ineligible_reason: "surface"` with no grants, so the resets an account holds are not seen.
+ineligible_reason: "surface"` with no grants. Asked with `User-Agent: claude-cli/2.1.323 (external,
+cli)`, every account answered `eligible: true` with its grants, each `{id, label, type, clears,
+resets_left, resets_total, starts_at, ends_at, usable_now, use_requires_limit, paused,
+gives_back_weekly, percent_used, blocking, unavailable_reason}`. `clears` names windows as
+`five_hour`, `seven_day` and `seven_day_overage_included`, the last being the Fable share of the
+week; `ends_at` is ISO 8601 without fractional seconds; a used-up grant stays listed with
+`resets_left: 0`; `next_grant_id` names the one to use first. Claude Code's own requests through
+the relay carry `User-Agent: claude-cli/<version> (external, <entrypoint>)` (`sdk-cli` seen for
+`claude -p`), which is where Sluice takes the version from.
+
+**Using a reset (not captured; read in Claude Code 2.1.323's program and OpenUsage 35e88e9).**
+`POST https://api.anthropic.com/api/organizations/<organization uuid>/reset_rate_limits` with the
+same headers and `{program: "cedar_ember", grant_id, request_id}`. The answer's `result` is `reset`
+or `already_used` when it took, else `not_limited`, `cooldown`, `ineligible` or `unavailable`, the
+last with a `reason` such as `not_next_grant`. Confirm against the first real one.
 
 **Plan (captured 2026-11-13).** `GET https://api.anthropic.com/api/oauth/profile`, same headers.
 `organization.organization_type` is `claude_max` or `claude_team`; `organization.rate_limit_tier`
@@ -134,6 +148,14 @@ each `{used_percent, limit_window_seconds, reset_at}` or null: `used_percent` is
 Unix seconds. `plan_type` names the plan in one lowercase word (`prolite` seen, on the $100 Pro tier), which has
 one window, of a week. `rate_limit_reset_credits` is `{available_count, applicable_available_count}`:
 the resets the account holds, and those usable now. `credits` is the paid balance.
+
+**Resets (captured 2026-11-13).** `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits`
+with the same two headers answers `{available_count, credits[]}`, each credit `{id, status, title,
+reset_type, granted_at, expires_at, is_supported_by_plan, redeemed_at}`: `status` `available` seen,
+`expires_at` ISO 8601 with fractional seconds, `title` "Full reset". Using one is not captured;
+openai/codex (69231e1, `codex-rs/backend-client/src/client/rate_limit_resets.rs`) posts
+`{redeem_request_id, credit_id}` to `…/rate-limit-reset-credits/consume` and reads `code`: `reset`,
+`already_redeemed`, `nothing_to_reset` or `no_credit`. Confirm against the first real one.
 
 **A spent account.** Not captured. Sluice treats any `429` as a refusal and tries the next account.
 

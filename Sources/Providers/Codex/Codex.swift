@@ -14,6 +14,7 @@ public struct Codex: Provider {
     static let authorize = URL(string: "https://auth.openai.com/oauth/authorize")!
     static let token = URL(string: "https://auth.openai.com/oauth/token")!
     static let usage = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
+    static let resets = URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!
 
     public init() {}
 
@@ -173,6 +174,51 @@ public struct Codex: Provider {
         let (status, body) = try await HTTPCall.send("GET", Self.usage, headers: ["Authorization": "Bearer \(account.accessToken)", "chatgpt-account-id": account.subject])
         guard status == 200 else { throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil) }
         return try Self.usage(in: body)
+    }
+
+    private func headers(_ account: Account) -> [String: String] {
+        ["Authorization": "Bearer \(account.accessToken)", "chatgpt-account-id": account.subject]
+    }
+
+    public func clientName(from agent: String) -> String? { nil }
+
+    /// The list says which resets are held, and the usage answer how many of them would be taken now.
+    public func resets(of account: Account, as client: String?) async throws -> [Reset]? {
+        async let list = HTTPCall.send("GET", Self.resets, headers: headers(account))
+        async let usage = HTTPCall.send("GET", Self.usage, headers: headers(account))
+        for status in try await [list.0, usage.0] where status != 200 {
+            throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil)
+        }
+        return try await Self.resets(inList: list.1, usage: usage.1)
+    }
+
+    static func resets(inList list: Data, usage: Data) throws -> [Reset] {
+        guard let credits = (try? JSONSerialization.jsonObject(with: list) as? [String: Any])?["credits"] as? [[String: Any]] else { throw ProviderError.invalidResponse }
+        let counts = (try? JSONSerialization.jsonObject(with: usage) as? [String: Any])?["rate_limit_reset_credits"] as? [String: Any]
+        let usable = counts?["applicable_available_count"] as? Int ?? 0
+        let time = ISO8601DateFormatter()
+        time.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return credits.filter { $0["status"] as? String == "available" }.enumerated().compactMap { index, credit in
+            // The one kind of reset refills every window the plan has.
+            (credit["id"] as? String).map { Reset(id: $0, refills: ["5h", "7d"], expiresAt: (credit["expires_at"] as? String).flatMap(time.date), usable: index < usable) }
+        }
+    }
+
+    public func use(_ reset: Reset, of account: Account, as client: String?) async throws {
+        let (status, body) = try await HTTPCall.send("POST", Self.resets.appending(path: "consume"), headers: headers(account), json: ["redeem_request_id": UUID().uuidString, "credit_id": reset.id])
+        guard status == 200 else { throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil) }
+        if let refusal = try Self.refusal(inClaim: body) { throw refusal }
+    }
+
+    /// Why a claim's answer says the reset was not used; nil when it was.
+    static func refusal(inClaim body: Data) throws -> ResetRefused? {
+        guard let code = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["code"] as? String else { throw ProviderError.invalidResponse }
+        switch code {
+        case "reset", "already_redeemed": return nil
+        case "nothing_to_reset": return ResetRefused("too little of the account is used yet")
+        case "no_credit": return ResetRefused("the account no longer holds that reset")
+        default: return ResetRefused("the provider did not take it (\(code))")
+        }
     }
 
     /// The plans by `plan_type`. `prolite` was captured; the other names are OpenUsage's reading (35e88e9).

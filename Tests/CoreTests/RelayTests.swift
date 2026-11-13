@@ -17,6 +17,9 @@ private struct Fake: Provider {
     func route(_ on: Bool, profiles: [String]) {}
     func isRouted(profiles: [String]) -> Bool { false }
     func usage(of account: Account) async throws -> Usage { Usage(plan: nil, windows: []) }
+    func clientName(from agent: String) -> String? { agent.hasPrefix("own/") ? agent : nil }
+    func resets(of account: Account, as client: String?) async throws -> [Reset]? { client.map { [Reset(id: $0, refills: ["7d"], expiresAt: nil, usable: true)] } }
+    func use(_ reset: Reset, of account: Account, as client: String?) async throws {}
     func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL {
         signsInAs == nil ? upstream : URL(string: "\(redirectURI)?code=c&state=\(state)")!
     }
@@ -65,6 +68,26 @@ private actor Hits {
 
         let pinned = try await HTTPCall.send("GET", URL(string: "http://127.0.0.1:47612/fake/pin/a/v1/thing")!)
         #expect(pinned.status == 429)
+        withExtendedLifetime((provider, server)) {}
+    }
+
+    @Test func resetsAreAskedForInTheNameTheClientItselfCameThroughWith() async throws {
+        let provider = try Server(port: 47618) { _, writer in try await writer.send(200, text: "ok") }
+        try await provider.start()
+        let account = Account(provider: "fake", subject: "b", organization: nil, label: "b", accessToken: "", refreshToken: "", expiresAt: .distantFuture)
+        let relay = try Relay(providers: [Fake(upstream: URL(string: "http://127.0.0.1:47618")!)], storage: Storage(loadAccounts: { [account] }, storeAccounts: { _ in }, config: { Config() }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in }), port: 47619)
+        let server = try Server(port: 47619) { try await relay.handle($0, $1) }
+        try await server.start()
+
+        // Nobody to ask as yet, which is not an answer: the next check asks again.
+        await relay.checkUsage()
+        #expect(try await relay.status().first?.resets.isEmpty == true)
+        let url = URL(string: "http://127.0.0.1:47619/fake/v1/thing")!
+        _ = try await HTTPCall.send("GET", url, headers: ["User-Agent": "own/1"])
+        // Another program through the same relay does not change whom the provider's client is.
+        _ = try await HTTPCall.send("GET", url, headers: ["User-Agent": "other/9"])
+        await relay.checkUsage()
+        #expect(try await relay.status().first?.resets.map(\.id) == ["own/1"])
         withExtendedLifetime((provider, server)) {}
     }
 

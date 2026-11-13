@@ -207,6 +207,8 @@ private extension String {
 struct Memory: Codable {
     var usage: [String: [Window]] = [:]
     var router = Router()
+    /// By provider: how its own client last named itself. Nil in a memory from before this was kept.
+    var clients: [String: String]?
 }
 
 public struct AccountStatus: Codable, Sendable {
@@ -216,6 +218,10 @@ public struct AccountStatus: Codable, Sendable {
     /// As its provider last told it, since the relay started.
     public var plan: Plan?
     public var windows: [Window]
+    /// The limits on a part of its use, such as one model's own share of the week.
+    public var scoped: [Window] = []
+    /// The resets it holds, as its provider last told.
+    public var resets: [Reset] = []
     public var warmConversations: Int
     /// When it last answered a relayed request, since the relay started.
     public var lastAnswered: Date?
@@ -234,8 +240,11 @@ actor Accounts {
     private var plans: [String: Plan] = [:]
     /// What each account's windows read when its last line of history was written.
     private var sampled: [String: [Window]] = [:]
-    /// The limits on a part of each account's use, as last told. They are kept for the history only.
+    /// The limits on a part of each account's use, as last told.
     private var scoped: [String: [Window]] = [:]
+    /// The resets each account holds, and when that was last asked, since the relay started.
+    private var resets: [String: [Reset]] = [:]
+    private var resetsAsked: [String: Date] = [:]
 
     init(storage: Storage) throws {
         self.storage = storage
@@ -249,6 +258,8 @@ actor Accounts {
             AccountStatus(
                 provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), plan: plans[$0.id],
                 windows: (memory.usage[$0.id] ?? []).filter { $0.resetsAt > now }.sorted { $0.resetsAt < $1.resetsAt },
+                scoped: (scoped[$0.id] ?? []).filter { $0.resetsAt > now },
+                resets: (resets[$0.id] ?? []).filter { $0.left > 0 && $0.expiresAt.map { $0 > now } != false },
                 warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: lastAnswered[$0.id], problem: problems[$0.id]
             )
         }
@@ -261,7 +272,7 @@ actor Accounts {
         try storage.storeAccounts(next)
         accounts = next
         memory.usage[gone.id] = nil
-        (plans[gone.id], problems[gone.id], lastAnswered[gone.id]) = (nil, nil, nil)
+        (plans[gone.id], problems[gone.id], lastAnswered[gone.id], scoped[gone.id], resets[gone.id], resetsAsked[gone.id]) = (nil, nil, nil, nil, nil, nil)
         remember()
         return true
     }
@@ -295,6 +306,31 @@ actor Accounts {
         plans[id] = usage.plan
         scoped[id] = usage.scoped
         record(usage.windows, for: id)
+    }
+
+    /// A provider's own client named itself on a request. True when that is news.
+    func seen(client: String, of provider: String) -> Bool {
+        guard memory.clients?[provider] != client else { return false }
+        memory.clients = (memory.clients ?? [:]).merging([provider: client]) { $1 }
+        remember()
+        return true
+    }
+
+    func client(of provider: String) -> String? { memory.clients?[provider] }
+
+    /// Providers answer about resets grudgingly, so each account is asked once an hour.
+    func owesResets(_ id: String, now: Date = Date()) -> Bool {
+        resetsAsked[id].map { now.timeIntervalSince($0) >= 3600 } ?? true
+    }
+
+    func record(resets held: [Reset], for id: String) {
+        resets[id] = held
+        resetsAsked[id] = Date()
+    }
+
+    /// The account's resets were asked for and not told. What was known stands until the next hour.
+    func resetsNotTold(_ id: String) {
+        resetsAsked[id] = Date()
     }
 
     /// The account answered a relayed request, reporting these windows.

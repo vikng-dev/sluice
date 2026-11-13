@@ -183,6 +183,26 @@ private let program = Bundle.main.executableURL!
         }
     }
 
+    /// Asks first: a reset that is used cannot be taken back.
+    func useReset(_ reset: Reset, of account: AccountStatus) {
+        let alert = NSAlert()
+        alert.messageText = "Use the \(reset.title(for: account).lowercased(with: nil)) of \(account.label)?"
+        alert.informativeText = "What it refills is whole again at once. This cannot be taken back."
+        alert.addButton(withTitle: "Use")
+        alert.addButton(withTitle: "Cancel")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn, let relay = sluice?.relay else { return }
+        Task {
+            do {
+                try await relay.use(reset, provider: account.provider, account: account.label)
+                refusal = ""
+                accounts = try await relay.status()
+            } catch {
+                refusal = "The reset was not used: \(error)"
+            }
+        }
+    }
+
     func star(_ profile: String, _ provider: String, _ starred: Bool) {
         change { try $0.star(profile, provider, starred) }
     }
@@ -234,7 +254,7 @@ struct SluiceApp: App {
         MenuBarExtra {
             Panel(
                 problem: running.problem.isEmpty ? running.refusal : running.problem, accounts: running.accounts, config: running.config, identities: running.identities, titles: titles, now: Date(),
-                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, star: running.star,
+                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, star: running.star, useReset: running.useReset,
                 addProfile: running.addProfile, removeProfile: running.removeProfile,
                 claimFolders: running.claimFolders, claimOwner: running.claimOwner, unclaim: { running.unclaim($1, from: $0) },
                 history: running.history, loadHistory: running.loadHistory, quit: running.quit

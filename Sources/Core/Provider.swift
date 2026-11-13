@@ -44,6 +44,46 @@ public protocol Provider: Sendable {
     /// What the provider says about the account when asked, which keeps an account that no request
     /// has gone through lately from showing what it last was.
     func usage(of account: Account) async throws -> Usage
+    /// How the provider's own client names itself to it, read from the User-Agent of a relayed request.
+    /// Nil when the request is not that client's, or the provider tells any caller the same.
+    func clientName(from agent: String) -> String?
+    /// The resets the account holds. A provider that tells only its own client is asked under `client`,
+    /// the name its client last gave; nil when it cannot be asked without one.
+    func resets(of account: Account, as client: String?) async throws -> [Reset]?
+    /// Spends a reset now, which cannot be taken back.
+    func use(_ reset: Reset, of account: Account, as client: String?) async throws
+}
+
+/// A reset an account holds: its provider's leave to have some of its limits whole again before their time.
+public struct Reset: Codable, Sendable, Equatable, Identifiable {
+    /// The provider's own name for it.
+    public var id: String
+    /// The limits it refills, by the names the account's windows and scoped limits go by.
+    public var refills: [String]
+    /// Whether it also gives the week back what the refilled limits used of it.
+    public var givesBack: Bool
+    /// How many times it can still be used.
+    public var left: Int
+    /// Nil for one that does not lapse.
+    public var expiresAt: Date?
+    /// Whether the provider would take it now.
+    public var usable: Bool
+
+    public init(id: String, refills: [String], givesBack: Bool = false, left: Int = 1, expiresAt: Date?, usable: Bool) {
+        self.id = id
+        self.refills = refills
+        self.givesBack = givesBack
+        self.left = left
+        self.expiresAt = expiresAt
+        self.usable = usable
+    }
+}
+
+/// A reset the provider did not take, in words that say why.
+public struct ResetRefused: Error, CustomStringConvertible, Equatable {
+    public let description: String
+
+    public init(_ description: String) { self.description = description }
 }
 
 /// Whom a provider's client is itself signed in as in one profile; `account` is nil where it is signed out.

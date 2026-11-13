@@ -86,10 +86,36 @@ public final class Relay: Sendable {
                 try await accounts.record(provider.usage(of: fresh), for: account.id)
             } catch ProviderError.signedOut {
                 await accounts.failed(account.id, "Signed out. Run: sluice login \(account.provider)")
+                continue
             } catch {
                 log("\(account.provider) \(account.label) usage check failed: \(error)")
             }
+            if await accounts.owesResets(account.id) { await checkResets(of: fresh, at: provider) }
         }
+    }
+
+    /// Asks which resets an account holds. An answer that fails is logged and asked again in an hour;
+    /// a provider that cannot be asked yet is asked at the next check.
+    private func checkResets(of account: Account, at provider: any Provider) async {
+        do {
+            guard let held = try await provider.resets(of: account, as: accounts.client(of: provider.id)) else { return }
+            await accounts.record(resets: held, for: account.id)
+        } catch {
+            await accounts.resetsNotTold(account.id)
+            log("\(account.provider) \(account.label) resets check failed: \(error)")
+        }
+    }
+
+    /// Spends a reset an account holds, then asks the provider how the account stands.
+    public func use(_ reset: Reset, provider id: String, account label: String) async throws {
+        guard let provider = providers[id], let held = await accounts.all.first(where: { $0.provider == id && $0.label == label }) else {
+            throw ResetRefused("there is no \(id) account \(label)")
+        }
+        let account = try await accounts.fresh(held.id, using: provider)
+        try await provider.use(reset, of: account, as: accounts.client(of: id))
+        log("\(id) \(label) used reset \(reset.id)")
+        do { try await accounts.record(provider.usage(of: account), for: account.id) } catch { log("\(id) \(label) usage check failed: \(error)") }
+        await checkResets(of: account, at: provider)
     }
 
     public func handle(_ request: HTTPRequest, _ writer: ResponseWriter) async throws {
@@ -141,6 +167,14 @@ public final class Relay: Sendable {
         case .relay(let id, let pin, let target):
             guard let provider = providers[id] else { return try await writer.send(404, text: "sluice: no provider \(id)") }
             let conversation = provider.conversation(of: request), asked = Date()
+            // Under a new name the provider may tell of resets it would not tell of before.
+            if let client = request.header("User-Agent").flatMap(provider.clientName), await accounts.seen(client: client, of: id) {
+                Task {
+                    for account in await accounts.all where account.provider == id {
+                        if let fresh = try? await accounts.fresh(account.id, using: provider) { await checkResets(of: fresh, at: provider) }
+                    }
+                }
+            }
             let candidates: [Account], profile: String
             do {
                 (profile, candidates) = try await accounts.candidates(provider: id, pin: pin, folder: request.callerFolder, conversation: conversation?.id)
