@@ -40,6 +40,19 @@ public protocol Provider: Sendable {
     func usage(of account: Account) async throws -> Usage
 }
 
+/// Whom a provider's client is itself signed in as in one profile; `account` is nil where it is signed out.
+public struct Identity: Sendable {
+    public var provider: String
+    public var client: String
+    public var account: String?
+
+    public init(provider: String, client: String, account: String?) {
+        self.provider = provider
+        self.client = client
+        self.account = account
+    }
+}
+
 public struct Usage: Sendable, Equatable {
     /// Nil when the provider names no plan.
     public var plan: Plan?
@@ -158,7 +171,7 @@ private extension Data {
 
 public extension Provider {
     /// Where this provider's client reaches Sluice.
-    var address: String { "http://localhost:\(Sluice.port)/\(id)" }
+    var address: String { "\(Sluice.address)/\(id)" }
 }
 
 /// A file of the user's that Sluice could not read or may not change.

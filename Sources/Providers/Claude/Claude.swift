@@ -21,7 +21,7 @@ public struct Claude: Provider {
     public init() {}
 
     public func home(of profile: String) -> (variable: String, folder: URL)? {
-        ("CLAUDE_CONFIG_DIR", FileManager.default.homeDirectoryForCurrentUser.appending(path: profile == Config.defaultProfile ? ".claude" : ".claude-\(profile)"))
+        ("CLAUDE_CONFIG_DIR", Config.folder(".claude", of: profile))
     }
 
     public func signedIn(in profile: String) throws -> String? {

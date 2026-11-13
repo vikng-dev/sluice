@@ -5,9 +5,13 @@ import SluiceProviders
 import SwiftUI
 
 /// The launchd job that keeps the app running; its description is in the bundle (script/bundle.sh).
-let keeperLabel = "dev.vikng.sluice.relay"
+let keeperLabel = "\(Sluice.id).relay"
 @MainActor let keeper = SMAppService.agent(plistName: "\(keeperLabel).plist")
+let isKept = ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == keeperLabel
 @MainActor var handoverProblem = ""
+private let log = Logger(subsystem: Sluice.id, category: "app")
+// The app's own executable always exists.
+private let program = Bundle.main.executableURL!
 
 /// The relay's life, started when the app launches, not when its panel is first opened.
 @MainActor @Observable final class Running {
@@ -15,7 +19,7 @@ let keeperLabel = "dev.vikng.sluice.relay"
     var routed = false
     var accounts: [AccountStatus] = []
     var profiles: [String] = []
-    var signIns: [String: [(provider: String, client: String, account: String?)]] = [:]
+    var identities: [String: [Identity]] = [:]
     private var sluice: (server: Server, relay: Relay)?
 
     init() {
@@ -24,12 +28,12 @@ let keeperLabel = "dev.vikng.sluice.relay"
             do {
                 sluice = try await startSluice()
                 // Only launchd starts a copy that left; one run by hand stays as it is.
-                if ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == keeperLabel { await follow() }
+                if isKept { await follow() }
             } catch {
                 problem = "Not relaying: \(error)"
-                Logger(subsystem: "dev.vikng.sluice", category: "app").error("not relaying: \(String(describing: error), privacy: .public)")
+                log.error("not relaying: \(String(describing: error), privacy: .public)")
                 // Clients may be set to talk to Sluice, so a kept copy does not sit there deaf: launchd starts it again.
-                if ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == keeperLabel { exit(1) }
+                if isKept { exit(1) }
             }
         }
     }
@@ -38,10 +42,7 @@ let keeperLabel = "dev.vikng.sluice.relay"
     /// new one. It does not wait for a quiet moment: under steady traffic none comes, the relay is back
     /// within a second, and the clients resend what was cut. Removed by an uninstall, it quits as from the menu.
     private func follow() async {
-        let log = Logger(subsystem: "dev.vikng.sluice", category: "app")
-        // The app's own executable always exists when it starts.
-        let program = Bundle.main.executableURL!.path
-        func found() -> UInt64? { ((try? FileManager.default.attributesOfItem(atPath: program))?[.systemFileNumber] as? NSNumber)?.uint64Value }
+        func found() -> UInt64? { ((try? FileManager.default.attributesOfItem(atPath: program.path))?[.systemFileNumber] as? NSNumber)?.uint64Value }
         var watch = ProgramWatch(launched: found())
         while true {
             try? await Task.sleep(for: .seconds(5))
@@ -58,7 +59,7 @@ let keeperLabel = "dev.vikng.sluice.relay"
         }
     }
 
-    /// Keeps the accounts current for the panel; reading them is local and asks no provider.
+    /// Reading the accounts is local and asks no provider.
     func watch() async {
         while !Task.isCancelled {
             // `sluice setup` and a new profile change this from outside the app.
@@ -67,7 +68,7 @@ let keeperLabel = "dev.vikng.sluice.relay"
                 do {
                     accounts = try await relay.status()
                     profiles = try Storage.live.config().names
-                    signIns = try Dictionary(uniqueKeysWithValues: profiles.map { ($0, try SluiceProviders.signIns(in: $0)) })
+                    identities = try Dictionary(uniqueKeysWithValues: profiles.map { ($0, try SluiceProviders.identities(in: $0)) })
                 } catch {
                     problem = "\(error)"
                 }
@@ -76,10 +77,8 @@ let keeperLabel = "dev.vikng.sluice.relay"
         }
     }
 
-    /// Sets the clients up to use Sluice, or to talk to their providers again.
     func route(_ on: Bool) {
-        // The app's own executable always exists.
-        do { if on { try setUp(program: Bundle.main.executableURL!) } else { try stopRouting(all: false) } } catch { problem = "\(error)" }
+        do { if on { try setUp(program: program) } else { try stopRouting(all: false) } } catch { problem = "\(error)" }
         check()
     }
 
@@ -87,10 +86,9 @@ let keeperLabel = "dev.vikng.sluice.relay"
         do { routed = try isSetUp() } catch { problem = "\(error)" }
     }
 
-    /// The provider's sign-in page, in the browser; the account lands in `profile`.
     func signIn(provider: String, profile: String) {
         // A provider's id and a profile's name are plain characters.
-        NSWorkspace.shared.open(URL(string: "http://localhost:\(Sluice.port)/login/\(provider)?profile=\(profile)")!)
+        NSWorkspace.shared.open(URL(string: "\(Sluice.address)/login/\(provider)?profile=\(profile)")!)
     }
 
     func move(_ account: AccountStatus, to profile: String) {
@@ -127,12 +125,12 @@ let keeperLabel = "dev.vikng.sluice.relay"
 
 struct SluiceApp: App {
     @State private var running = Running()
+    private let titles = Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0.name) })
 
     var body: some Scene {
         MenuBarExtra {
             Panel(
-                problem: running.problem, accounts: running.accounts, profiles: running.profiles, signIns: running.signIns,
-                titles: Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0.name) }), now: Date(),
+                problem: running.problem, accounts: running.accounts, profiles: running.profiles, identities: running.identities, titles: titles, now: Date(),
                 routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, quit: running.quit
             )
             .task { await running.watch() }

@@ -46,7 +46,7 @@ public struct Storage: Sendable {
     public static let live: Storage = {
         let query: [String: any Sendable] = [
             kSecClass as String: kSecClassGenericPassword as String,
-            kSecAttrService as String: "dev.vikng.sluice",
+            kSecAttrService as String: Sluice.id,
             kSecAttrAccount as String: "accounts",
         ]
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -152,6 +152,11 @@ public struct Config: Codable, Sendable, Equatable {
         return profiles.first { $0.value.owners.contains { $0.lowercased() == owner } }?.key ?? Self.defaultProfile
     }
 
+    /// A client's folder in a profile: its usual one in the default, and beside it `<usual>-<name>` in another.
+    public static func folder(_ usual: String, of profile: String) -> URL {
+        FileManager.default.homeDirectoryForCurrentUser.appending(path: profile == defaultProfile ? usual : "\(usual)-\(profile)")
+    }
+
     /// The profile an account belongs to.
     public func profile(ofAccount label: String) -> String {
         profiles.first { $0.value.accounts.contains(label) }?.key ?? Self.defaultProfile
@@ -246,13 +251,6 @@ actor Accounts {
 
     var all: [Account] { accounts }
 
-    func profiles() throws -> [String] { try storage.config().names }
-
-    /// The account joins `profile`, leaving the one it was in.
-    func move(_ label: String, to profile: String) throws {
-        try storage.change { try $0.move(account: label, to: profile) }
-    }
-
     /// The account could not be used, for a reason worth showing until it next works.
     func failed(_ id: String, _ problem: String) {
         problems[id] = problem
@@ -292,6 +290,7 @@ actor Accounts {
     }
 
     /// The account with a token good for at least five more minutes, renewed once however many requests ask.
+    /// A renewal that fails is the account's problem until it next works.
     func fresh(_ id: String, using provider: any Provider) async throws -> Account {
         if let running = refreshing[id] { return try await running.value }
         guard let account = accounts.first(where: { $0.id == id }) else { throw ProviderError.signedOut }
@@ -299,8 +298,13 @@ actor Accounts {
         let task = Task { try await provider.refresh(account) }
         refreshing[id] = task
         defer { refreshing[id] = nil }
-        let renewed = try await task.value
-        try save(renewed)
-        return renewed
+        do {
+            let renewed = try await task.value
+            try save(renewed)
+            return renewed
+        } catch {
+            problems[id] = "Could not renew its sign-in: \(error)"
+            throw error
+        }
     }
 }

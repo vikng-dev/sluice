@@ -7,15 +7,13 @@ struct Panel: View {
     let accounts: [AccountStatus]
     /// Every profile's name, the default first.
     let profiles: [String]
-    /// By profile: the account each client is itself signed in as there, nil where it is signed out.
-    let signIns: [String: [(provider: String, client: String, account: String?)]]
+    /// By profile.
+    let identities: [String: [Identity]]
     /// What each provider's subscriptions are sold as, by its id.
     let titles: [String: String]
     let now: Date
-    /// Whether the clients are set up to talk to Sluice, and how to change that.
     let routed: Bool
     let route: (Bool) -> Void
-    /// Signs another account in at a provider, for a profile.
     let signIn: (_ provider: String, _ profile: String) -> Void
     let move: (AccountStatus, _ profile: String) -> Void
     let remove: (AccountStatus) -> Void
@@ -29,6 +27,16 @@ struct Panel: View {
     private var target: String? {
         guard let carried else { return nil }
         return profiles.first { $0 != carried.account.profile && frames["profile:\($0)"]?.contains(carried.pointer) == true }
+    }
+
+    private var actions: RowActions {
+        RowActions(remove: remove, carry: profiles.count > 1 ? { carry($0, client: $1, $2) } : nil, drop: drop, putBack: putBack)
+    }
+
+    private func carry(_ account: AccountStatus, client: String?, _ drag: DragGesture.Value) {
+        // A drag that begins away from the row is the rest of one that was broken off.
+        guard frames["row:\(account.id)"]?.contains(drag.startLocation) == true else { return }
+        carried = Carried(account: account, client: client, translation: drag.translation, pointer: drag.location)
     }
 
     /// Let go over another profile, the account moves there; anywhere else, it goes back.
@@ -54,10 +62,10 @@ struct Panel: View {
                 let all = accounts.filter { $0.provider == provider }
                 let own = all.filter { $0.profile == profile }.sorted { $0.label < $1.label }
                 guard !own.isEmpty else { return nil }
-                let signIn = signIns[profile]?.first { $0.provider == provider }
+                let identity = identities[profile]?.first { $0.provider == provider }
                 return Pool(
-                    provider: provider, title: titles[provider] ?? provider, accounts: own, client: signIn?.client ?? provider, identity: signIn?.account,
-                    identityIsAnothers: signIn?.account.map { identity in all.contains { $0.label == identity } && !own.contains { $0.label == identity } } ?? false
+                    provider: provider, title: titles[provider] ?? provider, accounts: own, client: identity?.client ?? provider, identity: identity?.account,
+                    identityIsAnothers: identity?.account.map { account in all.contains { $0.label == account } && !own.contains { $0.label == account } } ?? false
                 )
             })
         }
@@ -78,22 +86,12 @@ struct Panel: View {
             ForEach(sections, id: \.name) { section in
                 VStack(alignment: .leading, spacing: 10) {
                     ProfileCaption(name: section.name, empty: section.pools.isEmpty, titles: titles) { signIn($0, section.name) }
-                    ForEach(section.pools) { pool in
-                        PoolView(
-                            pool: pool, now: now, movable: profiles.count > 1, carried: carried?.account.id, remove: remove,
-                            carry: { account, drag in
-                                // A drag that begins away from the row is the rest of one that was broken off.
-                                guard frames["row:\(account.id)"]?.contains(drag.startLocation) == true else { return }
-                                carried = Carried(account: account, client: pool.identity == account.label ? pool.client : nil, translation: drag.translation, pointer: drag.location)
-                            },
-                            drop: drop, putBack: putBack
-                        )
-                    }
+                    ForEach(section.pools) { PoolView(pool: $0, now: now, carried: carried?.account.id, actions: actions) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(6)
                 // While an account is carried, the profiles it could go to are outlined, and the one under it is filled.
-                .background(target == section.name ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .background(Color.accentColor.opacity(target == section.name ? 0.15 : 0), in: RoundedRectangle(cornerRadius: 8))
                 .overlay {
                     if let carried, carried.account.profile != section.name {
                         RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
@@ -107,13 +105,9 @@ struct Panel: View {
                 Text("Sluice \(Sluice.version)").font(.caption).foregroundStyle(.tertiary)
                 Spacer()
                 if routed {
-                    Menu {
-                        Button("Stop routing") { route(false) }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                    }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                    .help("Clients started from now on talk to their own providers")
+                    Menu { Button("Stop routing") { route(false) } } label: { Image(systemName: "ellipsis") }
+                        .bare()
+                        .help("Clients started from now on talk to their own providers")
                 }
                 Button("Quit", action: quit).controlSize(.small).help("The clients go back to their own providers")
             }
@@ -125,7 +119,7 @@ struct Panel: View {
         // The carried account's row, lifted off the panel and following the pointer.
         .overlay(alignment: .topLeading) {
             if let carried, let frame = frames["row:\(carried.account.id)"] {
-                AccountRow(account: carried.account, client: carried.client, now: now, movable: true, lifted: true, remove: { _ in }, carry: { _, _ in }, drop: {}, putBack: {})
+                AccountRow(account: carried.account, client: carried.client, now: now, actions: nil)
                     .padding(.vertical, 5).padding(.trailing, 8)
                     .frame(width: frame.width + 8)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
@@ -160,6 +154,20 @@ private extension View {
     }
 }
 
+private extension Menu {
+    /// A menu that is only its symbol.
+    @MainActor func bare() -> some View { menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize() }
+}
+
+/// What can be done to an account's row. The copy that follows the pointer has none.
+private struct RowActions {
+    let remove: (AccountStatus) -> Void
+    /// Nil when there is no other profile to carry it to.
+    let carry: ((AccountStatus, _ client: String?, DragGesture.Value) -> Void)?
+    let drop: () -> Void
+    let putBack: () -> Void
+}
+
 /// A profile's name, and on it the way to give the profile another account: the provider is picked there.
 /// What can be done to a thing shows when the pointer is on it; an empty profile shows it always.
 private struct ProfileCaption: View {
@@ -181,7 +189,7 @@ private struct ProfileCaption: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .bare()
                 .help("Add an account to this profile")
                 .opacity(hovered || empty ? 1 : 0)
             }
@@ -215,14 +223,9 @@ private extension AccountStatus {
 private struct PoolView: View {
     let pool: Pool
     let now: Date
-    /// There is another profile an account could be carried to.
-    let movable: Bool
     /// The account being carried, whose row stays behind dimmed.
     let carried: String?
-    let remove: (AccountStatus) -> Void
-    let carry: (AccountStatus, DragGesture.Value) -> Void
-    let drop: () -> Void
-    let putBack: () -> Void
+    let actions: RowActions
 
     /// When the pool next gets allowance back.
     private var nextReset: SluiceCore.Window? {
@@ -245,7 +248,7 @@ private struct PoolView: View {
             VStack(alignment: .leading, spacing: 6) {
                 PoolBar(accounts: pool.accounts).padding(.leading, AccountRow.gutter)
                 ForEach(pool.accounts, id: \.id) { account in
-                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, movable: movable, lifted: false, remove: remove, carry: carry, drop: drop, putBack: putBack)
+                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, actions: actions)
                         .opacity(carried == account.id ? 0.3 : 1)
                         .framed("row:\(account.id)")
                 }
@@ -289,14 +292,8 @@ private struct AccountRow: View {
     /// The client that is itself signed in as this account in the profile, if one is.
     let client: String?
     let now: Date
-    /// It can be carried to another profile by its handle.
-    let movable: Bool
-    /// It is the copy that follows the pointer.
-    let lifted: Bool
-    let remove: (AccountStatus) -> Void
-    let carry: (AccountStatus, DragGesture.Value) -> Void
-    let drop: () -> Void
-    let putBack: () -> Void
+    /// Nil on the copy that follows the pointer.
+    let actions: RowActions?
     @State private var hovered = false
     /// True for as long as the handle is held, however the hold ends.
     @GestureState private var held = false
@@ -319,13 +316,15 @@ private struct AccountRow: View {
             Image(systemName: "line.3.horizontal").font(.caption).foregroundStyle(.secondary)
                 .frame(width: Self.gutter, height: 16, alignment: .leading)
                 .contentShape(Rectangle())
-                .opacity(movable && (hovered || lifted) ? 1 : 0)
-                .gesture(movable ? DragGesture(minimumDistance: 1, coordinateSpace: .named(Frames.space))
-                    .updating($held) { _, held, _ in held = true }
-                    .onChanged { carry(account, $0) }
-                    .onEnded { _ in drop() } : nil)
+                .opacity(actions == nil || (hovered && actions?.carry != nil) ? 1 : 0)
+                .gesture(actions?.carry.map { carry in
+                    DragGesture(minimumDistance: 1, coordinateSpace: .named(Frames.space))
+                        .updating($held) { _, held, _ in held = true }
+                        .onChanged { carry(account, client, $0) }
+                        .onEnded { _ in actions?.drop() }
+                })
                 // A hold that is broken off never ends, so letting go is not heard; the hold being over is.
-                .onChange(of: held) { _, held in if !held { putBack() } }
+                .onChange(of: held) { _, held in if !held { actions?.putBack() } }
                 .help("Drag onto another profile to move this account there")
             details
         }
@@ -342,13 +341,11 @@ private struct AccountRow: View {
                         .help("\(client) itself is signed in as this account in this profile. What \(client) does outside Sluice is this account's; its requests are paid by the whole pool.")
                 }
                 if serving { Circle().fill(.green).frame(width: 6, height: 6).help("Answering requests now") }
-                Menu {
-                    Button("Remove…", role: .destructive) { remove(account) }
-                } label: {
-                    Image(systemName: "ellipsis")
+                if let actions {
+                    Menu { Button("Remove…", role: .destructive) { actions.remove(account) } } label: { Image(systemName: "ellipsis") }
+                        .bare()
+                        .opacity(hovered ? 1 : 0)
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .opacity(hovered && !lifted ? 1 : 0)
                 Spacer(minLength: 4)
                 if let plan = account.plan { Badge(text: plan.tier, symbol: plan.business ? "briefcase.fill" : nil).help(plan.name + (plan.price.map { ", $\($0) a month" } ?? "")) }
                 if let budget = account.budget {

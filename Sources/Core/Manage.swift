@@ -67,7 +67,6 @@ public extension Config {
         profiles[profile]?.owners.removeAll { $0.lowercased() == owner.lowercased() }
     }
 
-    /// The account leaves the profile it is in and joins `profile`.
     mutating func move(account label: String, to profile: String) throws {
         try require(profile)
         forget(account: label)
@@ -75,7 +74,6 @@ public extension Config {
         if profile != Self.defaultProfile { profiles[profile, default: Profile()].accounts.append(label) }
     }
 
-    /// No profile lists the account any more.
     mutating func forget(account label: String) {
         for name in profiles.keys { profiles[name]?.accounts.removeAll { $0 == label } }
     }

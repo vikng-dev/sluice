@@ -24,15 +24,14 @@ func standIn(for provider: any Provider, _ arguments: [String]) -> Never {
     fail("could not run \(real): \(String(cString: strerror(errno)))")
 }
 
-/// The relay's account list, which every command that names an account checks against.
-private func accounts(at address: String) async -> [AccountStatus] {
-    do {
-        let (status, body) = try await HTTPCall.send("GET", URL(string: "\(address)/status")!)
-        guard status == 200 else { fail(String(decoding: body, as: UTF8.self)) }
-        return try JSONDecoder().decode([AccountStatus].self, from: body)
-    } catch {
-        fail("not running (\(error.localizedDescription)). Start the app or run: sluice serve")
-    }
+private func accounts() async -> [AccountStatus] {
+    do { return try await relayAccounts() } catch { fail("\(error)") }
+}
+
+/// This program's own file, which the stand-ins link to.
+private func program() -> URL {
+    guard let me = Bundle.main.executableURL?.resolvingSymlinksInPath() else { fail("could not find this program's own path") }
+    return me
 }
 
 /// Results go to standard output as JSON an agent can read: sorted keys, and dates as ISO 8601.
@@ -55,8 +54,8 @@ private struct ProfileReport: Encodable {
 }
 
 /// A client's own sign-in in a profile, in words.
-private func said(_ signIn: (provider: String, client: String, account: String?)) -> String {
-    signIn.account.map { "\(signIn.client) signed in as \($0)" } ?? "\(signIn.client) not signed in"
+private func said(_ identity: Identity) -> String {
+    identity.account.map { "\(identity.client) signed in as \($0)" } ?? "\(identity.client) not signed in"
 }
 
 /// Changes the profiles on disk, or says why not.
@@ -96,16 +95,14 @@ Nothing asks a question. Results are on standard output, messages on standard er
 exits with 1 and says what to do. A change holds at once, without a restart.
 """
 
-/// The `sluice` command.
 func command(_ arguments: [String]) async {
-    let address = "http://localhost:\(Sluice.port)"
     let json = arguments.contains("--json")
     let words = arguments.filter { !$0.hasPrefix("--") }
     switch (words.first, words.dropFirst().first) {
     case ("serve", nil):
         do {
             let server = try await startSluice().server
-            print("sluice \(Sluice.version) on \(address)")
+            print("sluice \(Sluice.version) on \(Sluice.address)")
             while !Task.isCancelled { try await Task.sleep(for: .seconds(3600)) }
             withExtendedLifetime(server) {}
         } catch {
@@ -114,18 +111,18 @@ func command(_ arguments: [String]) async {
     case ("login", _):
         let profile = values(of: "--profile", in: arguments).first
         let provider = words.dropFirst().first { $0 != profile } ?? "claude"
-        let url = "\(address)/login/\(provider)" + (profile.map { "?profile=\($0)" } ?? "")
+        let url = "\(Sluice.address)/login/\(provider)" + (profile.map { "?profile=\($0)" } ?? "")
         print("Opening \(url)")
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         open.arguments = [url]
         do { try open.run() } catch { fail("\(error)") }
     case ("status", nil):
-        let rows = await accounts(at: address)
+        let rows = await accounts()
         if json { return printJSON(rows) }
         for (profile, rows) in Dictionary(grouping: rows, by: \.profile).sorted(by: { ($0.key == Config.defaultProfile ? "" : $0.key) < ($1.key == Config.defaultProfile ? "" : $1.key) }) {
             let signedIn: [String]
-            do { signedIn = try signIns(in: profile).map(said) } catch { fail("\(error)") }
+            do { signedIn = try identities(in: profile).map(said) } catch { fail("\(error)") }
             print(([profile] + signedIn).joined(separator: "  "))
             for row in rows {
                 let windows = row.windows.map { "\($0.name) \($0.percentText) → \($0.resetText)" }
@@ -140,28 +137,27 @@ func command(_ arguments: [String]) async {
                 try stopRouting(all: true)
                 print("Claude Code and Codex talk to their providers directly again, and open one profile everywhere.")
             } else {
-                guard let me = Bundle.main.executableURL?.resolvingSymlinksInPath() else { fail("could not find this program's own path") }
-                try setUp(program: me)
+                try setUp(program: program())
                 print("Claude Code and Codex now talk to Sluice. In a new shell, claude and codex open the profile their folder belongs to. Undo with: sluice setup --undo")
             }
         } catch {
             fail("\(error)")
         }
     case ("profile", "list"):
-        let reports: [(report: ProfileReport, signIns: [(provider: String, client: String, account: String?)])]
+        let reports: [(report: ProfileReport, identities: [Identity])]
         do {
             let config = try Storage.live.config()
             reports = try config.names.map { name in
-                let profile = config.profiles[name], signIns = try signIns(in: name)
-                let signedIn = Dictionary(uniqueKeysWithValues: signIns.compactMap { signIn in signIn.account.map { (signIn.client, $0) } })
-                return (ProfileReport(name: name, signedIn: signedIn, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? []), signIns)
+                let profile = config.profiles[name], identities = try identities(in: name)
+                let signedIn = Dictionary(uniqueKeysWithValues: identities.compactMap { identity in identity.account.map { (identity.client, $0) } })
+                return (ProfileReport(name: name, signedIn: signedIn, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? []), identities)
             }
         } catch {
             fail("\(error)")
         }
         if json { return printJSON(reports.map(\.report)) }
-        for (report, signIns) in reports {
-            print(([report.name] + signIns.map(said)).joined(separator: "  "))
+        for (report, identities) in reports {
+            print(([report.name] + identities.map(said)).joined(separator: "  "))
             for (title, items) in [("accounts", report.accounts), ("folders", report.folders), ("owners", report.owners)] where !items.isEmpty {
                 print("  \(title): \(items.joined(separator: ", "))")
             }
@@ -172,7 +168,7 @@ func command(_ arguments: [String]) async {
             // A new profile has its own client folder, which is set to talk to Sluice like the others.
             let routed = try isSetUp()
             _ = change { try $0.add(profile: words[2]) }
-            if routed, let me = Bundle.main.executableURL?.resolvingSymlinksInPath() { try setUp(program: me) }
+            if routed { try setUp(program: program()) }
         } catch {
             fail("\(error)")
         }
@@ -195,7 +191,7 @@ func command(_ arguments: [String]) async {
         print("Profile \(name) \(verb == "claim" ? "now claims" : "no longer claims") \((folders + owners).joined(separator: ", ")).")
     case ("account", "move"):
         guard words.count == 4 else { fail("usage: sluice account move <account> <profile>") }
-        let known = await accounts(at: address).map(\.label)
+        let known = await accounts().map(\.label)
         guard known.contains(words[2]) else { fail("no account \(words[2]); there is: \(Set(known).sorted().joined(separator: ", "))") }
         _ = change { try $0.move(account: words[2], to: words[3]) }
         print("\(words[2]) now serves profile \(words[3]).")
@@ -204,7 +200,7 @@ func command(_ arguments: [String]) async {
         do { try await forget(provider: words[2], account: words[3]) } catch { fail("\(error)") }
         print("Removed the \(words[2]) account \(words[3]).")
     default:
-        if let first = words.first, !["help"].contains(first) { fail("no such command: \(words.joined(separator: " ")). Run sluice for the list.") }
+        if let first = words.first, first != "help" { fail("no such command: \(words.joined(separator: " ")). Run sluice for the list.") }
         print(usage)
     }
 }

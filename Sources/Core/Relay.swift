@@ -3,8 +3,8 @@ import os
 
 /// A local address, read as a route. The grammar:
 /// `/login/<provider>`, `/callback?code=…&state=…`, `/status`, `/accounts/<provider>/<account>`, and
-/// `/<provider>[/pin/<account>]/<the provider's own path and query>`. Without a pin in the address,
-/// the caller's folder decides the profile: see `Config.profile`.
+/// `/<provider>[/pin/<account>]/<the provider's own path and query>`. The caller's folder decides the
+/// profile (see `Config.profile`); a pin names one account of that profile's pool.
 enum Route: Equatable {
     case login(provider: String, profile: String?)
     case callback(code: String, state: String)
@@ -26,9 +26,7 @@ enum Route: Equatable {
         case ("", _): return nil
         case ("status", ""): self = .status
         case ("callback", ""):
-            let items = URLComponents(string: target)?.queryItems ?? []
-            func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
-            guard let code = value("code"), let state = value("state") else { return nil }
+            guard let code = Self.query("code", in: target), let state = Self.query("state", in: target) else { return nil }
             self = .callback(code: code, state: state)
         case ("accounts", _):
             rest = rest.dropFirst()
@@ -40,7 +38,7 @@ enum Route: Equatable {
             rest = rest.dropFirst()
             let provider = String(segment())
             guard !provider.isEmpty, rest.isEmpty else { return nil }
-            self = .login(provider: provider, profile: URLComponents(string: target)?.queryItems?.first { $0.name == "profile" }?.value)
+            self = .login(provider: provider, profile: Self.query("profile", in: target))
         default:
             var pin: String?
             if rest.hasPrefix("/pin/") {
@@ -51,11 +49,16 @@ enum Route: Equatable {
             self = .relay(provider: first, pin: pin, target: (rest.isEmpty ? "/" : String(rest)) + query)
         }
     }
+
+    static func query(_ name: String, in target: String) -> String? {
+        URLComponents(string: target)?.queryItems?.first { $0.name == name }?.value
+    }
 }
 
 public final class Relay: Sendable {
     private let providers: [String: any Provider]
     private let accounts: Accounts
+    private let storage: Storage
     private let signIns = SignIns()
     private let upstream = Upstream()
     private let redirectURI: String
@@ -63,6 +66,7 @@ public final class Relay: Sendable {
     public init(providers: [any Provider], storage: Storage, port: UInt16) throws {
         self.providers = Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0) })
         accounts = try Accounts(storage: storage)
+        self.storage = storage
         redirectURI = "http://localhost:\(port)/callback"
     }
 
@@ -77,12 +81,7 @@ public final class Relay: Sendable {
             // An account is only ever stored under a provider that signed it in.
             let provider = providers[account.provider]!
             let fresh: Account
-            do {
-                fresh = try await accounts.fresh(account.id, using: provider)
-            } catch {
-                await accounts.failed(account.id, "Could not renew its sign-in: \(error)")
-                continue
-            }
+            do { fresh = try await accounts.fresh(account.id, using: provider) } catch { continue }
             do {
                 try await accounts.record(provider.usage(of: fresh), for: account.id)
             } catch ProviderError.signedOut {
@@ -116,7 +115,7 @@ public final class Relay: Sendable {
         case .login(let id, let profile):
             guard let provider = providers[id] else { return try await writer.send(404, text: "sluice: no provider \(id)") }
             do {
-                if let profile, try await !accounts.profiles().contains(profile) { return try await writer.send(404, text: "sluice: no profile named \(profile)") }
+                if let profile, try !storage.config().names.contains(profile) { return try await writer.send(404, text: "sluice: no profile named \(profile)") }
             } catch {
                 return try await writer.send(500, text: "sluice: \(error)")
             }
@@ -124,9 +123,7 @@ public final class Relay: Sendable {
                 do {
                     try await signIns.listen(on: port) {
                         let server = try Server(port: UInt16(port)) { [self] request, writer in
-                            let items = URLComponents(string: request.target)?.queryItems ?? []
-                            func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
-                            guard let code = value("code"), let state = value("state") else { return try await writer.send(400, text: "sluice: the sign-in came back without a code") }
+                            guard let code = Route.query("code", in: request.target), let state = Route.query("state", in: request.target) else { return try await writer.send(400, text: "sluice: the sign-in came back without a code") }
                             try await finishSignIn(code: code, state: state, writer)
                             await signIns.close(port: port)
                         }
@@ -163,7 +160,6 @@ public final class Relay: Sendable {
                     account = try await accounts.fresh(candidate.id, using: provider)
                 } catch {
                     log("\(id) \(candidate.label) could not renew: \(error)")
-                    await accounts.failed(candidate.id, "Could not renew its sign-in: \(error)")
                     if isLast { return try await writer.send(502, text: "sluice: could not renew \(candidate.label): \(error)") }
                     continue
                 }
@@ -202,7 +198,7 @@ public final class Relay: Sendable {
         do {
             let account = try await provider.signIn(code: code, state: state, redirectURI: provider.redirect?.absoluteString ?? redirectURI, verifier: pending.verifier)
             try await accounts.save(account)
-            if let profile = pending.profile { try await accounts.move(account.label, to: profile) }
+            if let profile = pending.profile { try storage.change { try $0.move(account: account.label, to: profile) } }
             try await writer.send(200, text: "Signed in to \(provider.name) as \(account.label)\(pending.profile.map { ", for profile \($0)" } ?? ""). You can close this tab.")
         } catch {
             try await writer.send(502, text: "sluice: sign-in failed: \(error)")
@@ -214,5 +210,5 @@ public final class Relay: Sendable {
         Self.logger.info("\(line, privacy: .public)")
     }
 
-    private static let logger = Logger(subsystem: "dev.vikng.sluice", category: "relay")
+    private static let logger = Logger(subsystem: Sluice.id, category: "relay")
 }

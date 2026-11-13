@@ -19,7 +19,7 @@ public struct Codex: Provider {
 
     /// Codex keeps its sessions, memories, tool sign-ins and its own sign-in in one folder, so each profile has its own.
     public func home(of profile: String) -> (variable: String, folder: URL)? {
-        ("CODEX_HOME", FileManager.default.homeDirectoryForCurrentUser.appending(path: profile == Config.defaultProfile ? ".codex" : ".codex-\(profile)"))
+        ("CODEX_HOME", Config.folder(".codex", of: profile))
     }
 
     public func signedIn(in profile: String) throws -> String? {
