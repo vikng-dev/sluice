@@ -23,7 +23,7 @@ private extension View {
     }
 }
 
-/// The last week of use: each pool's accounts over time with how fast the pool is going and how long it
+/// The last week of use: each profile's accounts over time with how fast each pool is going and how long it
 /// lasts, then when the work was done and where it went.
 struct UsageView: View {
     let accounts: [AccountStatus]
@@ -46,15 +46,10 @@ struct UsageView: View {
                             Text(config.shown(profile)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, 10)
-                        VStack(alignment: .leading, spacing: 14) {
-                            ForEach(pools, id: \.key) { provider, pool in
-                                PoolUsage(
-                                    provider: provider, title: titles[provider] ?? provider, accounts: pool.sorted { $0.label < $1.label },
-                                    samples: history.samples.filter { $0.provider == provider && $0.at >= since },
-                                    requests: requests.filter { $0.provider == provider }, since: since, now: now
-                                )
-                            }
-                        }
+                        ProfileUsage(
+                            pools: pools.map { ($0.key, $0.value.sorted { $0.label < $1.label }) }, titles: titles,
+                            samples: history.samples.filter { $0.at >= since }, requests: requests, since: since, now: now
+                        )
                         .card()
                     }
                     .padding(.top, 4)
@@ -74,12 +69,11 @@ struct UsageView: View {
     }
 }
 
-/// One pool over the week: how fast it is going, how long it lasts, each account's week as a line, and
-/// what each account has given for a point of its week.
-private struct PoolUsage: View {
-    let provider: String
-    let title: String
-    let accounts: [AccountStatus]
+/// One profile over the week: every account's week as a line on one chart, then for each pool how fast it
+/// is going and how long it lasts, and what each of its accounts has given for a point of its week.
+private struct ProfileUsage: View {
+    let pools: [(provider: String, accounts: [AccountStatus])]
+    let titles: [String: String]
     let samples: [Sample]
     let requests: [Served]
     let since: Date
@@ -87,12 +81,19 @@ private struct PoolUsage: View {
 
     private static let tints: [Color] = [.blue, .orange, .green, .purple, .pink, .teal]
 
-    private func samples(of account: AccountStatus) -> [Sample] { samples.filter { $0.account == account.label } }
+    /// Every account of the profile with the colour of its line.
+    private var lines: [(account: AccountStatus, tint: Color)] {
+        pools.flatMap(\.accounts).enumerated().map { ($1, Self.tints[$0 % Self.tints.count]) }
+    }
+
+    private func samples(of account: AccountStatus) -> [Sample] {
+        samples.filter { $0.provider == account.provider && $0.account == account.label }
+    }
 
     /// The pool's share used per hour over the last day.
-    private var burn: Double? {
+    private func burn(of pool: [AccountStatus]) -> Double? {
         let day = now.addingTimeInterval(-86400)
-        return Forecast.burn(accounts.map { account in (samples(of: account).filter { $0.at >= day }, account.weight) }, from: day, to: now)
+        return Forecast.burn(pool.map { account in (samples(of: account).filter { $0.at >= day }, account.weight) }, from: day, to: now)
     }
 
     /// An account's week as points: each reading, and what it reads now.
@@ -104,42 +105,19 @@ private struct PoolUsage: View {
     /// The tokens the account answered with for each point its week rose, once it has risen a point.
     private func given(by account: AccountStatus) -> Int? {
         let points = Forecast.rise(samples(of: account)) * 100
-        let tokens = requests.filter { $0.account == account.label }.map(\.tokens).reduce(0, +)
+        let tokens = requests.filter { $0.provider == account.provider && $0.account == account.label }.map(\.tokens).reduce(0, +)
         return points >= 1 && tokens > 0 ? Int(Double(tokens) / points) : nil
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
-                if let mark = providerMark(provider) {
-                    Image(nsImage: mark).resizable().frame(width: 13, height: 13).foregroundStyle(.secondary)
-                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
-                }
-                Text(title).font(.callout.weight(.semibold))
-                Spacer()
-                if let burn {
-                    Text("\((burn * 100).formatted(.number.precision(.fractionLength(1))))%/h").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        .help("How much of the pool was used per hour over the last day")
-                    let members = accounts.map { Member(weight: $0.weight, used: $0.budget?.used ?? 0, resetsAt: $0.budget?.resetsAt) }
-                    if let dry = Forecast.dry(members, burn: burn, now: now) {
-                        HStack(spacing: 3) {
-                            Text("dry").font(.caption).foregroundStyle(dry <= now ? Color.red : .orange)
-                            if dry > now { Clock(window: Window(name: "", used: 1, resetsAt: dry), now: now) }
-                        }
-                        .help("At this rate the pool has nothing left then, counting what comes back at each reset")
-                    } else {
-                        Text("holds").font(.caption).foregroundStyle(.secondary).help("At this rate the pool lasts the week")
-                    }
-                } else {
-                    Text("watching").font(.caption).foregroundStyle(.tertiary).help("Not watched long enough to say how fast it is going")
-                }
-            }
+        let lines = lines, tints = Dictionary(uniqueKeysWithValues: lines.map { ($0.account.id, $0.tint) })
+        VStack(alignment: .leading, spacing: 10) {
             Chart {
-                ForEach(Array(accounts.enumerated()), id: \.element.id) { index, account in
+                ForEach(lines, id: \.account.id) { account, tint in
                     ForEach(Array(line(of: account).enumerated()), id: \.offset) { _, point in
-                        LineMark(x: .value("Time", point.at), y: .value("Used", point.used * 100), series: .value("Account", account.label))
+                        LineMark(x: .value("Time", point.at), y: .value("Used", point.used * 100), series: .value("Account", account.id))
                             .interpolationMethod(.stepEnd)
-                            .foregroundStyle(Self.tints[index % Self.tints.count])
+                            .foregroundStyle(tint)
                     }
                 }
             }
@@ -148,15 +126,43 @@ private struct PoolUsage: View {
             .chartXAxis { AxisMarks(values: .stride(by: .day)) { AxisGridLine(); AxisValueLabel(format: .dateTime.weekday(.narrow)) } }
             .chartYAxis { AxisMarks(values: [0, 50, 100]) { AxisGridLine(); AxisValueLabel() } }
             .chartLegend(.hidden)
-            .frame(height: 72)
-            ForEach(Array(accounts.enumerated()), id: \.element.id) { index, account in
-                HStack(spacing: 6) {
-                    Capsule().fill(Self.tints[index % Self.tints.count]).frame(width: 10, height: 3)
-                    Text(account.label).font(.caption).lineLimit(1).truncationMode(.middle)
-                    Spacer()
-                    if let given = given(by: account) {
-                        Text("\(given.compact) / 1%").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                            .help("Tokens it answered with through Sluice for each point of its week. Rough until it has risen a few points, and low where the account is also used outside Sluice.")
+            .frame(height: 84)
+            ForEach(pools, id: \.provider) { provider, pool in
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        if let mark = providerMark(provider) {
+                            Image(nsImage: mark).resizable().frame(width: 13, height: 13).foregroundStyle(.secondary)
+                                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
+                        }
+                        Text(titles[provider] ?? provider).font(.callout.weight(.semibold))
+                        Spacer()
+                        if let burn = burn(of: pool) {
+                            Text("\((burn * 100).formatted(.number.precision(.fractionLength(1))))%/h").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                .help("How much of the pool was used per hour over the last day")
+                            let members = pool.map { Member(weight: $0.weight, used: $0.budget?.used ?? 0, resetsAt: $0.budget?.resetsAt) }
+                            if let dry = Forecast.dry(members, burn: burn, now: now) {
+                                HStack(spacing: 3) {
+                                    Text("dry").font(.caption).foregroundStyle(dry <= now ? Color.red : .orange)
+                                    if dry > now { Clock(window: Window(name: "", used: 1, resetsAt: dry), now: now) }
+                                }
+                                .help("At this rate the pool has nothing left then, counting what comes back at each reset")
+                            } else {
+                                Text("holds").font(.caption).foregroundStyle(.secondary).help("At this rate the pool lasts the week")
+                            }
+                        } else {
+                            Text("watching").font(.caption).foregroundStyle(.tertiary).help("Not watched long enough to say how fast it is going")
+                        }
+                    }
+                    ForEach(pool, id: \.id) { account in
+                        HStack(spacing: 6) {
+                            Capsule().fill(tints[account.id] ?? .secondary).frame(width: 10, height: 3)
+                            Text(account.label).font(.caption).lineLimit(1).truncationMode(.middle)
+                            Spacer()
+                            if let given = given(by: account) {
+                                Text("\(given.compact) / 1%").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                    .help("Tokens it answered with through Sluice for each point of its week. Rough until it has risen a few points, and low where the account is also used outside Sluice.")
+                            }
+                        }
                     }
                 }
             }
