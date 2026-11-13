@@ -43,7 +43,7 @@ sluice profile color <name> <color>              # red orange yellow green teal 
 sluice profile star <name> <provider>            # show how much of that pool is used in the menu bar
 sluice profile unstar <name> <provider>
 sluice profile resets <name> <provider> auto     # the pool uses the resets it holds when it is out, or one is
-                                                 # about to lapse; `manual` (the default): only from the menu
+                                                 # about to lapse; `manual` (the default): only from the panel
 sluice account move <account> <profile>
 sluice account remove <provider> <account>       # forgets the sign-in; signing in again needs a browser
 ```

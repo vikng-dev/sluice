@@ -92,7 +92,7 @@ sluice \(Sluice.version)
   sluice profile star <name> <provider>          show how much of that pool is used in the menu bar
   sluice profile unstar <name> <provider>
   sluice profile resets <name> <provider> auto   that pool uses the resets it holds when it is out, or one is
-                                                 about to lapse; with `manual`, only when told to in the menu
+                                                 about to lapse; with `manual`, only when told to in the panel
   sluice profile claim <name> --folder <path>    work in that folder belongs to the profile
   sluice profile claim <name> --owner <owner>    so do repositories whose origin has that owner
   sluice profile unclaim <name> --folder <path> | --owner <owner>

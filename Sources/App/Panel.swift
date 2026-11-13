@@ -599,6 +599,7 @@ private struct PoolView: View {
     let autoReset: (Bool) -> Void
 
     @State private var hovered = false
+    @State private var showsResets = false
 
     /// The resets the pool's accounts hold, the soonest to lapse first. An account's resets that differ
     /// only in name are one line, which uses the first of them.
@@ -617,6 +618,43 @@ private struct PoolView: View {
         .sorted { ($0.reset.expiresAt ?? .distantFuture) < ($1.reset.expiresAt ?? .distantFuture) }
     }
 
+    /// The resets by the account that holds them, each one a chip that uses it, and whether Sluice uses
+    /// them by itself.
+    private var resets: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(pool.accounts.filter { account in held.contains { $0.account.id == account.id } }, id: \.id) { account in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(account.label).font(.caption).lineLimit(1).truncationMode(.middle).frame(width: 118, alignment: .leading)
+                    Flow {
+                        ForEach(held.filter { $0.account.id == account.id }, id: \.id) { line in
+                            Button { actions.useReset(line.reset, account) } label: {
+                                HStack(spacing: 4) {
+                                    Text(line.reset.kind(for: account) + (line.count > 1 ? " ×\(line.count)" : "")).fontWeight(.semibold)
+                                    if let expires = line.reset.expiresAt { Text(SluiceCore.Window(name: "", used: 0, resetsAt: expires).leftText(now: now)).opacity(0.7) }
+                                }
+                                .font(.caption2.monospacedDigit()).lineLimit(1).fixedSize()
+                                .foregroundStyle(line.reset.usable ? Color.green : Color.secondary)
+                                .padding(.horizontal, 7).padding(.vertical, 2).background(line.reset.usable ? Color.green.opacity(0.16) : Color.primary.opacity(0.06), in: Capsule())
+                            }
+                            .buttonStyle(.plain).disabled(!line.reset.usable)
+                            .help(line.reset.usable ? "Use it: what it refills is whole again at once. Lapses in the time shown" : "Its provider would not take it now")
+                        }
+                    }
+                }
+            }
+            Divider()
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Use them for me").font(.caption)
+                    Text("when the pool is out, or one is about to lapse").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                Toggle("Use them for me", isOn: Binding(get: { autoResets }, set: autoReset)).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+            }
+        }
+        .padding(8).background(Color.green.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -632,32 +670,18 @@ private struct PoolView: View {
                 Spacer()
                 Share(used: pool.accounts.used, worded: true)
                 if !held.isEmpty {
-                    Menu {
-                        Section("Use a reset") {
-                            ForEach(held, id: \.id) { line in
-                                Button { actions.useReset(line.reset, line.account) } label: {
-                                    Text(line.reset.title(for: line.account) + (line.count > 1 ? " ×\(line.count)" : ""))
-                                    Text(([line.account.label] + (line.reset.expiresAt.map { [SluiceCore.Window(name: "", used: 0, resetsAt: $0).leftText(now: now)] } ?? [])).joined(separator: " · "))
-                                }
-                                .disabled(!line.reset.usable)
-                            }
-                        }
-                        Divider()
-                        Toggle(isOn: Binding(get: { autoResets }, set: autoReset)) {
-                            Text("Use them for me")
-                            Text("When the pool is out, or one is about to lapse")
-                        }
-                    } label: {
+                    Button { showsResets.toggle() } label: {
                         Label("\(held.map(\.count).reduce(0, +))", systemImage: autoResets ? "arrow.triangle.2.circlepath" : "arrow.counterclockwise").labelStyle(Tight())
                             .font(.caption2.weight(.semibold)).foregroundStyle(.green)
-                            .padding(.horizontal, 6).padding(.vertical, 2).background(Color.green.opacity(0.16), in: Capsule())
+                            .padding(.horizontal, 6).padding(.vertical, 2).background(Color.green.opacity(showsResets ? 0.3 : 0.16), in: Capsule())
                     }
-                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                    .buttonStyle(.plain)
                     .help(autoResets ? "Resets its accounts hold. Sluice uses them when the pool is out, or one is about to lapse" : "Resets its accounts hold")
                 }
             }
             .contentShape(Rectangle())
             .onHover { hovered = $0 }
+            if showsResets, !held.isEmpty { resets }
             VStack(alignment: .leading, spacing: 9) {
                 ForEach(pool.accounts, id: \.id) { account in
                     AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, actions: actions)
@@ -798,10 +822,13 @@ extension SluiceCore.Window {
 extension Reset {
     /// What it is called for the account that holds it: a full reset when it refills every limit the
     /// account has, and otherwise by the limits it does refill.
-    func title(for account: AccountStatus) -> String {
+    func title(for account: AccountStatus) -> String { kind(for: account) + " reset" }
+
+    /// The same without saying that it is a reset, for where only resets are listed.
+    func kind(for account: AccountStatus) -> String {
         let has = Set((account.windows + account.scoped).map(\.name))
-        if !has.isEmpty, has.isSubset(of: refills) { return "Full reset" }
-        return ListFormatter.localizedString(byJoining: refills.map { SluiceCore.Window(name: $0, used: 0, resetsAt: .distantFuture).title }) + " reset"
+        if !has.isEmpty, has.isSubset(of: refills) { return "Full" }
+        return ListFormatter.localizedString(byJoining: refills.map { SluiceCore.Window(name: $0, used: 0, resetsAt: .distantFuture).title })
     }
 }
 
