@@ -61,7 +61,8 @@ the relay carry `User-Agent: claude-cli/<version> (external, <entrypoint>)` (`sd
 `POST https://api.anthropic.com/api/organizations/<organization uuid>/reset_rate_limits` with the
 same headers and `{program: "cedar_ember", grant_id, request_id}`. The answer's `result` is `reset`
 or `already_used` when it took, else `not_limited`, `cooldown`, `ineligible` or `unavailable`, the
-last with a `reason` such as `not_next_grant`. Confirm against the first real one.
+last with a `reason` such as `not_next_grant`. Confirm against the first real one. A `result` not
+named here is taken for an error, not a refusal, so that automatic use stops instead of trying another.
 
 **Plan (captured 2026-11-13).** `GET https://api.anthropic.com/api/oauth/profile`, same headers.
 `organization.organization_type` is `claude_max` or `claude_team`; `organization.rate_limit_tier`

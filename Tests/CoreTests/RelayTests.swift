@@ -18,8 +18,16 @@ private struct Fake: Provider {
     func isRouted(profiles: [String]) -> Bool { false }
     func usage(of account: Account) async throws -> Usage { Usage(plan: nil, windows: []) }
     func clientName(from agent: String) -> String? { agent.hasPrefix("own/") ? agent : nil }
-    func resets(of account: Account, as client: String?) async throws -> [Reset]? { client.map { [Reset(id: $0, refills: ["7d"], expiresAt: nil, usable: true)] } }
-    func use(_ reset: Reset, of account: Account, as client: String?) async throws {}
+    func resets(of account: Account, as client: String?) async throws -> [Reset]? {
+        client.map { [Reset(id: $0, refills: ["7d"], expiresAt: nil, usable: true)] } ?? (spare.isEmpty ? nil : spare)
+    }
+    /// The resets its accounts hold whoever asks, and where using one is noted.
+    var spare: [Reset] = []
+    var used: Hits?
+    func use(_ reset: Reset, of account: Account, as client: String?) async throws {
+        if reset.id == "barred" { throw ResetRefused("barred") }
+        await used?.add("reset \(reset.id)")
+    }
     func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL {
         signsInAs == nil ? upstream : URL(string: "\(redirectURI)?code=c&state=\(state)")!
     }
@@ -89,6 +97,30 @@ private actor Hits {
         await relay.checkUsage()
         #expect(try await relay.status().first?.resets.map(\.id) == ["own/1"])
         withExtendedLifetime((provider, server)) {}
+    }
+
+    /// The first reset is refused in so many words, which costs nothing, so the second is used.
+    @Test func aPoolThatIsOutAnswersAfterOneOfItsResetsIsUsedOnlyWhereItsProfileSaidSo() async throws {
+        let account = Account(provider: "fake", subject: "a", organization: nil, label: "a", accessToken: "", refreshToken: "", expiresAt: .distantFuture)
+        var asked = Config()
+        try asked.autoReset(Config.defaultProfile, "fake", true)
+        for (config, port, expected) in [(asked, UInt16(47620), ["a", "reset r", "a"]), (Config(), 47622, ["a"])] {
+            let hits = Hits()
+            let provider = try Server(port: port) { request, writer in
+                await hits.add(request.header("X-Account") ?? "")
+                try await writer.send(await hits.accounts.contains("reset r") ? 200 : 429, text: "")
+            }
+            try await provider.start()
+            let fake = Fake(upstream: URL(string: "http://127.0.0.1:\(port)")!, spare: ["barred", "r"].map { Reset(id: $0, refills: ["week"], expiresAt: nil, usable: true) }, used: hits)
+            let relay = try Relay(providers: [fake], storage: Storage(loadAccounts: { [account] }, storeAccounts: { _ in }, config: { config }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in }), port: port + 1)
+            let server = try Server(port: port + 1) { try await relay.handle($0, $1) }
+            try await server.start()
+
+            let answer = try await HTTPCall.send("GET", URL(string: "http://127.0.0.1:\(port + 1)/fake/v1/thing")!)
+            #expect(answer.status == (expected.count > 1 ? 200 : 429))
+            #expect(await hits.accounts == expected)
+            withExtendedLifetime((provider, server)) {}
+        }
     }
 
     @Test func aSignInStartedForAProfileLandsThereAndOneForNoProfileStaysPut() async throws {

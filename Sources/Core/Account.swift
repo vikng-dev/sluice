@@ -118,6 +118,8 @@ public struct Profile: Codable, Sendable, Equatable {
     public internal(set) var color: Tint?
     /// The providers whose pool here is shown in the menu bar.
     public internal(set) var starred: [String] = []
+    /// The providers whose pool here uses the resets it holds without being asked.
+    public internal(set) var autoResets: [String] = []
     /// The accounts that serve its relayed requests.
     public internal(set) var accounts: [String] = []
     /// Folders (`~` allowed) whose work belongs to this profile.
@@ -132,6 +134,7 @@ public struct Profile: Codable, Sendable, Equatable {
         label = try keys.decodeIfPresent(String.self, forKey: .label)
         color = try keys.decodeIfPresent(Tint.self, forKey: .color)
         starred = try keys.decodeIfPresent([String].self, forKey: .starred) ?? []
+        autoResets = try keys.decodeIfPresent([String].self, forKey: .autoResets) ?? []
         accounts = try keys.decodeIfPresent([String].self, forKey: .accounts) ?? []
         folders = try keys.decodeIfPresent([String].self, forKey: .folders) ?? []
         owners = try keys.decodeIfPresent([String].self, forKey: .owners) ?? []
@@ -143,12 +146,13 @@ public struct Profile: Codable, Sendable, Equatable {
         try keys.encodeIfPresent(label, forKey: .label)
         try keys.encodeIfPresent(color, forKey: .color)
         if !starred.isEmpty { try keys.encode(starred, forKey: .starred) }
+        if !autoResets.isEmpty { try keys.encode(autoResets, forKey: .autoResets) }
         if !accounts.isEmpty { try keys.encode(accounts, forKey: .accounts) }
         if !folders.isEmpty { try keys.encode(folders, forKey: .folders) }
         if !owners.isEmpty { try keys.encode(owners, forKey: .owners) }
     }
 
-    private enum CodingKeys: CodingKey { case label, color, starred, accounts, folders, owners }
+    private enum CodingKeys: CodingKey { case label, color, starred, autoResets, accounts, folders, owners }
 }
 
 /// `config.json`, written by hand or by the `sluice` command: the profiles. Work no profile claims, and
@@ -258,8 +262,7 @@ actor Accounts {
             AccountStatus(
                 provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), plan: plans[$0.id],
                 windows: (memory.usage[$0.id] ?? []).filter { $0.resetsAt > now }.sorted { $0.resetsAt < $1.resetsAt },
-                scoped: (scoped[$0.id] ?? []).filter { $0.resetsAt > now },
-                resets: (resets[$0.id] ?? []).filter { $0.left > 0 && $0.expiresAt.map { $0 > now } != false },
+                scoped: (scoped[$0.id] ?? []).filter { $0.resetsAt > now }, resets: held(by: $0.id, now: now),
                 warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: lastAnswered[$0.id], problem: problems[$0.id]
             )
         }
@@ -285,13 +288,15 @@ actor Accounts {
     }
 
     /// The profile the caller's folder belongs to, and the accounts to try, in order: its pool at the
-    /// provider, or of that pool the one account a pin in the address names.
-    func candidates(provider: String, pin: String?, folder: String?, conversation: String?) throws -> (profile: String, accounts: [Account]) {
+    /// provider, or of that pool the one account a pin in the address names. With them, the accounts a
+    /// reset may be used on when all of those refuse: none, unless the profile said so for this pool.
+    func candidates(provider: String, pin: String?, folder: String?, conversation: String?) throws -> (profile: String, accounts: [Account], refillable: [Account]) {
         let config = try storage.config()
         let profile = folder.map { config.profile(for: $0) } ?? Config.defaultProfile
-        let pool = config.pool(accounts.filter { $0.provider == provider }, for: profile)
-        if let pin { return (profile, pool.filter { $0.label == pin }) }
-        return (profile, memory.router.order(pool, conversation: conversation, usage: memory.usage, now: Date()))
+        var pool = config.pool(accounts.filter { $0.provider == provider }, for: profile)
+        if let pin { pool = pool.filter { $0.label == pin } }
+        let refillable = config.profiles[profile]?.autoResets.contains(provider) == true ? pool : []
+        return (profile, pin == nil ? memory.router.order(pool, conversation: conversation, usage: memory.usage, now: Date()) : pool, refillable)
     }
 
     var all: [Account] { accounts }
@@ -331,6 +336,38 @@ actor Accounts {
     /// The account's resets were asked for and not told. What was known stands until the next hour.
     func resetsNotTold(_ id: String) {
         resetsAsked[id] = Date()
+    }
+
+    /// The resets the account still holds.
+    private func held(by id: String, now: Date) -> [Reset] {
+        (resets[id] ?? []).filter { $0.left > 0 && $0.expiresAt.map { $0 > now } != false }
+    }
+
+    private func holder(_ account: Account, now: Date) -> Refill.Holder {
+        Refill.Holder(account: account.id, limits: ((memory.usage[account.id] ?? []) + (scoped[account.id] ?? [])).filter { $0.resetsAt > now }, resets: held(by: account.id, now: now))
+    }
+
+    /// Of these accounts, one with no limit spent.
+    func open(among pool: [Account], now: Date = Date()) -> Account? {
+        pool.first { !holder($0, now: now).limits.contains { $0.used >= 1 } }
+    }
+
+    /// The reset to use now that every one of these accounts is out, and the account it is on.
+    func refill(for pool: [Account], now: Date = Date()) -> (account: Account, reset: Reset)? {
+        guard let pick = Refill.forSpent(pool.map { holder($0, now: now) }, now: now), let account = pool.first(where: { $0.id == pick.account }) else { return nil }
+        return (account, pick.reset)
+    }
+
+    /// A reset of the account's to use before it lapses. None unless its profile said so for its pool,
+    /// and none while the profiles cannot be read.
+    func lapsing(_ account: Account, now: Date = Date()) -> Reset? {
+        guard let config = try? storage.config(), config.profiles[config.profile(ofAccount: account.label)]?.autoResets.contains(account.provider) == true else { return nil }
+        return Refill.lapsing(holder(account, now: now), now: now)
+    }
+
+    /// The provider would not take the reset. It is not offered again until the account's resets are next read.
+    func notTaken(_ reset: Reset, by id: String) {
+        if let index = resets[id]?.firstIndex(where: { $0.id == reset.id }) { resets[id]?[index].usable = false }
     }
 
     /// The account answered a relayed request, reporting these windows.

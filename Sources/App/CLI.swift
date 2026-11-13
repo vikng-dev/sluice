@@ -50,6 +50,8 @@ private struct ProfileReport: Encodable {
     var color: Tint?
     /// The providers whose pool here is shown in the menu bar.
     var starred: [String]
+    /// The providers whose pool here uses the resets it holds without being asked.
+    var autoResets: [String]
     /// By client: the account it is itself signed in as in the profile.
     var signedIn: [String: String]
     var accounts: [String]
@@ -89,6 +91,8 @@ sluice \(Sluice.version)
   sluice profile color <name> <color>            \(Tint.allCases.map(\.rawValue).joined(separator: ", ")), or none
   sluice profile star <name> <provider>          show how much of that pool is used in the menu bar
   sluice profile unstar <name> <provider>
+  sluice profile resets <name> <provider> auto   that pool uses the resets it holds when it is out, or one is
+                                                 about to lapse; with `manual`, only when told to in the menu
   sluice profile claim <name> --folder <path>    work in that folder belongs to the profile
   sluice profile claim <name> --owner <owner>    so do repositories whose origin has that owner
   sluice profile unclaim <name> --folder <path> | --owner <owner>
@@ -158,7 +162,7 @@ func command(_ arguments: [String]) async {
             reports = try config.names.map { name in
                 let profile = config.profiles[name], identities = try identities(in: name)
                 let signedIn = Dictionary(uniqueKeysWithValues: identities.compactMap { identity in identity.account.map { (identity.client, $0) } })
-                return (ProfileReport(name: name, label: profile?.label, color: profile?.color, starred: profile?.starred ?? [], signedIn: signedIn, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? []), identities)
+                return (ProfileReport(name: name, label: profile?.label, color: profile?.color, starred: profile?.starred ?? [], autoResets: profile?.autoResets ?? [], signedIn: signedIn, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? []), identities)
             }
         } catch {
             fail("\(error)")
@@ -167,7 +171,7 @@ func command(_ arguments: [String]) async {
         for (report, identities) in reports {
             let look = [report.label, report.color?.rawValue].compactMap { $0 }.joined(separator: ", ")
             print(([report.name + (look.isEmpty ? "" : " (\(look))")] + identities.map(said)).joined(separator: "  "))
-            for (title, items) in [("accounts", report.accounts), ("folders", report.folders), ("owners", report.owners), ("starred", report.starred)] where !items.isEmpty {
+            for (title, items) in [("accounts", report.accounts), ("folders", report.folders), ("owners", report.owners), ("starred", report.starred), ("uses its resets", report.autoResets)] where !items.isEmpty {
                 print("  \(title): \(items.joined(separator: ", "))")
             }
         }
@@ -198,6 +202,11 @@ func command(_ arguments: [String]) async {
         guard providers.contains(where: { $0.id == words[3] }) else { fail("no provider \(words[3]); there is: \(providers.map(\.id).joined(separator: ", "))") }
         _ = change { try $0.star(words[2], words[3], verb == "star") }
         print("Profile \(words[2])'s \(words[3]) pool is \(verb == "star" ? "" : "no longer ")shown in the menu bar.")
+    case ("profile", "resets"):
+        guard words.count == 5, ["auto", "manual"].contains(words[4]) else { fail("usage: sluice profile resets <name> <provider> auto | manual") }
+        guard providers.contains(where: { $0.id == words[3] }) else { fail("no provider \(words[3]); there is: \(providers.map(\.id).joined(separator: ", "))") }
+        _ = change { try $0.autoReset(words[2], words[3], words[4] == "auto") }
+        print(words[4] == "auto" ? "Profile \(words[2])'s \(words[3]) pool uses its resets when it is out, or one is about to lapse." : "Profile \(words[2])'s \(words[3]) pool uses a reset only when told to.")
     case ("profile", "remove"):
         guard words.count == 3 else { fail("usage: sluice profile remove <name>") }
         _ = change { try $0.remove(profile: words[2]) }

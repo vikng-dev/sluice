@@ -73,6 +73,13 @@ public extension Config {
         if starred { profiles[profile, default: Profile()].starred.append(provider) }
     }
 
+    /// Whether the pool uses the resets it holds without being asked, kept like its star.
+    mutating func autoReset(_ profile: String, _ provider: String, _ on: Bool) throws {
+        try require(profile)
+        profiles[profile, default: Profile()].autoResets.removeAll { $0 == provider }
+        if on { profiles[profile, default: Profile()].autoResets.append(provider) }
+    }
+
     mutating func claim(folder: String, for profile: String, home: String = NSHomeDirectory()) throws {
         try require(profile)
         let folder = Self.written(folder, home: home)

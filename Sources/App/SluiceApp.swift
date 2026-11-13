@@ -207,6 +207,10 @@ private let program = Bundle.main.executableURL!
         change { try $0.star(profile, provider, starred) }
     }
 
+    func autoReset(_ profile: String, _ provider: String, _ on: Bool) {
+        change { try $0.autoReset(profile, provider, on) }
+    }
+
     /// What the menu bar shows in place of the glyph: the starred pools by profile, each profile's colour
     /// and its pools by provider, with how much of each is used or left. Empty when none is starred.
     func counters(left: Bool) -> [(color: NSColor?, pools: [(provider: String, text: String)])] {
@@ -254,7 +258,7 @@ struct SluiceApp: App {
         MenuBarExtra {
             Panel(
                 problem: running.problem.isEmpty ? running.refusal : running.problem, accounts: running.accounts, config: running.config, identities: running.identities, titles: titles, now: Date(),
-                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, star: running.star, useReset: running.useReset,
+                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, star: running.star, useReset: running.useReset, autoReset: running.autoReset,
                 addProfile: running.addProfile, removeProfile: running.removeProfile,
                 claimFolders: running.claimFolders, claimOwner: running.claimOwner, unclaim: { running.unclaim($1, from: $0) },
                 history: running.history, loadHistory: running.loadHistory, quit: running.quit

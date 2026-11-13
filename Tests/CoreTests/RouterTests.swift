@@ -54,6 +54,36 @@ import Testing
     }
 }
 
+@Suite struct RefillTests {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    func limit(_ name: String, _ used: Double, back hours: Double = 24) -> Window { Window(name: name, used: used, resetsAt: now.addingTimeInterval(hours * 3600)) }
+    func reset(_ id: String, _ refills: [String], lapses hours: Double = 240, usable: Bool = true) -> Reset {
+        Reset(id: id, refills: refills, expiresAt: now.addingTimeInterval(hours * 3600), usable: usable)
+    }
+
+    @Test func aPoolThatIsOutIsBroughtBackByTheResetThatWastesLeast() {
+        let model = Refill.Holder(account: "a", limits: [limit("7d", 0.6), limit("fable", 1)], resets: [reset("whole", ["5h", "7d", "fable"], lapses: 10), reset("model", ["fable"])])
+        // The reset for the one limit that is spent, though the wider one lapses sooner.
+        #expect(Refill.forSpent([model], now: now)?.reset.id == "model")
+        // A reset that leaves a spent limit spent brings nothing back, and one its provider will not take is not tried.
+        let both = Refill.Holder(account: "a", limits: [limit("5h", 1), limit("7d", 1)], resets: [reset("short", ["5h"]), reset("barred", ["5h", "7d"], usable: false)])
+        #expect(Refill.forSpent([both], now: now) == nil)
+        // Nothing known spent: the refusal was for something a reset is not known to mend.
+        #expect(Refill.forSpent([Refill.Holder(account: "a", limits: [limit("7d", 0.99)], resets: [reset("r", ["7d"])])], now: now) == nil)
+        // Between like resets, on the account that would otherwise be out longest.
+        let soon = Refill.Holder(account: "soon", limits: [limit("7d", 1, back: 1)], resets: [reset("s", ["7d"])])
+        let late = Refill.Holder(account: "late", limits: [limit("7d", 1, back: 90)], resets: [reset("l", ["7d"])])
+        #expect(Refill.forSpent([soon, late], now: now)?.account == "late")
+    }
+
+    @Test func aResetAboutToLapseIsUsedOnlyWhereItRefillsSomethingUsed() {
+        let lapsing = reset("r", ["fable"], lapses: 1)
+        #expect(Refill.lapsing(Refill.Holder(account: "a", limits: [limit("7d", 0.4), limit("fable", 0.2)], resets: [lapsing]), now: now)?.id == "r")
+        #expect(Refill.lapsing(Refill.Holder(account: "a", limits: [limit("7d", 0.4), limit("fable", 0)], resets: [lapsing]), now: now) == nil)
+        #expect(Refill.lapsing(Refill.Holder(account: "a", limits: [limit("fable", 0.9)], resets: [reset("far", ["fable"], lapses: 48)]), now: now) == nil)
+    }
+}
+
 @Suite struct ClaudeReadingTests {
     func reading(_ status: Int, _ headers: [String: String]) -> Reading {
         Claude().reading(status: status, headers: Dictionary(uniqueKeysWithValues: headers.map { ("anthropic-ratelimit-unified-" + $0, $1) }))
@@ -132,6 +162,8 @@ import Testing
         #expect(try Claude.refusal(inClaim: Data(#"{"result":"not_limited"}"#.utf8)) != nil)
         // The reason is under another key when the result is only that it was unavailable.
         #expect(try Claude.refusal(inClaim: Data(#"{"result":"unavailable","reason":"not_next_grant"}"#.utf8)) == ResetRefused("the provider wants another of the account's resets used first"))
+        // A word not known here may mean it was spent: that is not passed off as a refusal, after which another would be tried.
+        #expect(throws: ProviderError.self) { try Claude.refusal(inClaim: Data(#"{"result":"a_new_word"}"#.utf8)) }
         #expect(try Codex.refusal(inClaim: Data(#"{"code":"reset","windows_reset":["weekly"]}"#.utf8)) == nil)
         #expect(try Codex.refusal(inClaim: Data(#"{"code":"nothing_to_reset"}"#.utf8)) != nil)
         #expect(throws: ProviderError.self) { try Codex.refusal(inClaim: Data("<html>".utf8)) }

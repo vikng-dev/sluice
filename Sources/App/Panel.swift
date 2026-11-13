@@ -21,6 +21,8 @@ struct Panel: View {
     let star: (_ profile: String, _ provider: String, Bool) -> Void
     /// Asks first, and spends the reset.
     let useReset: (Reset, AccountStatus) -> Void
+    /// Whether a pool uses the resets it holds without being asked.
+    let autoReset: (_ profile: String, _ provider: String, Bool) -> Void
     /// Makes a profile, and when it is made for an account, with that account in it.
     let addProfile: (_ shownAs: String, _ founder: AccountStatus?) -> Void
     let removeProfile: (_ profile: String) -> Void
@@ -134,7 +136,8 @@ struct Panel: View {
                         ForEach(section.pools) { pool in
                             PoolView(
                                 pool: pool, now: now, carried: carried?.account.id, actions: actions,
-                                starred: config.profiles[section.name]?.starred.contains(pool.provider) == true, star: { star(section.name, pool.provider, $0) }
+                                starred: config.profiles[section.name]?.starred.contains(pool.provider) == true, star: { star(section.name, pool.provider, $0) },
+                                autoResets: config.profiles[section.name]?.autoResets.contains(pool.provider) == true, autoReset: { autoReset(section.name, pool.provider, $0) }
                             )
                         }
                     }
@@ -592,9 +595,10 @@ private struct PoolView: View {
     let actions: RowActions
     let starred: Bool
     let star: (Bool) -> Void
+    let autoResets: Bool
+    let autoReset: (Bool) -> Void
 
     @State private var hovered = false
-    @State private var showsResets = false
 
     /// The resets the pool's accounts hold, the soonest to lapse first. An account's resets that differ
     /// only in name are one line, which uses the first of them.
@@ -628,22 +632,32 @@ private struct PoolView: View {
                 Spacer()
                 Share(used: pool.accounts.used, worded: true)
                 if !held.isEmpty {
-                    Button { showsResets.toggle() } label: {
-                        Label("\(held.map(\.count).reduce(0, +))", systemImage: "arrow.counterclockwise").labelStyle(Tight())
+                    Menu {
+                        Section("Use a reset") {
+                            ForEach(held, id: \.id) { line in
+                                Button { actions.useReset(line.reset, line.account) } label: {
+                                    Text(line.reset.title(for: line.account) + (line.count > 1 ? " ×\(line.count)" : ""))
+                                    Text(([line.account.label] + (line.reset.expiresAt.map { [SluiceCore.Window(name: "", used: 0, resetsAt: $0).leftText(now: now)] } ?? [])).joined(separator: " · "))
+                                }
+                                .disabled(!line.reset.usable)
+                            }
+                        }
+                        Divider()
+                        Toggle(isOn: Binding(get: { autoResets }, set: autoReset)) {
+                            Text("Use them for me")
+                            Text("When the pool is out, or one is about to lapse")
+                        }
+                    } label: {
+                        Label("\(held.map(\.count).reduce(0, +))", systemImage: autoResets ? "arrow.triangle.2.circlepath" : "arrow.counterclockwise").labelStyle(Tight())
                             .font(.caption2.weight(.semibold)).foregroundStyle(.green)
                             .padding(.horizontal, 6).padding(.vertical, 2).background(Color.green.opacity(0.16), in: Capsule())
                     }
-                    .buttonStyle(.plain).help("Resets its accounts hold. Click to see them")
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                    .help(autoResets ? "Resets its accounts hold. Sluice uses them when the pool is out, or one is about to lapse" : "Resets its accounts hold")
                 }
             }
             .contentShape(Rectangle())
             .onHover { hovered = $0 }
-            if showsResets, !held.isEmpty {
-                VStack(alignment: .leading, spacing: 7) {
-                    ForEach(held, id: \.id) { ResetRow(reset: $0.reset, count: $0.count, account: $0.account, now: now, use: actions.useReset) }
-                }
-                .padding(.vertical, 2)
-            }
             VStack(alignment: .leading, spacing: 6) {
                 PoolBar(accounts: pool.accounts).padding(.leading, AccountRow.gutter)
                 ForEach(pool.accounts, id: \.id) { account in
@@ -806,36 +820,6 @@ extension Reset {
     }
 }
 
-/// A reset an account holds: what it refills, whose it is, when it lapses, and using it.
-private struct ResetRow: View {
-    let reset: Reset
-    /// How many the account holds that are the same in all but name.
-    let count: Int
-    let account: AccountStatus
-    let now: Date
-    let use: (Reset, AccountStatus) -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.counterclockwise").font(.caption.weight(.bold)).foregroundStyle(.green).frame(width: AccountRow.gutter - 8, alignment: .leading)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(reset.title(for: account) + (count > 1 ? " ×\(count)" : "")).font(.callout)
-                    .help(reset.givesBack ? "It also gives the week back what that used of it" : "")
-                Text(account.label).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-            }
-            Spacer(minLength: 4)
-            if let expires = reset.expiresAt {
-                Clock(window: SluiceCore.Window(name: "", used: 0, resetsAt: expires), now: now, lapses: true)
-            }
-            Button("Use") { use(reset, account) }
-                .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(reset.usable ? Color.green : Color.secondary.opacity(0.6))
-                .padding(.horizontal, 9).padding(.vertical, 2).background(Color.green.opacity(reset.usable ? 0.2 : 0.06), in: Capsule())
-                .disabled(!reset.usable)
-                .help(reset.usable ? "Refill now. This cannot be taken back" : "Its provider would not take it now")
-        }
-    }
-}
-
 /// A share of an allowance, read as used or as left. A click on any of them turns them all.
 struct Share: View {
     let used: Double
@@ -857,8 +841,6 @@ struct Share: View {
 struct Clock: View {
     let window: SluiceCore.Window
     let now: Date
-    /// It is a reset that lapses then, and not a window that resets.
-    var lapses = false
     @AppStorage("readsResetTimes") private var times = false
 
     var body: some View {
@@ -866,7 +848,7 @@ struct Clock: View {
             .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
             .contentShape(Rectangle())
             .onTapGesture { times.toggle() }
-            .help(times ? "\(lapses ? "Lapses" : "Resets") then. Click for the time left" : "\(lapses ? "Lapses" : "Resets") in this long. Click for the time")
+            .help(times ? "Resets then. Click for the time left" : "Resets in this long. Click for the time")
     }
 }
 

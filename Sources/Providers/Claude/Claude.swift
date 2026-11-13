@@ -274,7 +274,8 @@ public struct Claude: Provider {
         if let refusal = try Self.refusal(inClaim: body) { throw refusal }
     }
 
-    /// Why a claim's answer says the reset was not used; nil when it was.
+    /// Why a claim's answer says the reset was not used; nil when it was. An answer in a word not known
+    /// here is an error and not a refusal: whether the reset was spent is then not known.
     static func refusal(inClaim body: Data) throws -> ResetRefused? {
         guard let answer = try? JSONSerialization.jsonObject(with: body) as? [String: Any], let result = answer["result"] as? String else { throw ProviderError.invalidResponse }
         switch result == "unavailable" ? answer["reason"] as? String ?? result : result {
@@ -283,7 +284,7 @@ public struct Claude: Provider {
         case "not_next_grant": return ResetRefused("the provider wants another of the account's resets used first")
         case "cooldown", "paused", "low_priority_active": return ResetRefused("the provider does not take a reset from the account just now")
         case "no_grant", "unknown_grant", "ineligible": return ResetRefused("the account no longer holds that reset")
-        case let other: return ResetRefused("the provider did not take it (\(other))")
+        case let other: throw ProviderError.refused(status: 200, code: other)
         }
     }
 

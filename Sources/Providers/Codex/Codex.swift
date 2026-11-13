@@ -217,7 +217,7 @@ public struct Codex: Provider {
         case "reset", "already_redeemed": return nil
         case "nothing_to_reset": return ResetRefused("too little of the account is used yet")
         case "no_credit": return ResetRefused("the account no longer holds that reset")
-        default: return ResetRefused("the provider did not take it (\(code))")
+        default: throw ProviderError.refused(status: 200, code: code)
         }
     }
 
