@@ -9,7 +9,7 @@ large and as full as its week is used, and under it each account's plan, the sha
 which one a client is itself signed in as, and which is answering now. It also says when the clients
 are not going through Sluice. `sluice status` prints the same accounts. What can be done to a thing shows when the pointer is on it: a profile's **+** signs another
 account in for it, at the provider you pick, and an account's **⋯** removes it. An account is
-moved by dragging it onto another profile.
+moved by its handle: it lifts off the panel and drops onto another profile.
 
 ## Use it
 

@@ -21,6 +21,27 @@ struct Panel: View {
     let remove: (AccountStatus) -> Void
     let quit: () -> Void
 
+    @State private var carried: Carried?
+    /// Where each profile and each account's row is in the panel.
+    @State private var frames: [String: CGRect] = [:]
+
+    /// The profile the carried account would land in: the one under the pointer, unless it is its own.
+    private var target: String? {
+        guard let carried else { return nil }
+        return profiles.first { $0 != carried.account.profile && frames["profile:\($0)"]?.contains(carried.pointer) == true }
+    }
+
+    /// Let go over another profile, the account moves there; anywhere else, it goes back.
+    private func drop() {
+        guard let carried else { return }
+        if let target {
+            move(carried.account, target)
+            self.carried = nil
+        } else {
+            withAnimation(.spring(duration: 0.25)) { self.carried?.translation = .zero } completion: { self.carried = nil }
+        }
+    }
+
     /// Every profile, with a pool at each provider it has accounts at.
     private var sections: [(name: String, pools: [Pool])] {
         let providers = Set(accounts.map(\.provider)).sorted()
@@ -51,15 +72,27 @@ struct Panel: View {
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
             ForEach(sections, id: \.name) { section in
-                DropZone(
-                    accepts: { id in accounts.contains { $0.id == id && $0.profile != section.name } },
-                    drop: { id in accounts.first { $0.id == id }.map { move($0, section.name) } }
-                ) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ProfileCaption(name: section.name, empty: section.pools.isEmpty, titles: titles) { signIn($0, section.name) }
-                        ForEach(section.pools) { PoolView(pool: $0, now: now, remove: remove) }
+                VStack(alignment: .leading, spacing: 10) {
+                    ProfileCaption(name: section.name, empty: section.pools.isEmpty, titles: titles) { signIn($0, section.name) }
+                    ForEach(section.pools) { pool in
+                        PoolView(
+                            pool: pool, now: now, movable: profiles.count > 1, carried: carried?.account.id, remove: remove,
+                            carry: { account, drag in carried = Carried(account: account, client: pool.identity == account.label ? pool.client : nil, translation: drag.translation, pointer: drag.location) },
+                            drop: drop
+                        )
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(6)
+                // While an account is carried, the profiles it could go to are outlined, and the one under it is filled.
+                .background(target == section.name ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    if let carried, carried.account.profile != section.name {
+                        RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    }
+                }
+                .framed("profile:\(section.name)")
+                .padding(-6)
             }
             Divider()
             HStack {
@@ -79,29 +112,43 @@ struct Panel: View {
         }
         .padding(14)
         .frame(width: 340)
+        .onPreferenceChange(Frames.self) { frames = $0 }
+        .coordinateSpace(name: Frames.space)
+        // The carried account's row, lifted off the panel and following the pointer.
+        .overlay(alignment: .topLeading) {
+            if let carried, let frame = frames["row:\(carried.account.id)"] {
+                AccountRow(account: carried.account, client: carried.client, now: now, movable: true, lifted: true, remove: { _ in }, carry: { _, _ in }, drop: {})
+                    .padding(.vertical, 5).padding(.trailing, 8)
+                    .frame(width: frame.width + 8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
+                    .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
+                    .position(x: frame.midX + 4 + carried.translation.width, y: frame.midY + carried.translation.height)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 }
 
-/// A profile's part of the panel. An account dragged here from another profile moves to this one.
-private struct DropZone<Content: View>: View {
-    let accepts: (_ account: String) -> Bool
-    let drop: (_ account: String) -> Void
-    @ViewBuilder let content: Content
-    @State private var targeted = false
+/// An account lifted by its handle, on its way to another profile.
+private struct Carried {
+    let account: AccountStatus
+    /// The client marked on its row, kept on the lifted copy.
+    let client: String?
+    var translation: CGSize
+    /// In the panel's space.
+    var pointer: CGPoint
+}
 
-    var body: some View {
-        content
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(6)
-            .background(targeted ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 8))
-            .padding(-6)
-            .dropDestination(for: String.self) { accounts, _ in
-                guard let account = accounts.first, accepts(account) else { return false }
-                drop(account)
-                return true
-            } isTargeted: {
-                targeted = $0
-            }
+/// Where views are in the panel, by a key each gives itself.
+private struct Frames: PreferenceKey {
+    static let space = "panel"
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) { value.merge(nextValue()) { $1 } }
+}
+
+private extension View {
+    func framed(_ key: String) -> some View {
+        background(GeometryReader { Color.clear.preference(key: Frames.self, value: [key: $0.frame(in: .named(Frames.space))]) })
     }
 }
 
@@ -160,7 +207,13 @@ private extension AccountStatus {
 private struct PoolView: View {
     let pool: Pool
     let now: Date
+    /// There is another profile an account could be carried to.
+    let movable: Bool
+    /// The account being carried, whose row stays behind dimmed.
+    let carried: String?
     let remove: (AccountStatus) -> Void
+    let carry: (AccountStatus, DragGesture.Value) -> Void
+    let drop: () -> Void
 
     /// When the pool next gets allowance back.
     private var nextReset: SluiceCore.Window? {
@@ -181,10 +234,11 @@ private struct PoolView: View {
                 }
             }
             VStack(alignment: .leading, spacing: 6) {
-                PoolBar(accounts: pool.accounts)
+                PoolBar(accounts: pool.accounts).padding(.leading, AccountRow.gutter)
                 ForEach(pool.accounts, id: \.id) { account in
-                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, remove: remove)
-                        .draggable(account.id)
+                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, movable: movable, lifted: false, remove: remove, carry: carry, drop: drop)
+                        .opacity(carried == account.id ? 0.3 : 1)
+                        .framed("row:\(account.id)")
                 }
                 if let identity = pool.identity, !pool.accounts.contains(where: { $0.label == identity }) {
                     Label("\(pool.client) is signed in as \(identity)", systemImage: "person.crop.circle")
@@ -192,9 +246,9 @@ private struct PoolView: View {
                         .help(pool.identityIsAnothers
                             ? "What \(pool.client) does outside Sluice here is this account's, and this account pays for another profile's work."
                             : "What \(pool.client) does outside Sluice here is this account's. It is not one of the accounts above.")
+                        .padding(.leading, AccountRow.gutter)
                 }
             }
-            .padding(.leading, 20)
         }
     }
 }
@@ -226,8 +280,17 @@ private struct AccountRow: View {
     /// The client that is itself signed in as this account in the profile, if one is.
     let client: String?
     let now: Date
+    /// It can be carried to another profile by its handle.
+    let movable: Bool
+    /// It is the copy that follows the pointer.
+    let lifted: Bool
     let remove: (AccountStatus) -> Void
+    let carry: (AccountStatus, DragGesture.Value) -> Void
+    let drop: () -> Void
     @State private var hovered = false
+
+    /// The room left of every row, under the provider's mark, where the handle shows.
+    static let gutter: Double = 20
 
     /// It answered a request within the last minute.
     private var serving: Bool { account.lastAnswered.map { now.timeIntervalSince($0) < 60 } ?? false }
@@ -240,6 +303,20 @@ private struct AccountRow: View {
     }
 
     var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Image(systemName: "line.3.horizontal").font(.caption).foregroundStyle(.secondary)
+                .frame(width: Self.gutter, height: 16, alignment: .leading)
+                .contentShape(Rectangle())
+                .opacity(movable && (hovered || lifted) ? 1 : 0)
+                .gesture(movable ? DragGesture(minimumDistance: 1, coordinateSpace: .named(Frames.space)).onChanged { carry(account, $0) }.onEnded { _ in drop() } : nil)
+                .help("Drag onto another profile to move this account there")
+            details
+        }
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+    }
+
+    private var details: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 Text(account.label).font(.callout).lineLimit(1).truncationMode(.middle)
@@ -254,7 +331,7 @@ private struct AccountRow: View {
                     Image(systemName: "ellipsis")
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .opacity(hovered ? 1 : 0)
+                .opacity(hovered && !lifted ? 1 : 0)
                 Spacer(minLength: 4)
                 if let plan = account.plan { Badge(text: plan.tier, symbol: plan.business ? "briefcase.fill" : nil).help(plan.name + (plan.price.map { ", $\($0) a month" } ?? "")) }
                 if let budget = account.budget {
@@ -269,8 +346,6 @@ private struct AccountRow: View {
                 Text(note.text).font(.caption).foregroundStyle(note.color)
             }
         }
-        .contentShape(Rectangle())
-        .onHover { hovered = $0 }
     }
 }
 

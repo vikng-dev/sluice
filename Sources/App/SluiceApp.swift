@@ -94,7 +94,13 @@ let keeperLabel = "dev.vikng.sluice.relay"
     }
 
     func move(_ account: AccountStatus, to profile: String) {
-        do { try Storage.live.change { try $0.move(account: account.label, to: profile) } } catch { problem = "\(error)" }
+        do {
+            try Storage.live.change { try $0.move(account: account.label, to: profile) }
+            // Shown where it landed at once; the relay's own list follows at the next refresh.
+            for index in accounts.indices where accounts[index].label == account.label { accounts[index].profile = profile }
+        } catch {
+            problem = "\(error)"
+        }
     }
 
     /// Asks first: signing in again needs the browser and the person.
