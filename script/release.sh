@@ -27,6 +27,6 @@ rm "$zip"
 ditto -c -k --keepParent dist/Sluice.app "$zip"
 spctl --assess --type execute dist/Sluice.app
 
-git tag "$tag"
+git tag -m "Sluice $tag" "$tag"
 git push -q origin "$tag"
 gh release create "$tag" "$zip" --title "Sluice $tag" --generate-notes "$@"
