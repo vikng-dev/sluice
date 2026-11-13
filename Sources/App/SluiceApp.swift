@@ -18,7 +18,7 @@ private let program = Bundle.main.executableURL!
     var problem = handoverProblem
     var routed = false
     var accounts: [AccountStatus] = []
-    var profiles: [String] = []
+    var config = Config()
     var identities: [String: [Identity]] = [:]
     private var sluice: (server: Server, relay: Relay)?
 
@@ -67,8 +67,8 @@ private let program = Bundle.main.executableURL!
             if let relay = sluice?.relay {
                 do {
                     accounts = try await relay.status()
-                    profiles = try Storage.live.config().names
-                    identities = try Dictionary(uniqueKeysWithValues: profiles.map { ($0, try SluiceProviders.identities(in: $0)) })
+                    config = try Storage.live.config()
+                    identities = try Dictionary(uniqueKeysWithValues: config.names.map { ($0, try SluiceProviders.identities(in: $0)) })
                 } catch {
                     problem = "\(error)"
                 }
@@ -91,14 +91,40 @@ private let program = Bundle.main.executableURL!
         NSWorkspace.shared.open(URL(string: "\(Sluice.address)/login/\(provider)?profile=\(profile)")!)
     }
 
-    func move(_ account: AccountStatus, to profile: String) {
+    /// Changes the profiles, and shows the change at once.
+    private func change(_ edit: (inout Config) throws -> Void) {
         do {
-            try Storage.live.change { try $0.move(account: account.label, to: profile) }
-            // Shown where it landed at once; the relay's own list follows at the next refresh.
-            for index in accounts.indices where accounts[index].label == account.label { accounts[index].profile = profile }
+            config = try Storage.live.change(edit)
+            // The relay's own list follows at the next refresh.
+            for index in accounts.indices { accounts[index].profile = config.profile(ofAccount: accounts[index].label) }
         } catch {
             problem = "\(error)"
         }
+    }
+
+    func move(_ account: AccountStatus, to profile: String) {
+        change { try $0.move(account: account.label, to: profile) }
+    }
+
+    func tint(_ profile: String, _ tint: Tint?) {
+        change { try $0.color(profile, tint) }
+    }
+
+    /// Asks what the profile is to be shown as.
+    func rename(_ profile: String) {
+        let field = NSTextField(string: config.profiles[profile]?.label ?? "")
+        field.placeholderString = profile
+        field.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
+        let alert = NSAlert()
+        alert.messageText = "What should profile \(profile) be shown as?"
+        alert.informativeText = "Its folders and the sluice command keep calling it \(profile). Leave this empty to show that."
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        change { try $0.label(profile, as: field.stringValue) }
     }
 
     /// Asks first: signing in again needs the browser and the person.
@@ -130,8 +156,8 @@ struct SluiceApp: App {
     var body: some Scene {
         MenuBarExtra {
             Panel(
-                problem: running.problem, accounts: running.accounts, profiles: running.profiles, identities: running.identities, titles: titles, now: Date(),
-                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, quit: running.quit
+                problem: running.problem, accounts: running.accounts, config: running.config, identities: running.identities, titles: titles, now: Date(),
+                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, quit: running.quit
             )
             .task { await running.watch() }
         } label: {

@@ -95,8 +95,16 @@ struct UnreadableFile: Error, CustomStringConvertible {
     var description: String { "\(path) could not be read: \(cause)" }
 }
 
+/// The colors a profile can be told apart by.
+public enum Tint: String, Codable, Sendable, CaseIterable {
+    case red, orange, yellow, green, teal, blue, purple, pink
+}
+
 /// One separate setup: the accounts whose usage it pools, and the work that belongs to it.
 public struct Profile: Codable, Sendable, Equatable {
+    /// What the user calls it, where its name in the config is not what they want to read.
+    public internal(set) var label: String?
+    public internal(set) var color: Tint?
     /// The accounts that serve its relayed requests.
     public internal(set) var accounts: [String] = []
     /// Folders (`~` allowed) whose work belongs to this profile.
@@ -108,6 +116,8 @@ public struct Profile: Codable, Sendable, Equatable {
 
     public init(from decoder: any Decoder) throws {
         let keys = try decoder.container(keyedBy: CodingKeys.self)
+        label = try keys.decodeIfPresent(String.self, forKey: .label)
+        color = try keys.decodeIfPresent(Tint.self, forKey: .color)
         accounts = try keys.decodeIfPresent([String].self, forKey: .accounts) ?? []
         folders = try keys.decodeIfPresent([String].self, forKey: .folders) ?? []
         owners = try keys.decodeIfPresent([String].self, forKey: .owners) ?? []
@@ -116,12 +126,14 @@ public struct Profile: Codable, Sendable, Equatable {
     /// Only what is set is written, as a person would write it.
     public func encode(to encoder: any Encoder) throws {
         var keys = encoder.container(keyedBy: CodingKeys.self)
+        try keys.encodeIfPresent(label, forKey: .label)
+        try keys.encodeIfPresent(color, forKey: .color)
         if !accounts.isEmpty { try keys.encode(accounts, forKey: .accounts) }
         if !folders.isEmpty { try keys.encode(folders, forKey: .folders) }
         if !owners.isEmpty { try keys.encode(owners, forKey: .owners) }
     }
 
-    private enum CodingKeys: CodingKey { case accounts, folders, owners }
+    private enum CodingKeys: CodingKey { case label, color, accounts, folders, owners }
 }
 
 /// `config.json`, written by hand or by the `sluice` command: the profiles. Work no profile claims, and
@@ -131,7 +143,7 @@ public struct Config: Codable, Sendable, Equatable {
     public static let defaultProfile = "default"
     public internal(set) var profiles: [String: Profile] = [:]
 
-    init() {}
+    public init() {}
 
     public init(from decoder: any Decoder) throws {
         profiles = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent([String: Profile].self, forKey: .profiles) ?? [:]
@@ -141,6 +153,9 @@ public struct Config: Codable, Sendable, Equatable {
 
     /// Every profile's name, the default first.
     public var names: [String] { [Self.defaultProfile] + profiles.keys.filter { $0 != Self.defaultProfile }.sorted() }
+
+    /// What a profile is shown as: its label, or failing one its name.
+    public func shown(_ profile: String) -> String { profiles[profile]?.label ?? profile }
 
     /// The profile that work in `directory` belongs to: the one claiming the deepest folder containing it,
     /// or else the one claiming the owner of the repository it is in, or else the default.

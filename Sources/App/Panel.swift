@@ -5,8 +5,7 @@ import SwiftUI
 struct Panel: View {
     let problem: String
     let accounts: [AccountStatus]
-    /// Every profile's name, the default first.
-    let profiles: [String]
+    let config: Config
     /// By profile.
     let identities: [String: [Identity]]
     /// What each provider's subscriptions are sold as, by its id.
@@ -17,8 +16,11 @@ struct Panel: View {
     let signIn: (_ provider: String, _ profile: String) -> Void
     let move: (AccountStatus, _ profile: String) -> Void
     let remove: (AccountStatus) -> Void
+    let rename: (_ profile: String) -> Void
+    let tint: (_ profile: String, Tint?) -> Void
     let quit: () -> Void
 
+    private var profiles: [String] { config.names }
     @State private var carried: Carried?
     /// Where each profile and each account's row is in the panel.
     @State private var frames: [String: CGRect] = [:]
@@ -85,7 +87,10 @@ struct Panel: View {
             }
             ForEach(sections, id: \.name) { section in
                 VStack(alignment: .leading, spacing: 10) {
-                    ProfileCaption(name: section.name, empty: section.pools.isEmpty, titles: titles) { signIn($0, section.name) }
+                    ProfileCaption(
+                        label: config.shown(section.name), tint: config.profiles[section.name]?.color, empty: section.pools.isEmpty, titles: titles,
+                        signIn: { signIn($0, section.name) }, rename: { rename(section.name) }, setTint: { tint(section.name, $0) }
+                    )
                     ForEach(section.pools) { PoolView(pool: $0, now: now, carried: carried?.account.id, actions: actions) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -171,32 +176,77 @@ private struct RowActions {
 /// A profile's name, and on it the way to give the profile another account: the provider is picked there.
 /// What can be done to a thing shows when the pointer is on it; an empty profile shows it always.
 private struct ProfileCaption: View {
-    let name: String
+    let label: String
+    let tint: Tint?
     let empty: Bool
     let titles: [String: String]
     let signIn: (_ provider: String) -> Void
+    let rename: () -> Void
+    let setTint: (Tint?) -> Void
     @State private var hovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Text(name.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
+                Circle().fill(tint?.color ?? Color.secondary.opacity(0.4)).frame(width: 7, height: 7)
+                Text(label.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
                 Spacer()
-                Menu {
-                    ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
-                        Button("Sign in a \(title) account") { signIn(provider) }
+                Group {
+                    Menu {
+                        Button("Rename…", action: rename)
+                        Picker("Color", selection: Binding(get: { tint }, set: { setTint($0) })) {
+                            Text("None").tag(Tint?.none)
+                            ForEach(Tint.allCases, id: \.self) { tint in
+                                Label { Text(tint.rawValue.capitalized) } icon: { Image(nsImage: tint.swatch) }.tag(Tint?.some(tint))
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
                     }
-                } label: {
-                    Image(systemName: "plus")
+                    .bare()
+                    .help("Rename or color this profile")
+                    Menu {
+                        ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
+                            Button("Sign in a \(title) account") { signIn(provider) }
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .bare()
+                    .help("Add an account to this profile")
                 }
-                .bare()
-                .help("Add an account to this profile")
                 .opacity(hovered || empty ? 1 : 0)
             }
             if empty { Text("No accounts").font(.callout).foregroundStyle(.secondary) }
         }
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
+    }
+}
+
+extension Tint {
+    var nsColor: NSColor {
+        switch self {
+        case .red: .systemRed
+        case .orange: .systemOrange
+        case .yellow: .systemYellow
+        case .green: .systemGreen
+        case .teal: .systemTeal
+        case .blue: .systemBlue
+        case .purple: .systemPurple
+        case .pink: .systemPink
+        }
+    }
+
+    var color: Color { Color(nsColor: nsColor) }
+
+    /// The color as a picture, since a menu draws a symbol in its own color.
+    var swatch: NSImage {
+        NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
+            nsColor.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1)).fill()
+            return true
+        }
     }
 }
 

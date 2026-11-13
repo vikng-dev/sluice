@@ -33,6 +33,22 @@ public extension Config {
         profiles[name] = nil
     }
 
+    /// A label is what the profile is shown as; its name stays what its folders and the commands go by.
+    /// An empty one takes the label away. No two profiles are shown as the same thing.
+    mutating func label(_ profile: String, as label: String) throws {
+        try require(profile)
+        let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let other = names.first(where: { $0 != profile && [$0, shown($0)].contains { $0.lowercased() == label.lowercased() } }) {
+            throw ConfigError(description: "profile \(other) already goes by \(label)")
+        }
+        profiles[profile, default: Profile()].label = label.isEmpty ? nil : label
+    }
+
+    mutating func color(_ profile: String, _ color: Tint?) throws {
+        try require(profile)
+        profiles[profile, default: Profile()].color = color
+    }
+
     mutating func claim(folder: String, for profile: String, home: String = NSHomeDirectory()) throws {
         try require(profile)
         let folder = Self.written(folder, home: home)

@@ -158,6 +158,16 @@ import Testing
         #expect(config.profile(ofAccount: "x") == "a")
     }
 
+    @Test func noTwoProfilesAreShownAsTheSameThing() throws {
+        var config = try config(#"{"profiles":{"work":{},"side":{}}}"#)
+        try config.label("default", as: " Me ")
+        #expect(config.shown("default") == "Me" && config.names.first == "default")
+        #expect(throws: ConfigError.self) { try config.label("work", as: "me") }
+        #expect(throws: ConfigError.self) { try config.label("work", as: "Side") }
+        try config.label("default", as: "")
+        #expect(config.shown("default") == "default")
+    }
+
     @Test func aFolderBelongsToOneProfileHoweverItIsWritten() throws {
         var config = try config(#"{"profiles":{"a":{"folders":["~/work/"]},"b":{}}}"#)
         #expect(throws: ConfigError.self) { try config.claim(folder: "/home/me/work", for: "b", home: "/home/me") }
@@ -169,7 +179,7 @@ import Testing
     }
 
     @Test func whatIsWrittenReadsBackTheSame() throws {
-        var config = try config(#"{"profiles":{"a":{"accounts":["x"],"folders":["~/w"],"owners":["Acme"]}}}"#)
+        var config = try config(#"{"profiles":{"a":{"label":"A side","color":"teal","accounts":["x"],"folders":["~/w"],"owners":["Acme"]}}}"#)
         try config.add(profile: "b")
         #expect(try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(config)) == config)
         #expect(throws: ConfigError.self) { try config.add(profile: "b") }

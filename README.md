@@ -8,7 +8,7 @@ each profile's pools, one per provider: a bar with a part for every account, as 
 large and as full as its week is used, and under it each account's plan, the share of its week used,
 which one a client is itself signed in as, and which is answering now. It also says when the clients
 are not going through Sluice. `sluice status` prints the same accounts. What can be done to a thing shows when the pointer is on it: a profile's **+** signs another
-account in for it, at the provider you pick, and an account's **⋯** removes it. An account is
+account in for it, at the provider you pick, a profile's **⋯** renames or colors it, and an account's **⋯** removes it. An account is
 moved by its handle: it lifts off the panel and drops onto another profile.
 
 ## Use it
@@ -61,6 +61,8 @@ by that profile's accounts. They are changed with the `sluice` command, and a ch
 sluice profile add work
 sluice profile claim work --folder ~/work --owner acme
 sluice account move me@work.example work
+sluice profile rename work "Day job"         # what it is shown as; its name stays `work`
+sluice profile color work purple
 sluice profile list
 ```
 
@@ -75,6 +77,8 @@ edited by hand too:
 {
   "profiles": {
     "work": {
+      "label": "Day job",
+      "color": "purple",
       "accounts": ["me@work.example", "spare@work.example"],
       "folders": ["~/work"],
       "owners": ["acme"]
@@ -83,6 +87,9 @@ edited by hand too:
 }
 ```
 
+- **`label`** and **`color`** are how the profile is shown: the label in place of its name, the color
+  as a dot beside it. The name stays what its folders and the commands go by, and `default` can be
+  given both like any other.
 - **`accounts`** are the ones whose usage the profile shares. An account no profile lists belongs to
   `default`.
 - **`folders`** and **`owners`** say what work is the profile's: anything under a folder, the deepest

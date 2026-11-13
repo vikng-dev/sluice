@@ -46,6 +46,8 @@ private func printJSON(_ value: some Encodable) {
 /// A profile as `sluice profile list` reports it.
 private struct ProfileReport: Encodable {
     var name: String
+    var label: String?
+    var color: Tint?
     /// By client: the account it is itself signed in as in the profile.
     var signedIn: [String: String]
     var accounts: [String]
@@ -81,6 +83,8 @@ sluice \(Sluice.version)
   sluice profile list [--json]                   the profiles: who the client is signed in as, and what each claims
   sluice profile add <name>                      a new, empty profile
   sluice profile remove <name>                   its accounts go back to the default profile
+  sluice profile rename <name> [label]           what it is shown as; with no label, its name again
+  sluice profile color <name> <color>            \(Tint.allCases.map(\.rawValue).joined(separator: ", ")), or none
   sluice profile claim <name> --folder <path>    work in that folder belongs to the profile
   sluice profile claim <name> --owner <owner>    so do repositories whose origin has that owner
   sluice profile unclaim <name> --folder <path> | --owner <owner>
@@ -150,14 +154,15 @@ func command(_ arguments: [String]) async {
             reports = try config.names.map { name in
                 let profile = config.profiles[name], identities = try identities(in: name)
                 let signedIn = Dictionary(uniqueKeysWithValues: identities.compactMap { identity in identity.account.map { (identity.client, $0) } })
-                return (ProfileReport(name: name, signedIn: signedIn, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? []), identities)
+                return (ProfileReport(name: name, label: profile?.label, color: profile?.color, signedIn: signedIn, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? []), identities)
             }
         } catch {
             fail("\(error)")
         }
         if json { return printJSON(reports.map(\.report)) }
         for (report, identities) in reports {
-            print(([report.name] + identities.map(said)).joined(separator: "  "))
+            let look = [report.label, report.color?.rawValue].compactMap { $0 }.joined(separator: ", ")
+            print(([report.name + (look.isEmpty ? "" : " (\(look))")] + identities.map(said)).joined(separator: "  "))
             for (title, items) in [("accounts", report.accounts), ("folders", report.folders), ("owners", report.owners)] where !items.isEmpty {
                 print("  \(title): \(items.joined(separator: ", "))")
             }
@@ -173,6 +178,17 @@ func command(_ arguments: [String]) async {
             fail("\(error)")
         }
         print("Added profile \(words[2]). Give it work with: sluice profile claim \(words[2]) --folder <path>")
+    case ("profile", "rename"):
+        guard words.count >= 3 else { fail("usage: sluice profile rename <name> [label]") }
+        let config = change { try $0.label(words[2], as: words.dropFirst(3).joined(separator: " ")) }
+        print("Profile \(words[2]) is shown as \(config.shown(words[2])).")
+    case ("profile", "color"):
+        guard words.count == 4, words[3] == "none" || Tint(rawValue: words[3]) != nil else {
+            fail("usage: sluice profile color <name> \(Tint.allCases.map(\.rawValue).joined(separator: " | ")) | none")
+        }
+        let color = Tint(rawValue: words[3])
+        _ = change { try $0.color(words[2], color) }
+        print("Profile \(words[2]) is \(color?.rawValue ?? "no color").")
     case ("profile", "remove"):
         guard words.count == 3 else { fail("usage: sluice profile remove <name>") }
         _ = change { try $0.remove(profile: words[2]) }

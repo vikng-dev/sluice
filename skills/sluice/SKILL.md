@@ -18,7 +18,7 @@ at once, without a restart.
 
 ```sh
 sluice status --json         # every account: provider, label, profile, plan, windows, problem
-sluice profile list --json   # every profile: name, signedIn, accounts, folders, owners
+sluice profile list --json   # every profile: name, label, color, signedIn, accounts, folders, owners
 ```
 
 - A window's `used` runs from 0 to 1 and `resetsAt` is ISO 8601. An account with `used` at 1 in any
@@ -38,6 +38,8 @@ sluice profile add <name>
 sluice profile claim <name> --folder <path>      # or --owner <owner>; both may repeat
 sluice profile unclaim <name> --folder <path>
 sluice profile remove <name>                     # its accounts go back to default
+sluice profile rename <name> [label]             # what it is shown as; commands keep using <name>
+sluice profile color <name> <color>              # red orange yellow green teal blue purple pink, or none
 sluice account move <account> <profile>
 sluice account remove <provider> <account>       # forgets the sign-in; signing in again needs a browser
 ```
