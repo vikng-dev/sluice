@@ -24,19 +24,35 @@ public struct Claude: Provider {
         ("CLAUDE_CONFIG_DIR", Config.folder(".claude", of: profile))
     }
 
-    public func signedIn(in profile: String) throws -> String? {
-        // Claude Code keeps its state beside its usual folder, and inside any other.
+    /// Claude Code keeps its state beside its usual folder, and inside any other.
+    private func state(of profile: String) -> UserFile {
         let folder = home(of: profile)!.folder
-        let state = UserFile((profile == Config.defaultProfile ? folder.deletingLastPathComponent() : folder).appending(path: ".claude.json"))
-        guard let data = try state.read() else { return nil }
-        return try Self.account(inState: data, path: state.path)
+        return UserFile((profile == Config.defaultProfile ? folder.deletingLastPathComponent() : folder).appending(path: ".claude.json"))
     }
 
-    static func account(inState data: Data, path: String) throws -> String? {
+    public func signedIn(in profile: String) throws -> String? {
+        let state = state(of: profile)
+        return try state.read().flatMap { try Self.account(inState: $0, path: state.path) }
+    }
+
+    public func folders(in profile: String) throws -> [String] {
+        let state = state(of: profile)
+        return try state.read().map { try Self.folders(inState: $0, path: state.path) } ?? []
+    }
+
+    private static func state(_ data: Data, path: String) throws -> [String: Any] {
         guard let all = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw UserFileError(path: path, reason: "not the JSON object Claude Code's state should be")
         }
-        return (all["oauthAccount"] as? [String: Any])?["emailAddress"] as? String
+        return all
+    }
+
+    static func account(inState data: Data, path: String) throws -> String? {
+        (try state(data, path: path)["oauthAccount"] as? [String: Any])?["emailAddress"] as? String
+    }
+
+    static func folders(inState data: Data, path: String) throws -> [String] {
+        (try state(data, path: path)["projects"] as? [String: Any]).map { Array($0.keys) } ?? []
     }
 
     private func settings(of profile: String) -> UserFile {

@@ -36,6 +36,19 @@ public struct Codex: Provider {
         return ((all["tokens"] as? [String: Any])?["id_token"] as? String).flatMap(claims)?["email"] as? String
     }
 
+    public func folders(in profile: String) throws -> [String] {
+        try settings(of: profile).read().map { Self.folders(inSettings: String(decoding: $0, as: UTF8.self)) } ?? []
+    }
+
+    /// Each folder Codex was told to trust or not has a table of its own, named by the folder.
+    static func folders(inSettings text: String) -> [String] {
+        text.split(separator: "\n").compactMap { line in
+            let line = line.trimmingCharacters(in: .whitespaces)
+            guard line.hasPrefix("[projects."), line.hasSuffix("]") else { return nil }
+            return String(line.dropFirst(10).dropLast()).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        }
+    }
+
     /// Codex's user config in a profile. A project's own config cannot name a provider.
     private func settings(of profile: String) -> UserFile {
         UserFile(home(of: profile)!.folder.appending(path: "config.toml"))

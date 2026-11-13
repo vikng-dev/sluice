@@ -15,6 +15,9 @@ public protocol Provider: Sendable {
     /// signed out there. What the client does outside the relay is this account's, whichever account serves
     /// its requests. Asked only of a client that keeps a folder per profile.
     func signedIn(in profile: String) throws -> String?
+    /// The folders the client has worked in in a profile, as the client records them. Asked only of a
+    /// client that keeps a folder per profile.
+    func folders(in profile: String) throws -> [String]
     /// Makes the provider's client talk to `address` in each profile, or to the provider again,
     /// by editing the client's own settings.
     func route(_ on: Bool, profiles: [String]) throws

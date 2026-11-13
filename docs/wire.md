@@ -102,7 +102,8 @@ keys"), codex-cli 0.160.0. The same entry also works as `-c` overrides placed la
 **Its own sign-in and folder (checked 2026-11-13).** `CODEX_HOME` names the folder that holds its
 config, sessions, memories and sign-in; in a new one `codex login status` says "Not logged in". A
 ChatGPT sign-in kept in a file is `auth.json` there, and its `tokens.id_token` carries the `email`
-claim; a sign-in by API key has no tokens.
+claim; a sign-in by API key has no tokens. Each folder it was asked to trust has a table of its own
+in `config.toml`, `[projects."<absolute path>"]`.
 
 **Sign-in.** The Codex CLI's OAuth client (`app_EMoamEEZ73f0CkXaXp7hrann`) redirects only to
 `http://localhost:1455/auth/callback`. The token endpoint takes form posts; the access token is a
@@ -163,3 +164,5 @@ Projects, voice, `/usage`. Claude Code 2.1.323:
 - Whom it is signed in as is recorded in its state file, `oauthAccount.emailAddress`; signed out, there is
   no `oauthAccount`. The file is `~/.claude.json` for the usual folder and `<folder>/.claude.json` when
   `CLAUDE_CONFIG_DIR` names another. Each write replaces the file whole, so a read never sees half of one.
+- The folders it has worked in are the keys of `projects` in the same file, each an absolute path
+  (checked 2026-11-13).

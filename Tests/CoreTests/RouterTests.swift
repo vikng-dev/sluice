@@ -123,6 +123,14 @@ import Testing
         #expect(try Codex.account(inSignIn: Data(#"{"OPENAI_API_KEY":"k","tokens":null}"#.utf8), path: "") == nil)
     }
 
+    @Test func theFoldersAClientWorkedInAreReadFromItsOwnRecord() throws {
+        #expect(try Claude.folders(inState: Data(#"{"projects":{"/w/app":{"allowedTools":[]}},"numStartups":3}"#.utf8), path: "") == ["/w/app"])
+        #expect(try Claude.folders(inState: Data(#"{"numStartups":3}"#.utf8), path: "") == [])
+        // A table under a folder's own is not another folder, and neither is any other table.
+        let settings = "model = \"x\"\n[projects.\"/w/my app\"]\ntrust_level = \"trusted\"\n[model_providers.sluice]\nname = \"s\"\n[projects.'/w/other']\n"
+        #expect(Codex.folders(inSettings: settings) == ["/w/my app", "/w/other"])
+    }
+
     @Test func codexWindowsAreNamedByTheirLength() throws {
         let body = #"{"plan_type":"prolite","rate_limit":{"primary_window":{"used_percent":3,"limit_window_seconds":604800,"reset_at":1795144120},"secondary_window":null}}"#
         let usage = try Codex.usage(in: Data(body.utf8))

@@ -28,6 +28,15 @@ public func identities(in profile: String) throws -> [Identity] {
     try providers.filter { $0.home(of: profile) != nil }.map { Identity(provider: $0.id, client: $0.client, account: try $0.signedIn(in: profile)) }
 }
 
+/// The owners of the repositories the clients have worked in: what an owner claim could be about. A
+/// client's record that cannot be read offers none, and its sign-in line already says why.
+public func knownOwners() -> [String] {
+    let folders = (try? profiles())?.flatMap { profile in
+        providers.filter { $0.home(of: profile) != nil }.flatMap { (try? $0.folders(in: profile)) ?? [] }
+    }
+    return Set((folders ?? []).compactMap(Repo.owner)).sorted()
+}
+
 /// What a command could not do, in words that say what to do instead.
 public struct CommandError: Error, CustomStringConvertible {
     public let description: String

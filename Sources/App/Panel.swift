@@ -18,6 +18,8 @@ struct Panel: View {
     let remove: (AccountStatus) -> Void
     let rename: (_ profile: String, _ label: String) -> Void
     let tint: (_ profile: String, Tint?) -> Void
+    /// The owners of the repositories the clients have worked in.
+    let owners: [String]
     /// Asks which folders, and claims them.
     let claimFolders: (_ profile: String) -> Void
     let claimOwner: (_ profile: String, _ owner: String) -> Void
@@ -25,6 +27,11 @@ struct Panel: View {
     let quit: () -> Void
 
     private var profiles: [String] { config.names }
+    /// The known owners no profile claims yet.
+    private var unclaimed: [String] {
+        let claimed = Set(config.profiles.values.flatMap(\.owners).map { $0.lowercased() })
+        return owners.filter { !claimed.contains($0.lowercased()) }
+    }
     @State private var carried: Carried?
     /// Where each profile and each account's row is in the panel.
     @State private var frames: [String: CGRect] = [:]
@@ -93,7 +100,7 @@ struct Panel: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ProfileCaption(
                         name: section.name, profile: config.profiles[section.name],
-                        takesTheRest: section.name == Config.defaultProfile && profiles.count > 1, empty: section.pools.isEmpty, titles: titles,
+                        takesTheRest: section.name == Config.defaultProfile && profiles.count > 1, empty: section.pools.isEmpty, titles: titles, owners: unclaimed,
                         signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) },
                         claimFolders: { claimFolders(section.name) }, claimOwner: { claimOwner(section.name, $0) }, unclaim: { unclaim(section.name, $0) }
                     )
@@ -191,8 +198,8 @@ enum Claim: Hashable {
 
 /// A profile's name, color and claims, each changed where it is: a click on the name types a new one, a
 /// click on the dot offers the colors, and a click on the count of its claims lays them out, each let go
-/// by the × it shows under the pointer. The +
-/// that gives the profile an account or a claim shows when the pointer is on it, and always on an empty one.
+/// by the × it shows under the pointer, with a + after them for another. The + that gives the profile an
+/// account shows when the pointer is on it, and always on an empty one.
 private struct ProfileCaption: View {
     let name: String
     /// Nil for a profile the config says nothing about.
@@ -201,6 +208,8 @@ private struct ProfileCaption: View {
     let takesTheRest: Bool
     let empty: Bool
     let titles: [String: String]
+    /// The owners offered for claiming; any other is typed.
+    let owners: [String]
     let signIn: (_ provider: String) -> Void
     let rename: (_ label: String) -> Void
     let setTint: (Tint?) -> Void
@@ -221,13 +230,13 @@ private struct ProfileCaption: View {
 
     private var claims: [Claim] { (profile?.folders ?? []).map(Claim.folder) + (profile?.owners ?? []).map(Claim.owner) }
 
-    /// The claims in a few words, beside the name.
-    private var summary: String {
-        func count(_ items: [String]?, _ one: String) -> String? {
-            items.flatMap { $0.isEmpty ? nil : "\($0.count) \(one)\($0.count == 1 ? "" : "s")" }
-        }
-        let said = [takesTheRest ? "everything else" : nil, count(profile?.folders, "folder"), count(profile?.owners, "owner")].compactMap { $0 }
-        return said.isEmpty && name != Config.defaultProfile ? "no work yet" : said.joined(separator: ", ")
+    /// The claims at a glance, beside the name: how many folders and how many owners.
+    @ViewBuilder private var summary: some View {
+        let folders = profile?.folders.count ?? 0, owners = profile?.owners.count ?? 0
+        if takesTheRest { Text("everything else") }
+        if folders > 0 { Label { Text("\(folders)") } icon: { Image(systemName: "folder") } }
+        if owners > 0 { Label { Text("\(owners)") } icon: { OwnerMark() } }
+        if claims.isEmpty, name != Config.defaultProfile { Text("no work yet") }
     }
 
     private func dot(_ tint: Tint?, size: Double) -> some View {
@@ -281,12 +290,11 @@ private struct ProfileCaption: View {
                         .contentShape(Rectangle())
                         .onTapGesture { type(.label, from: profile?.label ?? "") }
                         .help("Click to change what this profile is shown as")
-                    if claims.isEmpty {
-                        Text(summary).font(.caption2).foregroundStyle(.tertiary)
-                    } else {
+                    // The default profile on its own has all the work, and nothing to say about it.
+                    if takesTheRest || !claims.isEmpty || name != Config.defaultProfile {
                         Button { open.toggle() } label: {
-                            HStack(spacing: 3) {
-                                Text(summary)
+                            HStack(spacing: 6) {
+                                summary.labelStyle(Tight())
                                 Image(systemName: "chevron.right").imageScale(.small).rotationEffect(.degrees(open ? 90 : 0))
                             }
                             .font(.caption2).foregroundStyle(.tertiary).contentShape(Rectangle())
@@ -301,19 +309,14 @@ private struct ProfileCaption: View {
                             Label { Text("Add a \(title) account") } icon: { providerMark(provider).map(Image.init(nsImage:)) }
                         }
                     }
-                    Divider()
-                    Button(action: claimFolders) { Label("Add folders…", systemImage: "folder") }
-                    Button { type(.owner, from: "") } label: {
-                        Label { Text("Add a repository owner") } icon: { githubMark().map(Image.init(nsImage:)) }
-                    }
                 } label: {
                     Image(systemName: "plus")
                 }
                 .bare()
-                .help("Add an account, or work that belongs to this profile")
+                .help("Add an account to this profile")
                 .opacity(hovered || empty ? 1 : 0)
             }
-            if open && !claims.isEmpty || typed == .owner {
+            if open || typed == .owner {
                 Flow {
                     ForEach(claims, id: \.self) { claim in ClaimChip(claim: claim) { unclaim(claim) } }
                     if typed == .owner {
@@ -321,9 +324,22 @@ private struct ProfileCaption: View {
                             OwnerMark()
                             field("owner").frame(width: 110)
                         }
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.primary.opacity(0.06), in: Capsule())
+                        .chip()
                     }
+                    Menu {
+                        Button(action: claimFolders) { Label("Folders…", systemImage: "folder") }
+                        Divider()
+                        ForEach(owners, id: \.self) { owner in
+                            Button { claimOwner(owner) } label: { Label { Text(owner) } icon: { githubMark().map(Image.init(nsImage:)) } }
+                        }
+                        Button { type(.owner, from: "") } label: {
+                            Label { Text(owners.isEmpty ? "A repository owner…" : "Another owner…") } icon: { githubMark().map(Image.init(nsImage:)) }
+                        }
+                    } label: {
+                        Image(systemName: "plus").font(.caption2)
+                    }
+                    .bare().controlSize(.mini).chip()
+                    .help("Add work that belongs to this profile")
                 }
                 .font(.caption2).foregroundStyle(.tertiary)
             }
@@ -364,11 +380,26 @@ private struct ClaimChip: View {
             Text(look.text).lineLimit(1).truncationMode(.middle)
         }
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(Color.primary.opacity(0.06), in: Capsule())
+        .chip()
         .frame(maxWidth: 240)
         .onHover { hovered = $0 }
         .help(look.help)
+    }
+}
+
+private extension View {
+    func chip() -> some View {
+        padding(.horizontal, 6).padding(.vertical, 2).background(Color.primary.opacity(0.06), in: Capsule())
+    }
+}
+
+/// A mark and its number, close together.
+private struct Tight: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 2) {
+            configuration.icon
+            configuration.title
+        }
     }
 }
 
