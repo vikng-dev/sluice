@@ -121,3 +121,16 @@ started, with links resolved (`/tmp` reads as `/private/tmp`).
 Claude Code reads `env.ANTHROPIC_BASE_URL` from its settings files. A project's
 `.claude/settings.json` applies in that exact folder only, not in folders beneath it, which is why
 pins are not done there.
+
+## Claude Code with no login
+
+Claude Code 2.1.323 with no login refuses to run. With `CLAUDE_CODE_OAUTH_TOKEN` set to any value
+it runs and sends the subscription request: `oauth-2025-04-20`, `extended-cache-ttl-2025-04-11`,
+one-hour `cache_control`, an empty `account_uuid` in `metadata.user_id`; cache reads were seen on a
+second run, and tools, a subagent and web search worked. Against a logged-in client it lacks two
+betas, `advisor-tool-2026-03-01` and `inline-tools-2026-09-15`. `ANTHROPIC_AUTH_TOKEN` instead
+drops the oauth beta and the one-hour cache.
+
+`/usage` asks Anthropic directly, never through `ANTHROPIC_BASE_URL`: logged in, it shows the
+login's own windows whatever account served; with the placeholder, "No usage limits to show for
+this sign-in".

@@ -110,7 +110,7 @@ import Testing
     @Test func claudeSettingsKeepEverythingElse() throws {
         let own = Data(#"{"env":{"KEEP":"1"},"model":"x"}"#.utf8)
         let routed = try Claude.pointed(own, at: "A", path: "")
-        #expect(try JSONSerialization.jsonObject(with: routed) as? NSDictionary == ["env": ["KEEP": "1", "ANTHROPIC_BASE_URL": "A"], "model": "x"])
+        #expect(try JSONSerialization.jsonObject(with: routed) as? NSDictionary == ["env": ["KEEP": "1", "ANTHROPIC_BASE_URL": "A", "CLAUDE_CODE_OAUTH_TOKEN": Claude.placeholder], "model": "x"])
         #expect(try JSONSerialization.jsonObject(with: Claude.pointed(routed, at: nil, path: "")) as? NSDictionary == ["env": ["KEEP": "1"], "model": "x"])
         #expect(throws: ClientSettingsError.self) { try Claude.pointed(Data("[]".utf8), at: "A", path: "") }
     }

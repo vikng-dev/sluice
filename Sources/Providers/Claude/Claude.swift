@@ -30,13 +30,21 @@ public struct Claude: Provider {
     }
 
     public func isRouted() throws -> Bool {
-        try Self.environment(in: try settings.read(), path: settings.path).env["ANTHROPIC_BASE_URL"] as? String == address
+        let env = try Self.environment(in: try settings.read(), path: settings.path).env
+        return env["ANTHROPIC_BASE_URL"] as? String == address
+            && env["CLAUDE_CODE_OAUTH_TOKEN"] as? String == Self.placeholder
     }
 
-    /// The settings with `env.ANTHROPIC_BASE_URL` set to `address`, or removed; everything else is kept.
+    /// What stands where Claude Code expects a subscription credential. With it Claude Code needs no
+    /// login of its own and still sends a subscription's request; the relay replaces it on every request.
+    static let placeholder = "sluice"
+
+    /// The settings with Sluice's `address` and the placeholder credential in `env`, or with both removed;
+    /// everything else is kept.
     static func pointed(_ settings: Data?, at address: String?, path: String) throws -> Data {
         var (all, env) = try environment(in: settings, path: path)
         env["ANTHROPIC_BASE_URL"] = address
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = address == nil ? nil : placeholder
         all["env"] = env.isEmpty ? nil : env
         return try JSONSerialization.data(withJSONObject: all, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
     }

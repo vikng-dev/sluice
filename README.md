@@ -31,8 +31,9 @@ sluice login codex            # the same for a ChatGPT account
 sluice status                 # accounts, their windows, and warm conversations
 ```
 
-Claude Code stays signed in to any one subscription: Sluice replaces its credential and account id
-on the way out with those of the account it picked. Codex needs no login of its own.
+Neither client needs a login of its own. `setup` gives Claude Code a placeholder where it expects a
+subscription credential, and Sluice replaces that, and the account id, on the way out with those of
+the account it picked. Inside Claude Code, `/usage` therefore has nothing to show; `sluice status` does.
 
 Anything that runs Claude Code underneath is relayed the same way: `claude -p` and the Agent SDK
 included. A client that calls Anthropic's API itself is not; see [docs/wire.md](docs/wire.md).
