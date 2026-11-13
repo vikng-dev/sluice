@@ -1,0 +1,15 @@
+<!-- Sluice A; shared geometry in 1024-unit app coordinates: {"description":"Broad gate / reference proportions","posts":[[248,224,88,544,24],[688,224,88,544,24]],"blade":[360,280,304,176,20],"travel":312,"clearance":24,"sill_y":768,"water_on":"M336 528 H688 V616 C688 724 752 780 848 848 H176 C272 780 336 724 336 616 Z","water_off":"M336 552 H688 V592 H336 Z"}
+     Tile: bounds=(64,64)-(960,960); corner extent=240; cubic handles=160.
+     Bar mapping: translate(-6 -7.125) scale(0.046875); identical path data, no stroke.
+     Blade and post arrays are [x,y,width,height,quadratic-corner-radius]. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <path id="tile" fill="#1658dc" d="M304 64 H720 C880 64 960 144 960 304 V720 C960 880 880 960 720 960 H304 C144 960 64 880 64 720 V304 C64 144 144 64 304 64 Z"/>
+  <g id="gate">
+    <path id="water" fill="#20d2dd" d="M336 528 H688 V616 C688 724 752 780 848 848 H176 C272 780 336 724 336 616 Z"/>
+    <g id="structure" fill="#fff4de">
+    <path id="post-1" d="M272 224 H312 Q336 224 336 248 V744 Q336 768 312 768 H272 Q248 768 248 744 V248 Q248 224 272 224 Z"/>
+    <path id="post-2" d="M712 224 H752 Q776 224 776 248 V744 Q776 768 752 768 H712 Q688 768 688 744 V248 Q688 224 712 224 Z"/>
+    <path id="blade" transform="translate(0 0)" d="M380 280 H644 Q664 280 664 300 V436 Q664 456 644 456 H380 Q360 456 360 436 V300 Q360 280 380 280 Z"/>
+    </g>
+  </g>
+</svg>

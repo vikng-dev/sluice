@@ -53,7 +53,7 @@ struct SluiceApp: App {
     @State private var running = Running()
 
     var body: some Scene {
-        MenuBarExtra("Sluice", systemImage: "arrow.triangle.merge") {
+        MenuBarExtra {
             Text("Sluice \(Sluice.version)")
             Text(running.relay)
             if !running.problem.isEmpty { Text(running.problem) }
@@ -62,6 +62,8 @@ struct SluiceApp: App {
             Divider()
             Button("Quit, and route nothing") { running.quit() }
                 .keyboardShortcut("q")
+        } label: {
+            Image(nsImage: gateGlyph(open: running.routed))
         }
     }
 }

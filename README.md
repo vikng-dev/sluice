@@ -90,6 +90,7 @@ One Swift package, no dependencies.
 | `Sources/Core` | Accounts, Keychain storage, relay, router, the provider contract. No UI. |
 | `Sources/Providers` | One folder per provider (Claude, Codex), each answering the contract. |
 | `Sources/App` | The one program: the menu bar app and the `sluice` command. |
+| `Assets` | The app icon: its drawing, and the built `.icns`. The menu bar glyph is drawn in code from the same shapes. |
 
 ## Build
 
