@@ -188,8 +188,10 @@ private struct ProfileCaption: View {
     let setTint: (Tint?) -> Void
     @State private var hovered = false
     @State private var picking = false
-    /// The label being typed; nil when the name is only shown.
-    @State private var draft: String?
+    /// Whether the name is being typed. Kept apart from the text: a field that is going away writes its
+    /// text once more, and that must not open it again.
+    @State private var editing = false
+    @State private var draft = ""
     @FocusState private var typing: Bool
 
     private func dot(_ tint: Tint?, size: Double) -> some View {
@@ -198,9 +200,9 @@ private struct ProfileCaption: View {
 
     /// An unchanged label is not written, so leaving the field writes nothing.
     private func keep() {
-        guard let typed = draft else { return }
-        draft = nil
-        if typed != label ?? "" { rename(typed) }
+        guard editing else { return }
+        editing = false
+        if draft != label ?? "" { rename(draft) }
     }
 
     var body: some View {
@@ -218,17 +220,20 @@ private struct ProfileCaption: View {
                         }
                         .buttonStyle(.plain).help(option?.rawValue.capitalized ?? "No color")
                     }
-                } else if draft != nil {
-                    TextField(name, text: Binding(get: { draft ?? "" }, set: { draft = $0 }))
+                } else if editing {
+                    TextField(name, text: $draft)
                         .textFieldStyle(.plain).font(.caption.weight(.semibold)).focused($typing)
                         .onAppear { typing = true }
                         .onSubmit(keep)
-                        .onExitCommand { draft = nil }
+                        .onExitCommand { editing = false }
                         .onChange(of: typing) { _, typing in if !typing { keep() } }
                 } else {
                     Text(label ?? name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         .contentShape(Rectangle())
-                        .onTapGesture { draft = label ?? "" }
+                        .onTapGesture {
+                            draft = label ?? ""
+                            editing = true
+                        }
                         .help("Click to change what this profile is shown as")
                 }
                 Spacer()
