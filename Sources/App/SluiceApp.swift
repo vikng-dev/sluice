@@ -11,7 +11,6 @@ let keeperLabel = "dev.vikng.sluice.relay"
 
 /// The relay's life, started when the app launches, not when its panel is first opened.
 @MainActor @Observable final class Running {
-    var state = "Starting…"
     var problem = handoverProblem
     var routed = false
     var accounts: [AccountStatus] = []
@@ -24,11 +23,10 @@ let keeperLabel = "dev.vikng.sluice.relay"
         Task {
             do {
                 sluice = try await startSluice()
-                state = "Relaying"
                 // Only launchd starts a copy that left; one run by hand stays as it is.
                 if ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == keeperLabel { await follow() }
             } catch {
-                state = "Not relaying: \(error)"
+                problem = "Not relaying: \(error)"
                 Logger(subsystem: "dev.vikng.sluice", category: "app").error("not relaying: \(String(describing: error), privacy: .public)")
                 // Clients may be set to talk to Sluice, so a kept copy does not sit there deaf: launchd starts it again.
                 if ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == keeperLabel { exit(1) }
@@ -103,7 +101,7 @@ struct SluiceApp: App {
     var body: some Scene {
         MenuBarExtra {
             Panel(
-                state: running.state, problem: running.problem, accounts: running.accounts, profiles: running.profiles, signIns: running.signIns,
+                problem: running.problem, accounts: running.accounts, profiles: running.profiles, signIns: running.signIns,
                 titles: Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0.name) }), now: Date(),
                 routed: running.routed, route: running.route, quit: running.quit
             )

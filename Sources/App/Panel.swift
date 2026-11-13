@@ -3,7 +3,6 @@ import SwiftUI
 
 /// What opens from the menu bar: each profile's pools, one per provider, and how much of each is used.
 struct Panel: View {
-    let state: String
     let problem: String
     let accounts: [AccountStatus]
     /// Every profile's name, the default first.
@@ -38,11 +37,6 @@ struct Panel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Sluice").font(.headline)
-                Spacer()
-                Text(state).font(.caption).foregroundStyle(.secondary)
-            }
             if !problem.isEmpty { Text(problem).font(.caption).foregroundStyle(.red) }
             if !routed {
                 HStack {
@@ -53,7 +47,7 @@ struct Panel: View {
                 .padding(8)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
-            if accounts.isEmpty { Text("No accounts yet. Run: sluice login").font(.callout).foregroundStyle(.secondary) }
+            if accounts.isEmpty, problem.isEmpty { Text("No accounts yet. Run: sluice login").font(.callout).foregroundStyle(.secondary) }
             ForEach(sections, id: \.name) { section in
                 VStack(alignment: .leading, spacing: 10) {
                     // One profile needs no name.
