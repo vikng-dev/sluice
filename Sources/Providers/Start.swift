@@ -57,6 +57,11 @@ private func relay(_ method: String, _ path: String) async throws -> Data {
     return answer.body
 }
 
+/// Where a browser signs an account in, for a profile or for none.
+public func signInAddress(provider: String, profile: String?) -> String {
+    "\(Sluice.address)/login/\(provider)" + (profile.map { "?profile=\($0)" } ?? "")
+}
+
 public func relayAccounts() async throws -> [AccountStatus] {
     try JSONDecoder().decode([AccountStatus].self, from: try await relay("GET", "/status"))
 }
@@ -87,9 +92,14 @@ public func setUp(program: URL) throws {
 
 /// Makes every client talk to its provider again. With `all`, the stand-ins go too; without, they stay,
 /// since work keeps belonging to its profile whether or not Sluice relays it.
+/// A client that cannot be set back does not keep the others talking to a relay that is going away:
+/// each is tried, and the first failure is the one thrown.
 public func stopRouting(all: Bool) throws {
-    for provider in providers { try provider.route(false, profiles: try profiles()) }
+    let profiles = try profiles()
+    var failure: (any Error)?
+    for provider in providers { do { try provider.route(false, profiles: profiles) } catch { failure = failure ?? error } }
     if all { try StandIns.remove(standIns) }
+    if let failure { throw failure }
 }
 
 public func isSetUp() throws -> Bool {

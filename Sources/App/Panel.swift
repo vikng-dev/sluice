@@ -19,7 +19,7 @@ struct Panel: View {
     let rename: (_ profile: String, _ label: String) -> Void
     let tint: (_ profile: String, Tint?) -> Void
     let star: (_ profile: String, _ provider: String, Bool) -> Void
-    /// Asks first, and spends the reset.
+    /// Spends the reset.
     let useReset: (Reset, AccountStatus) -> Void
     /// Whether pools use the resets they hold without being asked.
     let autoReset: (Bool) -> Void
@@ -130,12 +130,7 @@ struct Panel: View {
                     )
                     .padding(.horizontal, 10)
                     VStack(alignment: .leading, spacing: 10) {
-                        if section.pools.isEmpty {
-                            let profile = config.profiles[section.name]
-                            // A profile that has nothing is removed from where it says so.
-                            let bare = section.name != Config.defaultProfile && profile?.folders.isEmpty != false && profile?.owners.isEmpty != false
-                            NoAccounts(name: section.name, remove: bare ? { removeProfile(section.name) } : nil)
-                        }
+                        if section.pools.isEmpty { Text("No accounts").font(.callout).foregroundStyle(.secondary) }
                         ForEach(section.pools) { pool in
                             PoolView(
                                 pool: pool, now: now, carried: carried?.account.id, actions: actions,
@@ -259,8 +254,9 @@ private extension EnvironmentValues {
     }
 }
 
-/// The check and the cross an action shows where it is once clicked, in place of a dialog. The check does
-/// it and the cross backs out. The check is red where what it does cannot be undone.
+/// The cross and the check an action shows where it is once clicked, in place of a dialog. The check does
+/// it and the cross backs out. The check is red where what it does cannot be undone. The cross comes
+/// first, so that a second click where the first one landed backs out.
 private struct Confirm: View {
     var undoable = false
     var ready = true
@@ -269,9 +265,9 @@ private struct Confirm: View {
 
     var body: some View {
         HStack(spacing: 4) {
+            Button(action: back) { mark("xmark", ink: .secondary, on: Color.primary.opacity(0.12)) }.help("Leave it")
             Button(action: act) { mark("checkmark", ink: .white, on: undoable ? Color.accentColor : .red) }
                 .disabled(!ready).opacity(ready ? 1 : 0.4).help(undoable ? "Keep it" : "Do it. This cannot be undone")
-            Button(action: back) { mark("xmark", ink: .secondary, on: Color.primary.opacity(0.12)) }.help("Leave it")
         }
         .buttonStyle(.plain)
     }
@@ -434,32 +430,6 @@ private struct ProfileCaption: View {
             picking = false
             open = false
         }
-    }
-}
-
-/// The card of a profile with no accounts. One with no claims either can be removed from here, which
-/// shows when the pointer is on it.
-private struct NoAccounts: View {
-    let name: String
-    let remove: (() -> Void)?
-    @State private var hovered = false
-    @Environment(\.armed) private var armed
-
-    var body: some View {
-        HStack {
-            Text("No accounts").font(.callout).foregroundStyle(.secondary)
-            Spacer()
-            if let remove {
-                if armed.wrappedValue == "bare:\(name)" {
-                    Confirm { armed.wrappedValue = nil; remove() } back: { armed.wrappedValue = nil }
-                } else {
-                    Button("Remove profile") { armed.wrappedValue = "bare:\(name)" }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
-                        .opacity(hovered ? 1 : 0)
-                }
-            }
-        }
-        .contentShape(Rectangle())
-        .onHover { hovered = $0 }
     }
 }
 
@@ -651,16 +621,16 @@ private struct Pool: Identifiable {
 
 extension AccountStatus {
     var id: String { provider + ":" + label }
-    /// The window that resets last, read as how much of the account is left.
-    var budget: SluiceCore.Window? { windows.last }
+    var budget: SluiceCore.Window? { windows.budget }
     var weight: Double { Double(plan?.multiple ?? 1) }
 }
 
 extension [AccountStatus] {
-    /// How much of a pool of these is used: each account's budget, by the size of its plan.
+    /// How much of a pool of these is used: each account's budget, by the size of its plan. An account
+    /// that cannot serve has nothing to give, so it counts as used up.
     var used: Double {
         let total = map(\.weight).reduce(0, +)
-        return total > 0 ? map { $0.weight * Swift.min($0.budget?.used ?? 0, 1) }.reduce(0, +) / total : 0
+        return total > 0 ? map { $0.weight * ($0.problem == nil ? Swift.min($0.budget?.used ?? 0, 1) : 1) }.reduce(0, +) / total : 0
     }
 }
 
@@ -747,8 +717,8 @@ private struct AccountRow: View {
         }
     }
 
-    /// The week, then the shorter windows, then the limits on a part of its use.
-    private var limits: [SluiceCore.Window] { account.windows.reversed() + account.scoped }
+    /// The budget, then the shorter windows, then the limits on a part of its use.
+    private var limits: [SluiceCore.Window] { account.windows.sorted { $0.resetsAt > $1.resetsAt } + account.scoped }
 
     /// The limits under the name: the one that stops it next, and opened, the others after it.
     private var shown: [SluiceCore.Window] {
@@ -759,7 +729,7 @@ private struct AccountRow: View {
     /// What stops the account next: its budget, unless another of its limits is fuller and near its end.
     private var tightest: SluiceCore.Window? {
         guard let budget = account.budget else { return nil }
-        return limits.dropFirst().filter { $0.used > budget.used && $0.used >= 0.7 }.max { $0.used < $1.used } ?? budget
+        return limits.filter { $0.name != budget.name && $0.used > budget.used && $0.used >= 0.7 }.max { $0.used < $1.used } ?? budget
     }
 
     var body: some View {
@@ -862,7 +832,7 @@ private struct AccountRow: View {
                                 .buttonStyle(.plain).disabled(!reset.usable || actions == nil)
                                 .help(reset.usable ? "Use it: what it refills is whole again at once. It lapses in the time shown" : "Its provider would not take it now")
                                 if armed.wrappedValue == using {
-                                    Confirm { armed.wrappedValue = nil; actions?.useReset(reset, account) } back: { armed.wrappedValue = nil }
+                                    Confirm(ready: reset.usable) { armed.wrappedValue = nil; actions?.useReset(reset, account) } back: { armed.wrappedValue = nil }
                                 }
                             }
                         }
@@ -875,8 +845,13 @@ private struct AccountRow: View {
 }
 
 extension SluiceCore.Window {
-    /// What a limit is called where an account's limits are listed.
-    var title: String { name == "7d" ? "Week" : name == "5h" ? "5-hour" : name.capitalized }
+    /// What a limit is called where an account's limits are listed: a window by its length, and a limit
+    /// on a part of the account's use by the name its provider gave.
+    var title: String {
+        guard let length = Self.length(named: name) else { return name.capitalized }
+        let minutes = Int(length / 60)
+        return minutes == 7 * 1440 ? "Week" : minutes % 1440 == 0 ? "\(minutes / 1440)-day" : minutes % 60 == 0 ? "\(minutes / 60)-hour" : "\(minutes)-minute"
+    }
 }
 
 extension Reset {
@@ -894,12 +869,20 @@ struct Share: View {
     let used: Double
     /// Says which it is, where the number alone would not.
     var worded = false
-    @AppStorage("readsLeft") private var left = false
+    @AppStorage(Share.key) private var left = false
+
+    /// Where it is kept which way the shares read.
+    static let key = "readsLeft"
+
+    static func text(_ used: Double, left: Bool) -> String { "\(Int(((left ? 1 - min(used, 1) : used) * 100).rounded()))%" }
+
+    /// The colour that warns of a share nearly or wholly gone; nil while there is room.
+    static func warning(_ used: Double) -> Color? { used >= 1 ? .red : used >= 0.85 ? .orange : nil }
 
     var body: some View {
-        Text("\(Int(((left ? 1 - min(used, 1) : used) * 100).rounded()))%" + (worded ? (left ? " left" : " used") : ""))
+        Text(Self.text(used, left: left) + (worded ? (left ? " left" : " used") : ""))
             .font(.caption.monospacedDigit())
-            .foregroundStyle(used >= 1 ? Color.red : used >= 0.85 ? .orange : worded ? .secondary : .primary)
+            .foregroundStyle(Self.warning(used) ?? (worded ? .secondary : .primary))
             .contentShape(Rectangle())
             .onTapGesture { left.toggle() }
             .help(left ? "Left. Click for used" : "Used. Click for left")
@@ -928,7 +911,7 @@ private struct Bar: View {
         GeometryReader { space in
             Capsule().fill(.quaternary)
             if used > 0 {
-                Capsule().fill(used >= 1 ? Color.red : used >= 0.85 ? .orange : .accentColor)
+                Capsule().fill(Share.warning(used) ?? .accentColor)
                     .frame(width: max(space.size.height, space.size.width * min(used, 1)))
             }
         }

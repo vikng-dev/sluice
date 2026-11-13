@@ -98,7 +98,7 @@ private struct ProfileUsage: View {
 
     /// An account's week as points: each reading, and what it reads now.
     private func line(of account: AccountStatus) -> [(at: Date, used: Double)] {
-        samples(of: account).compactMap { sample in sample.windows.max { $0.resetsAt < $1.resetsAt }.map { (sample.at, $0.used) } }
+        samples(of: account).compactMap { sample in sample.windows.budget.map { (sample.at, $0.used) } }
             + (account.budget.map { [(now, $0.used)] } ?? [])
     }
 
@@ -110,7 +110,8 @@ private struct ProfileUsage: View {
     }
 
     var body: some View {
-        let lines = lines, tints = Dictionary(uniqueKeysWithValues: lines.map { ($0.account.id, $0.tint) })
+        // Two accounts may go by one address, at a provider where a person and an organisation share it.
+        let lines = lines, tints = Dictionary(lines.map { ($0.account.id, $0.tint) }) { first, _ in first }
         VStack(alignment: .leading, spacing: 10) {
             Chart {
                 ForEach(lines, id: \.account.id) { account, tint in

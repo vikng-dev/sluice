@@ -128,8 +128,7 @@ public struct Codex: Provider {
     }
 
     public func prepare(_ request: inout HTTPRequest, for account: Account) {
-        request.setHeader("Authorization", "Bearer \(account.accessToken)")
-        request.setHeader("chatgpt-account-id", account.subject)
+        for (name, value) in headers(account) { request.setHeader(name, value) }
     }
 
     public func conversation(of request: HTTPRequest) -> (id: String, cacheLifetime: TimeInterval)? {
@@ -175,8 +174,8 @@ public struct Codex: Provider {
     }
 
     public func usage(of account: Account) async throws -> Usage {
-        let (status, body) = try await HTTPCall.send("GET", Self.usage, headers: ["Authorization": "Bearer \(account.accessToken)", "chatgpt-account-id": account.subject])
-        guard status == 200 else { throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil) }
+        let (status, body) = try await HTTPCall.send("GET", Self.usage, headers: headers(account))
+        guard status == 200 else { throw ProviderError.answered(status) }
         return try Self.usage(in: body)
     }
 
@@ -191,7 +190,7 @@ public struct Codex: Provider {
         async let list = HTTPCall.send("GET", Self.resets, headers: headers(account))
         async let usage = HTTPCall.send("GET", Self.usage, headers: headers(account))
         for status in try await [list.0, usage.0] where status != 200 {
-            throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil)
+            throw ProviderError.answered(status)
         }
         return try await Self.resets(inList: list.1, usage: usage.1)
     }
@@ -211,7 +210,7 @@ public struct Codex: Provider {
 
     public func use(_ reset: Reset, of account: Account, as client: String?) async throws {
         let (status, body) = try await HTTPCall.send("POST", Self.resets.appending(path: "consume"), headers: headers(account), json: ["redeem_request_id": UUID().uuidString, "credit_id": reset.id])
-        guard status == 200 else { throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil) }
+        guard status == 200 else { throw ProviderError.answered(status) }
         if let refusal = try Self.refusal(inClaim: body) { throw refusal }
     }
 

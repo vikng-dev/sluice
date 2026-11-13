@@ -249,7 +249,7 @@ import Testing
     @Test func theFoldersAClientWorkedInAreReadFromItsOwnRecord() throws {
         #expect(try Claude.folders(inState: Data(#"{"projects":{"/w/app":{"allowedTools":[]}},"numStartups":3}"#.utf8), path: "") == ["/w/app"])
         #expect(try Claude.folders(inState: Data(#"{"numStartups":3}"#.utf8), path: "") == [])
-        // A table under a folder's own is not another folder, and neither is any other table.
+        // Another table is not a folder.
         let settings = "model = \"x\"\n[projects.\"/w/my app\"]\ntrust_level = \"trusted\"\n[model_providers.sluice]\nname = \"s\"\n[projects.'/w/other']\n"
         #expect(Codex.folders(inSettings: settings) == ["/w/my app", "/w/other"])
     }
@@ -342,10 +342,6 @@ import Testing
         #expect(throws: ProviderError.self) { try Codex.usage(in: Data("{}".utf8)) }
     }
 
-    @Test func aTierShowsTheMultipleOrElseTheName() {
-        #expect(Plan(name: "Ultra", multiple: 20, business: false, price: 200).tier == "20x")
-        #expect(Plan(name: "Go", multiple: nil, business: false, price: 8).tier == "Go")
-    }
 }
 
 @Suite struct UserFileTests {

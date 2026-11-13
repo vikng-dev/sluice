@@ -281,7 +281,11 @@ actor Accounts {
     init(storage: Storage) throws {
         self.storage = storage
         accounts = try storage.loadAccounts()
-        memory = try storage.loadMemory()
+        // What was observed is relearned from the next answers, so a memory that cannot be read is said and started afresh.
+        do { memory = try storage.loadMemory() } catch {
+            FileHandle.standardError.write(Data("sluice: starting without what was observed: \(error)\n".utf8))
+            memory = Memory()
+        }
     }
 
     func status() throws -> [AccountStatus] {
@@ -290,7 +294,7 @@ actor Accounts {
             let live = live($0.id, now: now)
             return AccountStatus(
                 provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), plan: plans[$0.id],
-                windows: live.windows.sorted { $0.resetsAt < $1.resetsAt }, scoped: live.scoped, resets: live.resets,
+                windows: live.windows, scoped: live.scoped, resets: live.resets,
                 warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: lastAnswered[$0.id], problem: problems[$0.id]
             )
         }
@@ -382,9 +386,9 @@ actor Accounts {
         (resets[id] ?? []).filter { $0.left > 0 && $0.expiresAt.map { $0 > now } != false }
     }
 
-    /// What is live of what the account was last told to stand at.
+    /// What is live of what the account was last told to stand at, the windows by when they reset.
     private func live(_ id: String, now: Date) -> (windows: [Window], scoped: [Window], resets: [Reset]) {
-        ((memory.usage[id] ?? []).filter { $0.resetsAt > now }, (scoped[id] ?? []).filter { $0.resetsAt > now }, held(by: id, now: now))
+        ((memory.usage[id] ?? []).filter { $0.resetsAt > now }.sorted { $0.resetsAt < $1.resetsAt }, (scoped[id] ?? []).filter { $0.resetsAt > now }, held(by: id, now: now))
     }
 
     private func standing(_ account: Account, now: Date) -> Standing {
@@ -466,8 +470,7 @@ actor Accounts {
     /// tried again at the next reading.
     private func sample(_ id: String, now: Date = Date()) {
         guard let account = accounts.first(where: { $0.id == id }) else { return }
-        let windows = (memory.usage[id] ?? []).filter { $0.resetsAt > now }.map(\.settled).sorted { $0.resetsAt < $1.resetsAt }
-        let parts = (scoped[id] ?? []).filter { $0.resetsAt > now }.map(\.settled)
+        let live = live(id, now: now), windows = live.windows.map(\.settled), parts = live.scoped.map(\.settled)
         guard windows + parts != sampled[id] else { return }
         do {
             try storage.appendSample(Sample(at: now, provider: account.provider, account: account.label, windows: windows, scoped: parts.isEmpty ? nil : parts))
@@ -514,6 +517,8 @@ actor Accounts {
         defer { refreshing[id] = nil }
         do {
             let renewed = try await task.value
+            // Removed while it was renewing, it is not brought back.
+            guard accounts.contains(where: { $0.id == id }) else { throw ProviderError.signedOut }
             try save(renewed)
             return renewed
         } catch {

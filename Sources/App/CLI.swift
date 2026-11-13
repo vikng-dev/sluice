@@ -125,7 +125,7 @@ func command(_ arguments: [String]) async {
     case ("login", _):
         let profile = values(of: "--profile", in: arguments).first
         let provider = words.dropFirst().first { $0 != profile } ?? "claude"
-        let url = "\(Sluice.address)/login/\(provider)" + (profile.map { "?profile=\($0)" } ?? "")
+        let url = signInAddress(provider: provider, profile: profile)
         print("Opening \(url)")
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -134,12 +134,16 @@ func command(_ arguments: [String]) async {
     case ("status", nil):
         let rows = await accounts()
         if json { return printJSON(rows) }
-        for (profile, rows) in Dictionary(grouping: rows, by: \.profile).sorted(by: { ($0.key == Config.defaultProfile ? "" : $0.key) < ($1.key == Config.defaultProfile ? "" : $1.key) }) {
+        let names: [String]
+        do { names = try Storage.live.config().names } catch { fail("\(error)") }
+        for profile in names {
+            let rows = rows.filter { $0.profile == profile }
+            if rows.isEmpty { continue }
             let signedIn: [String]
             do { signedIn = try identities(in: profile).map(said) } catch { fail("\(error)") }
             print(([profile] + signedIn).joined(separator: "  "))
             for row in rows {
-                let windows = row.windows.map { "\($0.name) \($0.percentText) → \($0.resetText)" }
+                let windows = (row.windows + row.scoped).map { "\($0.name) \($0.percentText) → \($0.resetText)" } + (row.resets.isEmpty ? [] : ["\(row.resets.map(\.left).reduce(0, +)) resets"])
                 let plan = row.plan.map { ($0.business ? "business " : "") + $0.tier }
                 print("  " + [row.provider, row.label, plan, row.problem ?? (windows.isEmpty ? "no usage reported" : windows.joined(separator: ", ")), "\(row.warmConversations) warm"].compactMap { $0 }.joined(separator: "  "))
             }

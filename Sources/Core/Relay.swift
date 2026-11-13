@@ -85,10 +85,11 @@ public final class Relay: Sendable {
                 group.addTask { [self] in
                     // An account is only ever stored under a provider that signed it in.
                     let provider = providers[account.provider]!
+                    let usageDue = await accounts.owesUsage(account.id, after: age), resetsDue = await accounts.owesResets(account.id, after: resetsAge)
+                    guard usageDue || resetsDue, let fresh = try? await accounts.fresh(account.id, using: provider) else { return }
+                    if resetsDue { await checkResets(of: fresh, at: provider) }
                     // What is not read now is not acted on: a reset is never used on what an account stood at before.
-                    guard await accounts.owesUsage(account.id, after: age), let fresh = try? await accounts.fresh(account.id, using: provider),
-                          await checkUsage(of: fresh, at: provider) else { return }
-                    if await accounts.owesResets(account.id, after: resetsAge) { await checkResets(of: fresh, at: provider) }
+                    guard usageDue, await checkUsage(of: fresh, at: provider) else { return }
                     if let reset = await accounts.due(account) { try? await use(reset, of: fresh, at: provider) }
                 }
             }
@@ -123,7 +124,7 @@ public final class Relay: Sendable {
 
     /// Uses the reset `id` that a person picked on an account. `ResetRefused` says it was not used; any
     /// other error leaves that unknown.
-    public func use(reset id: String, provider: String, account label: String) async throws {
+    func use(reset id: String, provider: String, account label: String) async throws {
         guard let at = providers[provider], let (held, reset) = await accounts.reset(id, heldBy: label, at: provider) else {
             throw ResetRefused("the \(provider) account \(label) holds no reset \(id)")
         }

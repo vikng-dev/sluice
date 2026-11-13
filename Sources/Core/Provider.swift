@@ -156,6 +156,9 @@ public enum ProviderError: Error, CustomStringConvertible {
     case invalidResponse
     case signedOut
 
+    /// What an answer other than 200 means: the sign-in is gone, or the provider refused.
+    public static func answered(_ status: Int) -> ProviderError { status == 401 ? .signedOut : .refused(status: status, code: nil) }
+
     public var description: String {
         switch self {
         case .refused(let status, let code): "the provider refused (\(status)\(code.map { ", \($0)" } ?? ""))"

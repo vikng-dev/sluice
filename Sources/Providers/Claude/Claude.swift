@@ -195,7 +195,7 @@ public struct Claude: Provider {
         async let usage = HTTPCall.send("GET", Self.usage, headers: headers)
         async let profile = HTTPCall.send("GET", Self.profile, headers: headers)
         for status in try await [usage.0, profile.0] where status != 200 {
-            throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil)
+            throw ProviderError.answered(status)
         }
         return try await Usage(plan: Self.plan(inProfile: profile.1), windows: Self.windows(inUsage: usage.1), scoped: Self.scoped(inUsage: usage.1))
     }
@@ -246,7 +246,7 @@ public struct Claude: Provider {
     public func resets(of account: Account, as client: String?) async throws -> [Reset]? {
         guard let client else { return nil }
         let (status, body) = try await HTTPCall.send("GET", Self.grants, headers: asClient(account, client))
-        guard status == 200 else { throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil) }
+        guard status == 200 else { throw ProviderError.answered(status) }
         return try Self.resets(inUsage: body)
     }
 
@@ -272,7 +272,7 @@ public struct Claude: Provider {
         // A fixed host and an id the provider gave.
         let address = URL(string: "https://api.anthropic.com/api/organizations/\(organization)/reset_rate_limits")!
         let (status, body) = try await HTTPCall.send("POST", address, headers: asClient(account, client), json: ["program": "cedar_ember", "grant_id": reset.id, "request_id": UUID().uuidString])
-        guard status == 200 else { throw status == 401 ? ProviderError.signedOut : ProviderError.refused(status: status, code: nil) }
+        guard status == 200 else { throw ProviderError.answered(status) }
         if let refusal = try Self.refusal(inClaim: body) { throw refusal }
     }
 

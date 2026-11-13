@@ -17,19 +17,22 @@ at once, without a restart.
 ## Read
 
 ```sh
-sluice status --json         # every account: provider, label, profile, plan, windows, problem
-sluice profile list --json   # every profile: name, label, color, signedIn, accounts, folders, owners
+sluice status --json         # every account: provider, label, profile, plan, windows, scoped, resets, problem
+sluice profile list --json   # every profile: name, label, color, starred, signedIn, accounts, folders, owners
 ```
 
 - A window's `used` runs from 0 to 1 and `resetsAt` is ISO 8601. An account with `used` at 1 in any
-  window is spent until that window resets.
+  window is spent until that window resets or a reset refills it. `scoped` are limits on a part of
+  its use, each named for the model it limits: one at 1 stops that model alone.
+- `resets` are the resets the account holds: `id`, the limits it `refills`, how many are `left`,
+  `expiresAt`, and whether its provider would take it now (`usable`).
 - `plan.multiple` is the plan's published usage relative to the provider's basic plan, `plan.price`
   its list price in dollars a month, `plan.business` whether it is a seat in an organization.
 - `problem` is set when an account cannot serve, and says why.
 - `signedIn` names, by client, the account that client is itself signed in as in the profile. What the
   client does outside the relay (connectors, the browser, published pages) is that account's; the
   profile's `accounts` only share their usage. A client that is signed out there is left out.
-- A field that does not apply is left out.
+- A field with nothing to say is left out or empty.
 
 ## Change
 

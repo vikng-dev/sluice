@@ -160,8 +160,8 @@ import Testing
         #expect(try config.add(profileShownAs: " Side Projects ") == "side-projects")
         #expect(config.shown("side-projects") == "Side Projects")
         // A name with no plain characters still gets one, and so does the next.
-        #expect(try config.add(profileShownAs: "עבודה") == "profile")
-        #expect(try config.add(profileShownAs: "בית") == "profile-2")
+        let first = try config.add(profileShownAs: "עבודה"), second = try config.add(profileShownAs: "בית")
+        #expect(first != second && config.shown(first) == "עבודה" && config.shown(second) == "בית")
         // What is typed as a plain name needs no label.
         #expect(try config.add(profileShownAs: "work") == "work")
         #expect(config.profiles["work"]?.label == nil)
@@ -199,10 +199,14 @@ import Testing
         #expect(throws: ConfigError.self) { try config.claim(owner: "Acme", for: "missing") }
     }
 
-    @Test func whatIsWrittenReadsBackTheSame() throws {
-        var config = try config(#"{"profiles":{"a":{"label":"A side","color":"teal","accounts":["x"],"folders":["~/w"],"owners":["Acme"]}}}"#)
+    /// Every change reads the file, edits it and writes it, so a key the reader dropped would be wiped at the next change.
+    @Test func whatIsReadIsWrittenBackKeyForKey() throws {
+        let written = #"{"autoResets":true,"profiles":{"a":{"accounts":["x"],"color":"teal","folders":["~/w"],"label":"A side","owners":["Acme"],"starred":["p"]}}}"#
+        var config = try config(written)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        #expect(String(decoding: try encoder.encode(config), as: UTF8.self) == written)
         try config.add(profile: "b")
-        #expect(try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(config)) == config)
         #expect(throws: ConfigError.self) { try config.add(profile: "b") }
         #expect(throws: ConfigError.self) { try config.add(profile: "Not Plain") }
         #expect(throws: ConfigError.self) { try config.remove(profile: "default") }

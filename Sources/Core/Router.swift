@@ -33,6 +33,11 @@ public extension Window {
     var percentText: String { "\(Int((used * 100).rounded()))%" }
 }
 
+public extension [Window] {
+    /// The window that resets last, read as how much of the account is left.
+    var budget: Window? { self.max { $0.resetsAt < $1.resetsAt } }
+}
+
 public extension Window {
     /// How long a window of this name is. Providers name a window by its length ("5h", "7d", "90m"); a
     /// limit named otherwise, such as one model's own share of the week, has none to read.
@@ -94,7 +99,7 @@ struct Router: Codable {
         func lostAt(_ standing: Standing) -> Date {
             let drawn = Set(standing.limits(for: model).map(\.name))
             let lapses = standing.resets.filter { drawn.isEmpty || !drawn.isDisjoint(with: $0.refills) }.compactMap(\.expiresAt)
-            return ([standing.windows.map(\.resetsAt).max() ?? .distantFuture] + lapses).min()!
+            return ([standing.windows.budget?.resetsAt ?? .distantFuture] + lapses).min()!
         }
 
         let open = pool.filter { back($0) == nil }

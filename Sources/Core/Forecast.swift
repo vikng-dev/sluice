@@ -27,7 +27,7 @@ public enum Forecast {
     public static func rise(_ samples: [Sample]) -> Double {
         var rise = 0.0, high = 0.0, reset: Date?
         for (index, sample) in samples.enumerated() {
-            guard let budget = sample.windows.max(by: { $0.resetsAt < $1.resetsAt }) else { continue }
+            guard let budget = sample.windows.budget else { continue }
             if budget.resetsAt != reset {
                 reset = budget.resetsAt
                 // What was used before the first sample was not used in this time.

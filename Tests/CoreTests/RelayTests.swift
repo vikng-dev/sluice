@@ -93,7 +93,7 @@ private actor Hits {
         let server = try Server(port: 47619) { try await relay.handle($0, $1) }
         try await server.start()
 
-        // Nobody to ask as yet, which is not an answer: the next check asks again.
+        // Nobody to ask as yet, which is not an answer.
         await relay.checkUsage()
         #expect(try await relay.status().first?.resets.isEmpty == true)
         let url = URL(string: "http://127.0.0.1:47619/fake/v1/thing")!
@@ -132,6 +132,46 @@ private actor Hits {
             #expect(await hits.accounts == expected)
             withExtendedLifetime((provider, server)) {}
         }
+    }
+
+    /// A reset cannot be taken back, and a client sends its requests side by side.
+    @Test func requestsRefusedTogetherSpendOneResetBetweenThem() async throws {
+        let hits = Hits()
+        let provider = try Server(port: 47626) { _, writer in try await writer.send(await hits.accounts.contains("reset r") ? 200 : 429, text: "") }
+        try await provider.start()
+        let accounts = ["a", "b"].map { Account(provider: "fake", subject: $0, organization: nil, label: $0, accessToken: "", refreshToken: "", expiresAt: .distantFuture) }
+        var setting = Config()
+        setting.useResets(true)
+        let asked = setting
+        let fake = Fake(upstream: URL(string: "http://127.0.0.1:47626")!, spare: [Reset(id: "r", refills: ["week"], expiresAt: nil, usable: true)], used: hits)
+        let relay = try Relay(providers: [fake], storage: Storage(loadAccounts: { accounts }, storeAccounts: { _ in }, config: { asked }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in }), port: 47627)
+        let server = try Server(port: 47627) { try await relay.handle($0, $1) }
+        try await server.start()
+        await relay.checkUsage()
+
+        let statuses = await withTaskGroup(of: Int?.self) { group in
+            for _ in 0..<4 { group.addTask { try? await HTTPCall.send("GET", URL(string: "http://127.0.0.1:47627/fake/v1/thing")!).status } }
+            return await group.reduce(into: []) { $0.append($1) }
+        }
+        #expect(statuses == [200, 200, 200, 200])
+        #expect(await hits.accounts.count { $0 == "reset r" } == 1)
+        withExtendedLifetime((provider, server)) {}
+    }
+
+    /// What was observed is kept in a file that an upgrade must still read, and what it holds of a window
+    /// that has since reset says nothing any more.
+    @Test func whatAnEarlierVersionRememberedStillLoadsAndAWindowPastItsResetNoLongerCounts() async throws {
+        let stored = ["a", "b"].map { Account(provider: "fake", subject: $0, organization: nil, label: $0, accessToken: "", refreshToken: "", expiresAt: .distantFuture) }
+        func accounts(remembering json: String) throws -> Accounts {
+            let memory = try JSONDecoder().decode(Memory.self, from: Data(json.utf8))
+            return try Accounts(storage: Storage(loadAccounts: { stored }, storeAccounts: { _ in }, config: { Config() }, storeConfig: { _ in }, loadMemory: { memory }, storeMemory: { _ in }))
+        }
+        // As 0.10.0 wrote it. Times are seconds since 2001: one long past, one far off.
+        let earlier = try accounts(remembering: #"{"usage":{"fake/a":[{"name":"5h","used":1,"resetsAt":1000}],"fake/b":[{"name":"7d","used":0.5,"resetsAt":9000000000}]},"router":{"holds":{}}}"#)
+        #expect(try await earlier.candidates(provider: "fake", pin: nil, folder: nil, conversation: nil, model: nil).accounts.map(\.label) == ["b", "a"])
+        let now = try accounts(remembering: #"{"usage":{},"router":{"holds":{}},"plans":{"fake/a":{"name":"Big","multiple":20,"business":false,"price":200}},"scoped":{"fake/a":[{"name":"model","used":0.2,"resetsAt":9000000000}]},"resets":{"fake/a":[{"id":"r","refills":["7d"],"left":1,"usable":true}]}}"#)
+        let told = try await now.status().first
+        #expect(told?.plan?.multiple == 20 && told?.scoped.map(\.name) == ["model"] && told?.resets.map(\.id) == ["r"])
     }
 
     @Test func aSignInStartedForAProfileLandsThereAndOneForNoProfileStaysPut() async throws {

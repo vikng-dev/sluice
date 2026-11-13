@@ -30,11 +30,13 @@ Requests with the credential and that id swapped are served normally.
 | `anthropic-ratelimit-unified-overage-status` | `rejected` when paid extra usage is off |
 | `anthropic-organization-id` | the account's organization |
 
-A window with no usage yet omits its headers (a fresh account sent no `5h-*`). Per-model weekly
-limits are not in the headers; they need the usage endpoint.
+A window with no usage yet omits its headers (a fresh account sent no `5h-*`). The headers
+captured carried no per-model weekly limit; that is read from the usage endpoint.
 
 **The model asked for (captured 2026-11-13).** Claude Code's `/v1/messages` body and Codex's
-`/backend-api/codex/responses` body both carry it as a top-level `model` string.
+`/backend-api/codex/responses` body both carry it as a top-level `model` string. The model that
+answered is read from the stream: `message.model` in Claude's `message_start` event, and
+`response.model` in Codex's `response.completed`.
 
 **Usage, on request (captured 2026-11-13).** `GET https://api.anthropic.com/api/oauth/usage` with
 the bearer token and `anthropic-beta: oauth-2025-04-20`; the `user:inference` scope is enough.
@@ -82,7 +84,10 @@ use stops instead of trying another.
 **Plan (captured 2026-11-13).** `GET https://api.anthropic.com/api/oauth/profile`, same headers.
 `organization.organization_type` is `claude_max` or `claude_team`; `organization.rate_limit_tier`
 ends in the multiple (`default_claude_max_20x`, and `default_claude_max_5x` on a Team seat). A Max
-20x account also carried `plan_display_name: "Ultra"`; the Team accounts carried none.
+20x account also carried `plan_display_name: "Ultra"`; the Team accounts carried none. Not
+captured, and assumed: `claude_pro` (OpenUsage's reading, 35e88e9) and `claude_enterprise` as the
+other organization types, and that a basic tier names no multiple. Prices are those of
+claude.com/pricing on 2026-11-13, where a seat with five times the usage is a Premium one.
 
 **Cache.** Claude Code marks its system blocks `cache_control: {type: ephemeral, ttl: 1h}`. The
 first SSE event, `message_start`, carries `usage.cache_read_input_tokens` and
@@ -100,8 +105,8 @@ wrote the rest. A's first request had likewise read nothing of what B cached min
 swapped requests read their own cache normally, so the id rewrite does not disturb caching.
 
 **A spent account.** Not captured yet. Sluice follows teamclaude's routing notes: a `429` whose
-`5h-status`, `7d-status` or `7d_oi-status` (a per-model weekly window) reads `rejected` is a spent
-allowance; any other `429` is a rate limit. Confirm against the first real one.
+`5h-status`, `7d-status` or `7d_oi-status` (a per-model weekly window, a header those notes name
+and no capture here has shown) reads `rejected` is a spent allowance; any other `429` is a rate limit. Confirm against the first real one.
 
 **How far `claude -p` bends (probed 2026-11-13, all served from the plan through Sluice).** Its
 `system` always opens with two blocks Claude Code writes itself: a billing header
