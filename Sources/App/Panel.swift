@@ -18,6 +18,10 @@ struct Panel: View {
     let remove: (AccountStatus) -> Void
     let rename: (_ profile: String, _ label: String) -> Void
     let tint: (_ profile: String, Tint?) -> Void
+    /// Asks which folders, and claims them.
+    let claimFolders: (_ profile: String) -> Void
+    let claimOwner: (_ profile: String, _ owner: String) -> Void
+    let unclaim: (_ profile: String, Claim) -> Void
     let quit: () -> Void
 
     private var profiles: [String] { config.names }
@@ -88,9 +92,10 @@ struct Panel: View {
             ForEach(sections, id: \.name) { section in
                 VStack(alignment: .leading, spacing: 6) {
                     ProfileCaption(
-                        name: section.name, label: config.profiles[section.name]?.label, tint: config.profiles[section.name]?.color,
-                        empty: section.pools.isEmpty, titles: titles,
-                        signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) }
+                        name: section.name, profile: config.profiles[section.name],
+                        takesTheRest: section.name == Config.defaultProfile && profiles.count > 1, empty: section.pools.isEmpty, titles: titles,
+                        signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) },
+                        claimFolders: { claimFolders(section.name) }, claimOwner: { claimOwner(section.name, $0) }, unclaim: { unclaim(section.name, $0) }
                     )
                     .padding(.horizontal, 10)
                     VStack(alignment: .leading, spacing: 10) {
@@ -179,80 +184,123 @@ private struct RowActions {
     let putBack: () -> Void
 }
 
-/// A profile's name and color, each changed where it is: a click on the name types a new one, a click on
-/// the dot offers the colors. The + that gives the profile another account shows when the pointer is on
-/// the row, and always on an empty profile.
+/// Work a profile claims: what is done in a folder, or in a repository whose origin has an owner.
+enum Claim: Hashable {
+    case folder(String), owner(String)
+}
+
+/// A profile's name, color and claims, each changed where it is: a click on the name types a new one, a
+/// click on the dot offers the colors, and a claim is let go by the × it shows under the pointer. The +
+/// that gives the profile an account or a claim shows when the pointer is on it, and always on an empty one.
 private struct ProfileCaption: View {
     let name: String
-    let label: String?
-    let tint: Tint?
+    /// Nil for a profile the config says nothing about.
+    let profile: Profile?
+    /// The default profile among others: it has whatever work none of them claims.
+    let takesTheRest: Bool
     let empty: Bool
     let titles: [String: String]
     let signIn: (_ provider: String) -> Void
     let rename: (_ label: String) -> Void
     let setTint: (Tint?) -> Void
+    let claimFolders: () -> Void
+    let claimOwner: (String) -> Void
+    let unclaim: (Claim) -> Void
     @State private var hovered = false
     @State private var picking = false
-    /// Whether the name is being typed. Kept apart from the text: a field that is going away writes its
-    /// text once more, and that must not open it again.
-    @State private var editing = false
+    /// What is being typed: the label, or an owner to claim. Kept apart from the text: a field that is
+    /// going away writes its text once more, and that must not open it again.
+    @State private var typed: Typed?
     @State private var draft = ""
     @FocusState private var typing: Bool
+
+    private enum Typed { case label, owner }
+
+    private var claims: [Claim] { (profile?.folders ?? []).map(Claim.folder) + (profile?.owners ?? []).map(Claim.owner) }
 
     private func dot(_ tint: Tint?, size: Double) -> some View {
         Circle().fill(tint?.color ?? Color.secondary.opacity(0.4)).frame(width: size, height: size)
     }
 
-    /// An unchanged label is not written, so leaving the field writes nothing.
+    private func type(_ what: Typed, from text: String) {
+        draft = text
+        typed = what
+    }
+
+    /// An unchanged label is not written, and neither is an owner with no name.
     private func keep() {
-        guard editing else { return }
-        editing = false
-        if draft != label ?? "" { rename(draft) }
+        let text = draft.trimmingCharacters(in: .whitespaces)
+        switch typed {
+        case .label: if draft != profile?.label ?? "" { rename(draft) }
+        case .owner: if !text.isEmpty { claimOwner(text) }
+        case nil: break
+        }
+        typed = nil
+    }
+
+    private func field(_ placeholder: String) -> some View {
+        TextField(placeholder, text: $draft)
+            .textFieldStyle(.plain).focused($typing)
+            .onAppear { typing = true }
+            .onSubmit(keep)
+            .onExitCommand { typed = nil }
+            .onChange(of: typing) { _, typing in if !typing { keep() } }
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button { picking.toggle() } label: { dot(tint, size: 7).frame(width: 11, height: 11).contentShape(Rectangle()) }
-                .buttonStyle(.plain).help("Change its color")
-            if picking {
-                ForEach([nil] + Tint.allCases.map(Optional.some), id: \.self) { option in
-                    Button {
-                        setTint(option)
-                        picking = false
-                    } label: {
-                        dot(option, size: 11).overlay { if option == tint { Circle().strokeBorder(.primary.opacity(0.6), lineWidth: 1.5) } }
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Button { picking.toggle() } label: { dot(profile?.color, size: 7).frame(width: 11, height: 11).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).help("Change its color")
+                if picking {
+                    ForEach([nil] + Tint.allCases.map(Optional.some), id: \.self) { option in
+                        Button {
+                            setTint(option)
+                            picking = false
+                        } label: {
+                            dot(option, size: 11).overlay { if option == profile?.color { Circle().strokeBorder(.primary.opacity(0.6), lineWidth: 1.5) } }
+                        }
+                        .buttonStyle(.plain).help(option?.rawValue.capitalized ?? "No color")
                     }
-                    .buttonStyle(.plain).help(option?.rawValue.capitalized ?? "No color")
+                } else if typed == .label {
+                    field(name).font(.caption.weight(.semibold))
+                } else {
+                    Text(profile?.label ?? name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        .contentShape(Rectangle())
+                        .onTapGesture { type(.label, from: profile?.label ?? "") }
+                        .help("Click to change what this profile is shown as")
                 }
-            } else if editing {
-                TextField(name, text: $draft)
-                    .textFieldStyle(.plain).font(.caption.weight(.semibold)).focused($typing)
-                    .onAppear { typing = true }
-                    .onSubmit(keep)
-                    .onExitCommand { editing = false }
-                    .onChange(of: typing) { _, typing in if !typing { keep() } }
-            } else {
-                Text(label ?? name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        draft = label ?? ""
-                        editing = true
+                Spacer()
+                Menu {
+                    ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
+                        Button { signIn(provider) } label: {
+                            Label { Text("Add a \(title) account") } icon: { providerMark(provider).map(Image.init(nsImage:)) }
+                        }
                     }
-                    .help("Click to change what this profile is shown as")
-            }
-            Spacer()
-            Menu {
-                ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
-                    Button { signIn(provider) } label: {
-                        Label { Text("Add a \(title) account") } icon: { providerMark(provider).map(Image.init(nsImage:)) }
-                    }
+                    Divider()
+                    Button(action: claimFolders) { Label("Add folders…", systemImage: "folder") }
+                    Button { type(.owner, from: "") } label: { Label("Add a repository owner", systemImage: "at") }
+                } label: {
+                    Image(systemName: "plus")
                 }
-            } label: {
-                Image(systemName: "plus")
+                .bare()
+                .help("Add an account, or work that belongs to this profile")
+                .opacity(hovered || empty ? 1 : 0)
             }
-            .bare()
-            .help("Add an account to this profile")
-            .opacity(hovered || empty ? 1 : 0)
+            Flow {
+                if takesTheRest { Text("Everything else").padding(.vertical, 2) }
+                if claims.isEmpty, !takesTheRest, name != Config.defaultProfile, typed != .owner { Text("No work is its own yet").padding(.vertical, 2) }
+                ForEach(claims, id: \.self) { claim in ClaimChip(claim: claim) { unclaim(claim) } }
+                if typed == .owner {
+                    HStack(spacing: 3) {
+                        Image(systemName: "at")
+                        field("owner").frame(width: 110)
+                    }
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.primary.opacity(0.06), in: Capsule())
+                }
+            }
+            .font(.caption2).foregroundStyle(.tertiary)
         }
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
@@ -261,6 +309,66 @@ private struct ProfileCaption: View {
             keep()
             picking = false
         }
+    }
+}
+
+/// One claim. Under the pointer its mark turns into the × that lets it go.
+private struct ClaimChip: View {
+    let claim: Claim
+    let remove: () -> Void
+    @State private var hovered = false
+
+    private var look: (mark: String, text: String, help: String) {
+        switch claim {
+        case .folder(let folder): ("folder", folder, "Work in \(folder) belongs to this profile")
+        case .owner(let owner): ("at", owner, "Work in a repository whose origin is \(owner)'s belongs to this profile")
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Button(action: remove) { Image(systemName: hovered ? "xmark" : look.mark).frame(width: 11) }
+                .buttonStyle(.plain).disabled(!hovered).help("Let it go: this work is then another profile's")
+            Text(look.text).lineLimit(1).truncationMode(.middle)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(Color.primary.opacity(0.06), in: Capsule())
+        .frame(maxWidth: 240)
+        .onHover { hovered = $0 }
+        .help(look.help)
+    }
+}
+
+/// Lays its views out in rows, starting a new one when the next does not fit.
+private struct Flow: Layout {
+    private let gap = 4.0
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        place(subviews, in: proposal.width ?? .infinity).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, point) in zip(subviews, place(subviews, in: bounds.width).points) {
+            subview.place(at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y), proposal: .unspecified)
+        }
+    }
+
+    private func place(_ subviews: Subviews, in width: Double) -> (points: [CGPoint], size: CGSize) {
+        var points: [CGPoint] = [], x = 0.0, y = 0.0, row = 0.0, widest = 0.0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width {
+                x = 0
+                y += row + gap
+                row = 0
+            }
+            points.append(CGPoint(x: x, y: y))
+            x += size.width + gap
+            row = max(row, size.height)
+            widest = max(widest, x - gap)
+        }
+        return (points, CGSize(width: widest, height: y + row))
     }
 }
 

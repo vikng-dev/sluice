@@ -16,6 +16,8 @@ private let program = Bundle.main.executableURL!
 /// The relay's life, started when the app launches, not when its panel is first opened.
 @MainActor @Observable final class Running {
     var problem = handoverProblem
+    /// Why the last change to the profiles was refused.
+    var refusal = ""
     var routed = false
     var accounts: [AccountStatus] = []
     var config = Config()
@@ -91,14 +93,41 @@ private let program = Bundle.main.executableURL!
         NSWorkspace.shared.open(URL(string: "\(Sluice.address)/login/\(provider)?profile=\(profile)")!)
     }
 
-    /// Changes the profiles, and shows the change at once.
+    /// Changes the profiles, and shows the change at once. A refused one is said until the next that holds.
     private func change(_ edit: (inout Config) throws -> Void) {
         do {
             config = try Storage.live.change(edit)
             // The relay's own list follows at the next refresh.
             for index in accounts.indices { accounts[index].profile = config.profile(ofAccount: accounts[index].label) }
+            refusal = ""
         } catch {
-            problem = "\(error)"
+            refusal = "\(error)"
+        }
+    }
+
+    /// Asks which folders. All of them are claimed, or none.
+    func claimFolders(for profile: String) {
+        let chooser = NSOpenPanel()
+        chooser.canChooseDirectories = true
+        chooser.canChooseFiles = false
+        chooser.allowsMultipleSelection = true
+        chooser.prompt = "Add"
+        chooser.message = "Work in these folders belongs to \(config.shown(profile))."
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        guard chooser.runModal() == .OK else { return }
+        change { config in for folder in chooser.urls { try config.claim(folder: folder.path, for: profile) } }
+    }
+
+    func claim(owner: String, for profile: String) {
+        change { try $0.claim(owner: owner, for: profile) }
+    }
+
+    func unclaim(_ claim: Claim, from profile: String) {
+        change { config in
+            switch claim {
+            case .folder(let folder): try config.unclaim(folder: folder, from: profile)
+            case .owner(let owner): try config.unclaim(owner: owner, from: profile)
+            }
         }
     }
 
@@ -143,8 +172,9 @@ struct SluiceApp: App {
     var body: some Scene {
         MenuBarExtra {
             Panel(
-                problem: running.problem, accounts: running.accounts, config: running.config, identities: running.identities, titles: titles, now: Date(),
-                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, quit: running.quit
+                problem: running.problem.isEmpty ? running.refusal : running.problem, accounts: running.accounts, config: running.config, identities: running.identities, titles: titles, now: Date(),
+                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint,
+                claimFolders: running.claimFolders, claimOwner: { running.claim(owner: $1, for: $0) }, unclaim: { running.unclaim($1, from: $0) }, quit: running.quit
             )
             .task { await running.watch() }
         } label: {
