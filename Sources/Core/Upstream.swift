@@ -21,6 +21,7 @@ final class Upstream: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }
 
+    /// Dropping the body unread cancels the exchange.
     func send(_ request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) {
         let (stream, body) = AsyncThrowingStream<Data, any Error>.makeStream()
         let task = session.dataTask(with: request)

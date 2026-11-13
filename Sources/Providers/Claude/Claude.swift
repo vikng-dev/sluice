@@ -63,6 +63,26 @@ public struct Claude: Provider {
         request.setHeader("Content-Length", String(request.body.count))
     }
 
+    public func conversation(of request: HTTPRequest) -> (id: String, cacheLifetime: TimeInterval)? {
+        guard let session = request.header("X-Claude-Code-Session-Id") else { return nil }
+        // Quotes inside a JSON string are escaped, so this matches only a real cache marker.
+        let hour = request.body.range(of: Data(#""ttl":"1h""#.utf8)) != nil
+        return (session, hour ? 3600 : 300)
+    }
+
+    public func reading(status: Int, headers: [String: String]) -> Reading {
+        func field(_ window: String, _ name: String) -> String? { headers["anthropic-ratelimit-unified-\(window)-\(name)"] }
+        let windows = ["5h", "7d"].compactMap { name -> Window? in
+            guard let reset = field(name, "reset").flatMap(TimeInterval.init) else { return nil }
+            let rejected = field(name, "status") == "rejected"
+            guard let used = field(name, "utilization").flatMap(Double.init) ?? (rejected ? 1 : nil) else { return nil }
+            return Window(name: name, used: rejected ? max(used, 1) : used, resetsAt: Date(timeIntervalSince1970: reset))
+        }
+        // `7d_oi` is a per-model weekly window: spent, it refuses this request without closing the account.
+        let refused = status == 429 && ["5h", "7d", "7d_oi"].contains { field($0, "status") == "rejected" }
+        return Reading(windows: windows, refused: refused)
+    }
+
     private struct Grant: Decodable {
         var access_token: String
         var refresh_token: String?

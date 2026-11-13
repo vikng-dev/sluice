@@ -13,6 +13,23 @@ public protocol Provider: Sendable {
     func refresh(_ account: Account) async throws -> Account
     /// Makes a client's request the account's own: its credential, and any identity the body carries.
     func prepare(_ request: inout HTTPRequest, for account: Account)
+    /// The conversation a request belongs to, and how long its prompt cache lives after this request.
+    /// Nil for a request that belongs to none.
+    func conversation(of request: HTTPRequest) -> (id: String, cacheLifetime: TimeInterval)?
+    /// What a response's status and headers (names lowercased) say about the account that answered.
+    func reading(status: Int, headers: [String: String]) -> Reading
+}
+
+public struct Reading: Sendable, Equatable {
+    /// The windows this response reported; a window it did not mention is unchanged.
+    public var windows: [Window]
+    /// The account refused because an allowance is spent, so another account may serve the request.
+    public var refused: Bool
+
+    public init(windows: [Window], refused: Bool) {
+        self.windows = windows
+        self.refused = refused
+    }
 }
 
 public enum ProviderError: Error, CustomStringConvertible {

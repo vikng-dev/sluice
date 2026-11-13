@@ -45,7 +45,9 @@ it on account B: B read only the part before the nonce, which B had cached itsel
 wrote the rest. A's first request had likewise read nothing of what B cached minutes before. The
 swapped requests read their own cache normally, so the id rewrite does not disturb caching.
 
-**Open.** What a spent account's response looks like (status, headers, body) is not captured yet.
+**A spent account.** Not captured yet. Sluice follows teamclaude's routing notes: a `429` whose
+`5h-status`, `7d-status` or `7d_oi-status` (a per-model weekly window) reads `rejected` is a spent
+allowance; any other `429` is a rate limit. Confirm against the first real one.
 
 ## Codex CLI 0.160.0 (captured 2026-11-13)
 

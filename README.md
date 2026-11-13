@@ -3,35 +3,41 @@
 A macOS menu bar app that pools your AI coding subscriptions behind one local address.
 Claude Code and Codex talk to Sluice on localhost; Sluice decides which of your accounts answers.
 
-**Status: early.** The relay works for Claude Code with one account at a time: sign-in, token
-renewal, and the swap of credential and account id on each request. Pooling, sticky conversations,
-resend-on-spent, Codex and the menu bar view are not built yet.
+**Status: early.** Claude Code is relayed across a pool of accounts, from the terminal. Codex and
+the menu bar view are not built yet.
 
-## Use it today
+## Use it
 
 ```sh
 sluice serve                  # or open Sluice.app
-sluice login                  # sign an account in through the browser
-sluice status                 # list signed-in accounts
+sluice login                  # sign an account in through the browser; repeat per account
+sluice status                 # accounts, their windows, and warm conversations
 ANTHROPIC_BASE_URL=http://localhost:7483/claude claude
 ```
 
-Claude Code stays signed in to any one subscription; Sluice replaces its credential on the way out.
-Add `/pin/<email>` after `/claude` to choose the account.
+Claude Code stays signed in to any one subscription. Sluice replaces its credential and account id
+on the way out, with the tokens of the account it picked.
 
-## What it will do
+## How an account is picked
 
-- **Pool.** Accounts in the pool share the work. A new conversation goes to the account with
-  allowance left whose weekly window resets soonest.
-- **Pin.** A launch can name one account and only ever use that one:
-  `http://127.0.0.1:<port>/pin/<account>`. An account can be pin-only, outside the pool.
-- **Stay warm.** A conversation stays on its account while its prompt cache is warm, read from the
-  cache counts on each response. It moves only when the cache is cold or the account is spent.
-- **Keep going.** When an account runs out mid-conversation, the request is resent on the next one.
-- **Show.** The menu bar shows each account's windows and which account is serving.
+- **Pool.** Every signed-in account is in the pool. A request goes to the unspent account whose
+  longest window resets soonest; an account with no usage yet goes last, so an idle window is not
+  started early.
+- **Stay warm.** A conversation stays on the account that last served it for as long as its prompt
+  cache lives there (an hour for Claude Code). After that it is placed afresh.
+- **Keep going.** When an account refuses because an allowance is spent, the request is resent on
+  the next account before the client sees anything. A plain rate limit is passed through.
+- **Pin.** `http://localhost:7483/claude/pin/<email>` uses that one account and no other.
+- **Pin-only.** An account listed in `~/.config/sluice/config.json` is outside the pool and
+  reachable only by pin. The file is read on every request:
 
-Sluice signs in to each account itself and keeps the tokens in its own Keychain service. It never
-spends paid extra usage.
+  ```json
+  { "pinOnly": ["me@work.example"] }
+  ```
+
+Sluice signs in to each account itself and keeps the tokens in its own Keychain item. It never
+spends paid extra usage. What it knows about each provider's wire format is in
+[docs/wire.md](docs/wire.md).
 
 ## Layout
 

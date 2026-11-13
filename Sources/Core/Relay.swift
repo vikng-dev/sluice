@@ -51,9 +51,13 @@ public final class Relay: Sendable {
     private let upstream = Upstream()
     private let redirectURI: String
 
-    public init(providers: [any Provider], vault: Vault, port: UInt16) throws {
+    public convenience init(providers: [any Provider], vault: Vault, port: UInt16) throws {
+        try self.init(providers: providers, vault: vault, port: port, config: Config.load)
+    }
+
+    init(providers: [any Provider], vault: Vault, port: UInt16, config: @escaping @Sendable () throws -> Config) throws {
         self.providers = Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0) })
-        accounts = try Accounts(vault: vault)
+        accounts = try Accounts(vault: vault, config: config)
         redirectURI = "http://localhost:\(port)/callback"
     }
 
@@ -62,8 +66,11 @@ public final class Relay: Sendable {
         case nil:
             try await writer.send(404, text: "sluice: no such address")
         case .status:
-            let rows = await accounts.all.map { ["provider": $0.provider, "label": $0.label] }
-            try await writer.send(200, contentType: "application/json", text: String(decoding: JSONEncoder().encode(rows), as: UTF8.self))
+            do {
+                try await writer.send(200, contentType: "application/json", text: String(decoding: JSONEncoder().encode(accounts.status()), as: UTF8.self))
+            } catch {
+                try await writer.send(500, text: "sluice: \(Config.url.path) could not be read: \(error)")
+            }
         case .login(let id):
             guard let provider = providers[id] else { return try await writer.send(404, text: "sluice: no provider \(id)") }
             let (state, challenge) = await signIns.begin(provider: id)
@@ -81,32 +88,55 @@ public final class Relay: Sendable {
             }
         case .relay(let id, let pin, let target):
             guard let provider = providers[id] else { return try await writer.send(404, text: "sluice: no provider \(id)") }
-            guard let picked = await accounts.pick(provider: id, pin: pin) else {
-                return try await writer.send(503, text: "sluice: no \(pin ?? id) account is signed in; open http://localhost:\(redirectURI.split(separator: ":")[2].prefix { $0 != "/" })/login/\(id)")
-            }
-            let account: Account
+            let conversation = provider.conversation(of: request)
+            let candidates: [Account]
             do {
-                account = try await accounts.fresh(picked.id, using: provider)
+                candidates = try await accounts.candidates(provider: id, pin: pin, conversation: conversation?.id)
             } catch {
-                return try await writer.send(502, text: "sluice: could not renew \(picked.label): \(error)")
+                return try await writer.send(500, text: "sluice: \(Config.url.path) could not be read: \(error)")
             }
-            var outgoing = request
-            outgoing.target = target
-            provider.prepare(&outgoing, for: account)
-            // `target` begins with "/" and the upstream is a fixed, valid URL.
-            var call = URLRequest(url: URL(string: provider.upstream.absoluteString + target)!)
-            call.httpMethod = outgoing.method
-            for (name, value) in outgoing.headers where !Hop.request.contains(name.lowercased()) { call.setValue(value, forHTTPHeaderField: name) }
-            if !outgoing.body.isEmpty { call.httpBody = outgoing.body }
-            let response: HTTPURLResponse, body: AsyncThrowingStream<Data, any Error>
-            do {
-                (response, body) = try await upstream.send(call)
-            } catch {
-                return try await writer.send(502, text: "sluice: could not reach \(provider.id): \(error.localizedDescription)")
+            guard !candidates.isEmpty else {
+                return try await writer.send(503, text: "sluice: \(pin.map { "no \(id) account is named \($0)" } ?? "no \(id) account is in the pool"); run: sluice status")
             }
-            FileHandle.standardError.write(Data("\(id) \(account.label) \(request.method) \(target.prefix { $0 != "?" }) \(response.statusCode)\n".utf8))
-            let headers = response.allHeaderFields.compactMap { name, value in (name as? String).map { ($0, "\(value)") } }
-            try await writer.send(response.statusCode, headers: headers, body: body)
+            for (index, candidate) in candidates.enumerated() {
+                let isLast = index == candidates.count - 1
+                let account: Account
+                do {
+                    account = try await accounts.fresh(candidate.id, using: provider)
+                } catch {
+                    log("\(id) \(candidate.label) could not renew: \(error)")
+                    if isLast { return try await writer.send(502, text: "sluice: could not renew \(candidate.label): \(error)") }
+                    continue
+                }
+                var outgoing = request
+                outgoing.target = target
+                provider.prepare(&outgoing, for: account)
+                // `target` begins with "/" and the upstream is a fixed, valid URL.
+                var call = URLRequest(url: URL(string: provider.upstream.absoluteString + target)!)
+                call.httpMethod = outgoing.method
+                for (name, value) in outgoing.headers where !Hop.request.contains(name.lowercased()) { call.setValue(value, forHTTPHeaderField: name) }
+                if !outgoing.body.isEmpty { call.httpBody = outgoing.body }
+                let response: HTTPURLResponse, body: AsyncThrowingStream<Data, any Error>
+                do {
+                    (response, body) = try await upstream.send(call)
+                } catch {
+                    // Every account shares the upstream host, so an unreachable one is not retried on another.
+                    return try await writer.send(502, text: "sluice: could not reach \(provider.id): \(error.localizedDescription)")
+                }
+                let headers = response.allHeaderFields.compactMap { name, value in (name as? String).map { ($0, "\(value)") } }
+                let reading = provider.reading(status: response.statusCode, headers: Dictionary(headers.map { ($0.0.lowercased(), $0.1) }) { $1 })
+                await accounts.record(reading.windows, for: account.id)
+                log("\(id) \(account.label) \(request.method) \(target.prefix { $0 != "?" }) \(response.statusCode)\(reading.refused ? " spent" : "")")
+                if reading.refused, !isLast { continue }
+                if let conversation, !reading.refused {
+                    await accounts.served(conversation.id, by: account.id, cacheLifetime: conversation.cacheLifetime)
+                }
+                return try await writer.send(response.statusCode, headers: headers, body: body)
+            }
         }
+    }
+
+    private func log(_ line: String) {
+        FileHandle.standardError.write(Data("\(line)\n".utf8))
     }
 }
