@@ -116,8 +116,8 @@ public struct Profile: Codable, Sendable, Equatable {
     /// What the user calls it, where its name in the config is not what they want to read.
     public internal(set) var label: String?
     public internal(set) var color: Tint?
-    /// Whether how much of its pools is used is shown in the menu bar.
-    public internal(set) var starred = false
+    /// The providers whose pool here is shown in the menu bar.
+    public internal(set) var starred: [String] = []
     /// The accounts that serve its relayed requests.
     public internal(set) var accounts: [String] = []
     /// Folders (`~` allowed) whose work belongs to this profile.
@@ -131,7 +131,7 @@ public struct Profile: Codable, Sendable, Equatable {
         let keys = try decoder.container(keyedBy: CodingKeys.self)
         label = try keys.decodeIfPresent(String.self, forKey: .label)
         color = try keys.decodeIfPresent(Tint.self, forKey: .color)
-        starred = try keys.decodeIfPresent(Bool.self, forKey: .starred) ?? false
+        starred = try keys.decodeIfPresent([String].self, forKey: .starred) ?? []
         accounts = try keys.decodeIfPresent([String].self, forKey: .accounts) ?? []
         folders = try keys.decodeIfPresent([String].self, forKey: .folders) ?? []
         owners = try keys.decodeIfPresent([String].self, forKey: .owners) ?? []
@@ -142,7 +142,7 @@ public struct Profile: Codable, Sendable, Equatable {
         var keys = encoder.container(keyedBy: CodingKeys.self)
         try keys.encodeIfPresent(label, forKey: .label)
         try keys.encodeIfPresent(color, forKey: .color)
-        if starred { try keys.encode(true, forKey: .starred) }
+        if !starred.isEmpty { try keys.encode(starred, forKey: .starred) }
         if !accounts.isEmpty { try keys.encode(accounts, forKey: .accounts) }
         if !folders.isEmpty { try keys.encode(folders, forKey: .folders) }
         if !owners.isEmpty { try keys.encode(owners, forKey: .owners) }

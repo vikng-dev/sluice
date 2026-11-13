@@ -66,9 +66,11 @@ public extension Config {
         profiles[profile, default: Profile()].color = color
     }
 
-    mutating func star(_ profile: String, _ starred: Bool) throws {
+    /// A pool is a profile's accounts at one provider, so its star is kept under the provider's name.
+    mutating func star(_ profile: String, _ provider: String, _ starred: Bool) throws {
         try require(profile)
-        profiles[profile, default: Profile()].starred = starred
+        profiles[profile, default: Profile()].starred.removeAll { $0 == provider }
+        if starred { profiles[profile, default: Profile()].starred.append(provider) }
     }
 
     mutating func claim(folder: String, for profile: String, home: String = NSHomeDirectory()) throws {

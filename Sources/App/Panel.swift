@@ -18,7 +18,7 @@ struct Panel: View {
     let remove: (AccountStatus) -> Void
     let rename: (_ profile: String, _ label: String) -> Void
     let tint: (_ profile: String, Tint?) -> Void
-    let star: (_ profile: String, Bool) -> Void
+    let star: (_ profile: String, _ provider: String, Bool) -> Void
     /// Makes a profile, and when it is made for an account, with that account in it.
     let addProfile: (_ shownAs: String, _ founder: AccountStatus?) -> Void
     let removeProfile: (_ profile: String) -> Void
@@ -117,7 +117,7 @@ struct Panel: View {
                     ProfileCaption(
                         name: section.name, profile: config.profiles[section.name],
                         takesTheRest: section.name == Config.defaultProfile && profiles.count > 1, empty: section.pools.isEmpty, titles: titles,
-                        signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) }, star: { star(section.name, $0) },
+                        signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) },
                         claimFolders: { claimFolders(section.name) }, claimOwner: { claimOwner(section.name) },
                         remove: section.name == Config.defaultProfile ? nil : { removeProfile(section.name) }, unclaim: { unclaim(section.name, $0) }
                     )
@@ -129,7 +129,12 @@ struct Panel: View {
                             let bare = section.name != Config.defaultProfile && profile?.folders.isEmpty != false && profile?.owners.isEmpty != false
                             NoAccounts(remove: bare ? { removeProfile(section.name) } : nil)
                         }
-                        ForEach(section.pools) { PoolView(pool: $0, now: now, carried: carried?.account.id, actions: actions) }
+                        ForEach(section.pools) { pool in
+                            PoolView(
+                                pool: pool, now: now, carried: carried?.account.id, actions: actions,
+                                starred: config.profiles[section.name]?.starred.contains(pool.provider) == true, star: { star(section.name, pool.provider, $0) }
+                            )
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
@@ -254,7 +259,6 @@ private struct ProfileCaption: View {
     let signIn: (_ provider: String) -> Void
     let rename: (_ label: String) -> Void
     let setTint: (Tint?) -> Void
-    let star: (Bool) -> Void
     let claimFolders: () -> Void
     let claimOwner: () -> Void
     /// Nil for the default profile, which always exists.
@@ -332,11 +336,6 @@ private struct ProfileCaption: View {
                     .buttonStyle(.plain).disabled(claims.isEmpty).help("The work that belongs to this profile")
                 }
                 Spacer()
-                let starred = profile?.starred == true
-                Button { star(!starred) } label: { Image(systemName: starred ? "star.fill" : "star").font(.caption) }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help(starred ? "Shown in the menu bar. Click to take it out" : "Show how much of its pools is used in the menu bar")
-                    .opacity(hovered ? 1 : 0)
                 Menu {
                     ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
                         Button { signIn(provider) } label: {
@@ -588,6 +587,10 @@ private struct PoolView: View {
     /// The account being carried, whose row stays behind dimmed.
     let carried: String?
     let actions: RowActions
+    let starred: Bool
+    let star: (Bool) -> Void
+
+    @State private var hovered = false
 
     /// When the pool next gets allowance back.
     private var nextReset: SluiceCore.Window? {
@@ -603,6 +606,10 @@ private struct PoolView: View {
                         .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
                 }
                 Text(pool.title).font(.callout.weight(.semibold))
+                Button { star(!starred) } label: { Image(systemName: starred ? "star.fill" : "star").font(.caption) }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help(starred ? "Shown in the menu bar. Click to take it out" : "Show how much of this pool is used in the menu bar")
+                    .opacity(hovered ? 1 : 0)
                 Spacer()
                 Share(used: pool.accounts.used, worded: true)
                 if let nextReset {
@@ -613,6 +620,8 @@ private struct PoolView: View {
                     .help("When the pool next gets allowance back")
                 }
             }
+            .contentShape(Rectangle())
+            .onHover { hovered = $0 }
             VStack(alignment: .leading, spacing: 6) {
                 PoolBar(accounts: pool.accounts).padding(.leading, AccountRow.gutter)
                 ForEach(pool.accounts, id: \.id) { account in

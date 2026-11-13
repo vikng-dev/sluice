@@ -64,7 +64,7 @@ private let program = Bundle.main.executableURL!
     }
 
     /// Reading the accounts is local and asks no provider. It goes on while the panel is shut, as the
-    /// menu bar shows the starred profiles.
+    /// menu bar shows the starred pools.
     private func watch() async {
         while !Task.isCancelled {
             // `sluice setup` and a new profile change this from outside the app.
@@ -183,15 +183,16 @@ private let program = Bundle.main.executableURL!
         }
     }
 
-    func star(_ profile: String, _ starred: Bool) {
-        change { try $0.star(profile, starred) }
+    func star(_ profile: String, _ provider: String, _ starred: Bool) {
+        change { try $0.star(profile, provider, starred) }
     }
 
-    /// What the menu bar shows in place of the glyph: each starred profile's colour and its pools, by
-    /// provider, with how much of each is used or left. Empty when none is starred.
+    /// What the menu bar shows in place of the glyph: the starred pools by profile, each profile's colour
+    /// and its pools by provider, with how much of each is used or left. Empty when none is starred.
     func counters(left: Bool) -> [(color: NSColor?, pools: [(provider: String, text: String)])] {
-        config.names.filter { config.profiles[$0]?.starred == true }.map { profile in
-            let pools = Dictionary(grouping: accounts.filter { $0.profile == profile }, by: \.provider).sorted { $0.key < $1.key }.map { provider, pool in
+        config.names.map { profile in
+            let starred = config.profiles[profile]?.starred ?? []
+            let pools = Dictionary(grouping: accounts.filter { $0.profile == profile && starred.contains($0.provider) }, by: \.provider).sorted { $0.key < $1.key }.map { provider, pool in
                 (provider: provider, text: "\(Int(((left ? 1 - pool.used : pool.used) * 100).rounded()))%")
             }
             return (config.profiles[profile]?.color.map { NSColor($0.color) }, pools)
@@ -239,7 +240,7 @@ struct SluiceApp: App {
                 history: running.history, loadHistory: running.loadHistory, quit: running.quit
             )
         } label: {
-            // The glyph says whether clients are routed; while they are, the starred profiles take its place.
+            // The glyph says whether clients are routed; while they are, the starred pools take its place.
             let counters = running.counters(left: left).filter { !$0.pools.isEmpty }
             Image(nsImage: counters.isEmpty || !running.routed ? gateGlyph(open: running.routed) : counterGlyph(counters))
         }

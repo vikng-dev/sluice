@@ -31,7 +31,7 @@ func gateGlyph(open: Bool) -> NSImage {
     return image
 }
 
-/// The starred profiles in the menu bar: a short bar in the profile's colour, then each of its pools as
+/// The starred pools in the menu bar by profile: a short bar in the profile's colour, then each pool as
 /// the provider's mark and its share, a profile's pools close together and the profiles apart.
 @MainActor func counterGlyph(_ profiles: [(color: NSColor?, pools: [(provider: String, text: String)])]) -> NSImage {
     let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
