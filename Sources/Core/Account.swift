@@ -89,10 +89,57 @@ struct UnreadableFile: Error, CustomStringConvertible {
     var description: String { "\(path) could not be read: \(cause)" }
 }
 
-/// `config.json`, written by hand.
-struct Config: Decodable {
+/// `config.json`, written by hand. A key left out is an empty rule.
+public struct Config: Decodable, Sendable {
     /// Labels of accounts that only a pin reaches.
     var pinOnly: Set<String> = []
+    /// Folders whose work is pinned to one account: folder (`~` allowed) to the account's label.
+    var pins: [String: String] = [:]
+
+    init() {}
+
+    public init(from decoder: any Decoder) throws {
+        let keys = try decoder.container(keyedBy: CodingKeys.self)
+        pinOnly = try keys.decodeIfPresent(Set<String>.self, forKey: .pinOnly) ?? []
+        pins = try keys.decodeIfPresent([String: String].self, forKey: .pins) ?? [:]
+    }
+
+    private enum CodingKeys: CodingKey { case pinOnly, pins }
+
+    /// The account pinned for work in `directory`: the rule for the deepest folder containing it.
+    func pin(for directory: String, home: String) -> String? {
+        func folder(_ rule: String) -> String { (rule.hasPrefix("~") ? home + rule.dropFirst() : rule).trimmingSuffix("/") + "/" }
+        return pins.filter { (directory.trimmingSuffix("/") + "/").hasPrefix(folder($0.key)) }.max { folder($0.key).count < folder($1.key).count }?.value
+    }
+}
+
+private extension String {
+    func trimmingSuffix(_ suffix: String) -> String { hasSuffix(suffix) ? String(dropLast(suffix.count)) : self }
+}
+
+/// How a client on this machine finds Sluice.
+public enum Local {
+    /// Where `sluice setup` puts the commands that stand in for each provider's client.
+    public static let shims = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/sluice/bin")
+
+    /// The address a client working in `directory` should use for `provider`.
+    public static func address(provider: String, directory: String) throws -> String {
+        let base = "http://localhost:\(Sluice.port)/\(provider)"
+        guard let pin = try Storage.live.config().pin(for: directory, home: NSHomeDirectory()) else { return base }
+        // A label is an email or a name; anything that would break a path segment is escaped.
+        return base + "/pin/" + pin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/")))!
+    }
+
+    /// Whether something is listening on Sluice's port.
+    public static var isRunning: Bool {
+        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(descriptor) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = Sluice.port.bigEndian
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        return withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } } == 0
+    }
 }
 
 /// What Sluice observed and would otherwise relearn after a restart.

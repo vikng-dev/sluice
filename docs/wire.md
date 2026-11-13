@@ -79,6 +79,11 @@ It then sends `POST /backend-api/codex/responses` as SSE over plain HTTP. `chatg
 wrong lever: it refuses a non-HTTPS origin for turns, tries WebSockets first, and carries plugin,
 settings and analytics traffic as well.
 
+**Passing the provider on the command line.** The same entry works as `-c` overrides, with no
+config file: `-c 'model_provider="sluice"' -c 'model_providers.sluice={…}'`. Placed last they are
+honoured by `exec` and accepted by subcommands that make no model call (`mcp list`). Placed before
+a subcommand they are dropped whenever the subcommand carries any `-c` of its own.
+
 **It needs no login of its own.** With no login it sends the same headers and body keys, minus
 `authorization` and `chatgpt-account-id`; the relay adds both and the turn is served. With
 `requires_openai_auth = true` it sends its own two headers and also `GET …/models`.

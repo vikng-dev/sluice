@@ -5,6 +5,11 @@ import Foundation
 public protocol Provider: Sendable {
     /// The first path segment of the provider's local address, e.g. `claude`.
     var id: String { get }
+    /// The command that runs this provider's client, e.g. `claude`.
+    var client: String { get }
+    /// The environment to add and the arguments to run the client with, so that a launch with
+    /// `arguments` talks to Sluice's `address` for this provider.
+    func pointing(_ arguments: [String], at address: String) -> (environment: [String: String], arguments: [String])
     /// Where a relayed request's path is appended.
     var upstream: URL { get }
     /// Where the provider's sign-in must land when its OAuth client is registered to one fixed address;

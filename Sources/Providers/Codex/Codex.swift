@@ -4,6 +4,7 @@ import SluiceCore
 /// ChatGPT subscriptions, as the Codex CLI reaches them. Wire facts: docs/wire.md.
 public struct Codex: Provider {
     public let id = "codex"
+    public let client = "codex"
     public let upstream = URL(string: "https://chatgpt.com/backend-api/codex")!
     /// The Codex CLI's OAuth client accepts only this address.
     public let redirect: URL? = URL(string: "http://localhost:1455/auth/callback")
@@ -13,6 +14,15 @@ public struct Codex: Provider {
     static let token = URL(string: "https://auth.openai.com/oauth/token")!
 
     public init() {}
+
+    /// A model provider entry passed as config overrides, so the user's own config file is untouched.
+    /// They go last, where every subcommand accepts them; ahead of a subcommand they are dropped
+    /// whenever the subcommand has overrides of its own. A bare `--` ends the options, so they go before it.
+    public func pointing(_ arguments: [String], at address: String) -> (environment: [String: String], arguments: [String]) {
+        let overrides = ["-c", #"model_provider="sluice""#, "-c", #"model_providers.sluice={name="sluice",base_url="\#(address)",wire_api="responses"}"#]
+        let end = arguments.firstIndex(of: "--") ?? arguments.endIndex
+        return ([:], arguments[..<end] + overrides + arguments[end...])
+    }
 
     public func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL {
         var components = URLComponents(url: Self.authorize, resolvingAgainstBaseURL: false)!

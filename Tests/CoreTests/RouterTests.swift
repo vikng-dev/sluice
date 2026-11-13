@@ -92,3 +92,12 @@ import Testing
         #expect(reading == Reading(windows: [Window(name: "7d", used: 0.42, resetsAt: Date(timeIntervalSince1970: 9000))], refused: false))
     }
 }
+
+@Suite struct CodexLaunchTests {
+    @Test func overridesGoLastButBeforeABareDoubleDash() {
+        let plain = Codex().pointing(["exec", "-c", "x=1", "hi"], at: "A").arguments
+        #expect(plain.prefix(4) == ["exec", "-c", "x=1", "hi"] && plain.count == 8)
+        let dashed = Codex().pointing(["exec", "--", "hi"], at: "A").arguments
+        #expect(dashed.first == "exec" && dashed.suffix(2) == ["--", "hi"])
+    }
+}

@@ -58,3 +58,22 @@ import Testing
         #expect(prepared(body) == body)
     }
 }
+
+@Suite struct PinRuleTests {
+    func config(_ json: String) throws -> Config { try JSONDecoder().decode(Config.self, from: Data(json.utf8)) }
+
+    @Test func theDeepestFolderRuleWins() throws {
+        let config = try config(#"{"pins":{"~/work":"a","~/work/client/":"b"}}"#)
+        #expect(config.pin(for: "/home/me/work/client/repo", home: "/home/me") == "b")
+        #expect(config.pin(for: "/home/me/work/other", home: "/home/me") == "a")
+        #expect(config.pin(for: "/home/me/work", home: "/home/me") == "a")
+    }
+
+    @Test func aFolderThatOnlySharesAPrefixIsNotInside() throws {
+        #expect(try config(#"{"pins":{"/src/work":"a"}}"#).pin(for: "/src/workshop", home: "/home/me") == nil)
+    }
+
+    @Test func aConfigMayLeaveRulesOut() throws {
+        #expect(try config("{}").pin(for: "/anywhere", home: "/home/me") == nil)
+    }
+}

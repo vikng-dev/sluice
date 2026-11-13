@@ -4,6 +4,7 @@ import SluiceCore
 /// Claude subscriptions, as Claude Code reaches them. Wire facts: docs/wire.md.
 public struct Claude: Provider {
     public let id = "claude"
+    public let client = "claude"
     public let upstream = URL(string: "https://api.anthropic.com")!
     public let redirect: URL? = nil
 
@@ -16,6 +17,10 @@ public struct Claude: Provider {
     static let oauthBeta = "oauth-2025-04-20"
 
     public init() {}
+
+    public func pointing(_ arguments: [String], at address: String) -> (environment: [String: String], arguments: [String]) {
+        (["ANTHROPIC_BASE_URL": address], arguments)
+    }
 
     public func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL {
         var components = URLComponents(url: Self.authorize, resolvingAgainstBaseURL: false)!

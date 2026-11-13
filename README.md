@@ -8,27 +8,26 @@ The menu bar view is not built yet.
 
 ## Use it
 
+Open Sluice.app once; it relays from then on and starts with the Mac. Its command-line tool is
+inside it, at `Sluice.app/Contents/MacOS/sluice`.
+
 ```sh
-sluice serve                  # or open Sluice.app
 sluice login                  # sign a Claude account in through the browser; repeat per account
 sluice login codex            # the same for a ChatGPT account
 sluice status                 # accounts, their windows, and warm conversations
-ANTHROPIC_BASE_URL=http://localhost:7483/claude claude
+sluice setup                  # make claude and codex go through Sluice
 ```
 
-Claude Code stays signed in to any one subscription. Sluice replaces its credential and account id
-on the way out, with the tokens of the account it picked.
+`sluice setup` puts stand-ins for `claude` and `codex` in `~/.config/sluice/bin` and tells you the
+line that puts that folder first on your PATH. A stand-in points the real client at Sluice when
+Sluice is running, and otherwise just runs it, so nothing breaks when Sluice is off. Your own
+client settings are not edited.
 
-Codex needs no login of its own. Point it at Sluice in `~/.codex/config.toml`:
+Claude Code stays signed in to any one subscription: Sluice replaces its credential and account id
+on the way out with those of the account it picked. Codex needs no login of its own.
 
-```toml
-model_provider = "sluice"
-
-[model_providers.sluice]
-name = "sluice"
-base_url = "http://localhost:7483/codex"
-wire_api = "responses"
-```
+Anything that runs Claude Code underneath is relayed the same way: `claude -p` and the Agent SDK
+included. A client that calls Anthropic's API itself is not; see [docs/wire.md](docs/wire.md).
 
 ## How an account is picked
 
@@ -40,14 +39,19 @@ wire_api = "responses"
   placed afresh.
 - **Keep going.** When an account refuses because an allowance is spent, the request is resent on
   the next account before the client sees anything. A plain rate limit is passed through.
-- **Pin.** `http://localhost:7483/claude/pin/<email>` uses that one account and no other; the same
-  after `/codex`.
-- **Pin-only.** An account listed in `~/.config/sluice/config.json` is outside the pool and
-  reachable only by pin. The file is read on every request:
+- **Pin.** Work in a pinned folder uses one account and no other. An account can also be pin-only:
+  outside the pool, reachable only by pin. Both are rules in `~/.config/sluice/config.json`, read
+  on every launch and request:
 
   ```json
-  { "pinOnly": ["me@work.example"] }
+  {
+    "pins": { "~/work": "me@work.example" },
+    "pinOnly": ["me@work.example"]
+  }
   ```
+
+  The deepest folder rule wins. Under the hood a pin is an address,
+  `http://localhost:7483/claude/pin/<email>`, which a harness can use directly.
 
 Sluice signs in to each account itself and keeps the tokens in its own Keychain item. What it
 observed (windows, warm conversations) is kept in `~/Library/Application Support/Sluice`, so a
@@ -63,7 +67,7 @@ One Swift package, no dependencies.
 | `Sources/Core` | Accounts, Keychain storage, relay, router, the provider contract. No UI. |
 | `Sources/Providers` | One folder per provider (Claude, Codex), each answering the contract. |
 | `Sources/App` | The menu bar app. |
-| `Sources/CLI` | `sluice`: sign-in, status and pin from the terminal. |
+| `Sources/CLI` | `sluice`: sign-in, status and setup, and the stand-in for each client. |
 
 ## Build
 
