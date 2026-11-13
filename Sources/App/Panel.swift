@@ -34,12 +34,16 @@ struct Panel: View {
     /// Let go over another profile, the account moves there; anywhere else, it goes back.
     private func drop() {
         guard let carried else { return }
-        if let target {
-            move(carried.account, target)
-            self.carried = nil
-        } else {
-            withAnimation(.spring(duration: 0.25)) { self.carried?.translation = .zero } completion: { self.carried = nil }
-        }
+        guard let target else { return putBack() }
+        move(carried.account, target)
+        self.carried = nil
+    }
+
+    /// The account settles where it was. This is also how a carry ends that was broken off and not let go,
+    /// as by a click of the other button.
+    private func putBack() {
+        guard carried != nil else { return }
+        withAnimation(.spring(duration: 0.25)) { carried?.translation = .zero } completion: { carried = nil }
     }
 
     /// Every profile, with a pool at each provider it has accounts at.
@@ -77,8 +81,12 @@ struct Panel: View {
                     ForEach(section.pools) { pool in
                         PoolView(
                             pool: pool, now: now, movable: profiles.count > 1, carried: carried?.account.id, remove: remove,
-                            carry: { account, drag in carried = Carried(account: account, client: pool.identity == account.label ? pool.client : nil, translation: drag.translation, pointer: drag.location) },
-                            drop: drop
+                            carry: { account, drag in
+                                // A drag that begins away from the row is the rest of one that was broken off.
+                                guard frames["row:\(account.id)"]?.contains(drag.startLocation) == true else { return }
+                                carried = Carried(account: account, client: pool.identity == account.label ? pool.client : nil, translation: drag.translation, pointer: drag.location)
+                            },
+                            drop: drop, putBack: putBack
                         )
                     }
                 }
@@ -117,7 +125,7 @@ struct Panel: View {
         // The carried account's row, lifted off the panel and following the pointer.
         .overlay(alignment: .topLeading) {
             if let carried, let frame = frames["row:\(carried.account.id)"] {
-                AccountRow(account: carried.account, client: carried.client, now: now, movable: true, lifted: true, remove: { _ in }, carry: { _, _ in }, drop: {})
+                AccountRow(account: carried.account, client: carried.client, now: now, movable: true, lifted: true, remove: { _ in }, carry: { _, _ in }, drop: {}, putBack: {})
                     .padding(.vertical, 5).padding(.trailing, 8)
                     .frame(width: frame.width + 8)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
@@ -214,6 +222,7 @@ private struct PoolView: View {
     let remove: (AccountStatus) -> Void
     let carry: (AccountStatus, DragGesture.Value) -> Void
     let drop: () -> Void
+    let putBack: () -> Void
 
     /// When the pool next gets allowance back.
     private var nextReset: SluiceCore.Window? {
@@ -236,7 +245,7 @@ private struct PoolView: View {
             VStack(alignment: .leading, spacing: 6) {
                 PoolBar(accounts: pool.accounts).padding(.leading, AccountRow.gutter)
                 ForEach(pool.accounts, id: \.id) { account in
-                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, movable: movable, lifted: false, remove: remove, carry: carry, drop: drop)
+                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, movable: movable, lifted: false, remove: remove, carry: carry, drop: drop, putBack: putBack)
                         .opacity(carried == account.id ? 0.3 : 1)
                         .framed("row:\(account.id)")
                 }
@@ -287,7 +296,10 @@ private struct AccountRow: View {
     let remove: (AccountStatus) -> Void
     let carry: (AccountStatus, DragGesture.Value) -> Void
     let drop: () -> Void
+    let putBack: () -> Void
     @State private var hovered = false
+    /// True for as long as the handle is held, however the hold ends.
+    @GestureState private var held = false
 
     /// The room left of every row, under the provider's mark, where the handle shows.
     static let gutter: Double = 20
@@ -308,7 +320,12 @@ private struct AccountRow: View {
                 .frame(width: Self.gutter, height: 16, alignment: .leading)
                 .contentShape(Rectangle())
                 .opacity(movable && (hovered || lifted) ? 1 : 0)
-                .gesture(movable ? DragGesture(minimumDistance: 1, coordinateSpace: .named(Frames.space)).onChanged { carry(account, $0) }.onEnded { _ in drop() } : nil)
+                .gesture(movable ? DragGesture(minimumDistance: 1, coordinateSpace: .named(Frames.space))
+                    .updating($held) { _, held, _ in held = true }
+                    .onChanged { carry(account, $0) }
+                    .onEnded { _ in drop() } : nil)
+                // A hold that is broken off never ends, so letting go is not heard; the hold being over is.
+                .onChange(of: held) { _, held in if !held { putBack() } }
                 .help("Drag onto another profile to move this account there")
             details
         }
