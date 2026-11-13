@@ -155,7 +155,7 @@ struct Panel: View {
             .padding(.horizontal, 10).padding(.top, 4)
         }
         .padding(10)
-        .frame(width: 352)
+        .frame(width: 392)
         .onPreferenceChange(Frames.self) { frames = $0 }
         .coordinateSpace(name: Frames.space)
         // The carried account's row, lifted off the panel and following the pointer.
@@ -555,6 +555,12 @@ private struct PoolView: View {
         pool.accounts.compactMap(\.budget).filter { $0.used > 0 }.min { $0.resetsAt < $1.resetsAt }
     }
 
+    /// How much of the pool is used: each account's budget, by the size of its plan.
+    private var used: Double {
+        let total = pool.accounts.map(\.weight).reduce(0, +)
+        return total > 0 ? pool.accounts.map { $0.weight * min($0.budget?.used ?? 0, 1) }.reduce(0, +) / total : 0
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -564,8 +570,13 @@ private struct PoolView: View {
                 }
                 Text(pool.title).font(.callout.weight(.semibold))
                 Spacer()
+                Share(used: used, worded: true)
                 if let nextReset {
-                    Text("next reset \(nextReset.resetText)").font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.clockwise").font(.caption2).foregroundStyle(.tertiary)
+                        Clock(window: nextReset, now: now)
+                    }
+                    .help("When the pool next gets allowance back")
                 }
             }
             VStack(alignment: .leading, spacing: 6) {
@@ -623,16 +634,15 @@ private struct AccountRow: View {
 
     /// The room left of every row, under the provider's mark, where the handle shows.
     static let gutter: Double = 20
+    /// The room for a share and for a clock, so that they line up down the rows.
+    static let share: Double = 34
+    static let clock: Double = 52
 
     /// It answered a request within the last minute.
     private var serving: Bool { account.lastAnswered.map { now.timeIntervalSince($0) < 60 } ?? false }
 
-    /// What keeps the account from serving, or soon will: a spent window, or a pace window nearly spent.
-    private var note: (text: String, color: Color)? {
-        if let spent = account.windows.last(where: { $0.used >= 1 }) { return ("\(spent.name) limit reached, back \(spent.resetText)", .red) }
-        if let near = account.windows.dropLast().first(where: { $0.used >= 0.85 }) { return ("\(near.name) limit at \(near.percentText), resets \(near.resetText)", .orange) }
-        return account.windows.isEmpty && account.problem == nil ? ("No usage reported", .secondary) : nil
-    }
+    /// A shorter window that is spent or nearly so: what keeps the account from serving for now, or soon will.
+    private var pace: SluiceCore.Window? { account.windows.dropLast().first { $0.used >= 0.85 } }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -672,17 +682,56 @@ private struct AccountRow: View {
                 Spacer(minLength: 4)
                 if let plan = account.plan { Badge(text: plan.tier, symbol: plan.business ? "briefcase.fill" : nil).help(plan.name + (plan.price.map { ", $\($0) a month" } ?? "")) }
                 if let budget = account.budget {
-                    Text(budget.percentText).font(.caption.monospacedDigit()).frame(width: 34, alignment: .trailing)
-                        .foregroundStyle(budget.used >= 1 ? Color.red : budget.used >= 0.85 ? .orange : .primary)
+                    Share(used: budget.used).frame(width: Self.share, alignment: .trailing)
+                    Clock(window: budget, now: now).frame(width: Self.clock, alignment: .trailing)
+                } else {
+                    Text("unused").font(.caption).foregroundStyle(.tertiary).frame(width: Self.share + Self.clock + 6, alignment: .trailing)
+                        .help("Nothing was used in its current windows, or its provider has not said")
                 }
             }
-            .help(account.windows.map { "\($0.name) \($0.percentText), resets \($0.resetText)" }.joined(separator: "\n"))
             if let problem = account.problem {
                 Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-            } else if let note {
-                Text(note.text).font(.caption).foregroundStyle(note.color)
+            } else if let pace {
+                HStack(spacing: 6) {
+                    Spacer()
+                    Text(pace.name).font(.caption2).foregroundStyle(.secondary)
+                    Share(used: pace.used).frame(width: Self.share, alignment: .trailing)
+                    Clock(window: pace, now: now).frame(width: Self.clock, alignment: .trailing)
+                }
             }
         }
+    }
+}
+
+/// A share of an allowance, read as used or as left. A click on any of them turns them all.
+private struct Share: View {
+    let used: Double
+    /// Says which it is, where the number alone would not.
+    var worded = false
+    @AppStorage("readsLeft") private var left = false
+
+    var body: some View {
+        Text("\(Int(((left ? 1 - min(used, 1) : used) * 100).rounded()))%" + (worded ? (left ? " left" : " used") : ""))
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(used >= 1 ? Color.red : used >= 0.85 ? .orange : worded ? .secondary : .primary)
+            .contentShape(Rectangle())
+            .onTapGesture { left.toggle() }
+            .help(left ? "Left. Click for used" : "Used. Click for left")
+    }
+}
+
+/// When a window resets, read as the time left or as the time itself. A click on any of them turns them all.
+private struct Clock: View {
+    let window: SluiceCore.Window
+    let now: Date
+    @AppStorage("readsResetTimes") private var times = false
+
+    var body: some View {
+        Text(times ? window.resetText : window.leftText(now: now))
+            .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+            .contentShape(Rectangle())
+            .onTapGesture { times.toggle() }
+            .help(times ? "Resets then. Click for the time left" : "Resets in this long. Click for the time")
     }
 }
 

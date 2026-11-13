@@ -40,9 +40,10 @@ public struct Storage: Sendable {
     public var storeConfig: @Sendable (Config) throws -> Void
     var loadMemory: @Sendable () throws -> Memory
     var storeMemory: @Sendable (Memory) throws -> Void
+    var appendSample: @Sendable (Sample) throws -> Void = { _ in }
 
     /// Accounts in one Keychain item, so a save is atomic; the config in `~/.config/sluice`;
-    /// what was observed in Application Support.
+    /// what was observed, and the history of it, in Application Support.
     public static let live: Storage = {
         let query: [String: any Sendable] = [
             kSecClass as String: kSecClassGenericPassword as String,
@@ -52,6 +53,7 @@ public struct Storage: Sendable {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let configFile = home.appending(path: ".config/sluice/config.json")
         let memoryFile = home.appending(path: "Library/Application Support/Sluice/memory.json")
+        let historyFile = home.appending(path: "Library/Application Support/Sluice/history.jsonl")
         return Storage(
             loadAccounts: {
                 var item: CFTypeRef?
@@ -78,7 +80,8 @@ public struct Storage: Sendable {
             storeMemory: { memory in
                 try FileManager.default.createDirectory(at: memoryFile.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try JSONEncoder().encode(memory).write(to: memoryFile, options: .atomic)
-            }
+            },
+            appendSample: { try append($0, to: historyFile) }
         )
     }()
 }
@@ -217,6 +220,8 @@ actor Accounts {
     private var lastAnswered: [String: Date] = [:]
     private var problems: [String: String] = [:]
     private var plans: [String: Plan] = [:]
+    /// What each account's windows read when its last line of history was written.
+    private var sampled: [String: [Window]] = [:]
 
     init(storage: Storage) throws {
         self.storage = storage
@@ -289,7 +294,24 @@ actor Accounts {
             memory.usage[id, default: []].removeAll { $0.name == window.name }
             memory.usage[id, default: []].append(window)
         }
-        if !windows.isEmpty { remember() }
+        if !windows.isEmpty {
+            remember()
+            sample(id)
+        }
+    }
+
+    /// A reading that says something new is a line of history. One that cannot be written is reported and
+    /// tried again at the next reading.
+    private func sample(_ id: String, now: Date = Date()) {
+        guard let account = accounts.first(where: { $0.id == id }) else { return }
+        let windows = (memory.usage[id] ?? []).filter { $0.resetsAt > now }.map(\.settled).sorted { $0.resetsAt < $1.resetsAt }
+        guard windows != sampled[id] else { return }
+        do {
+            try storage.appendSample(Sample(at: now, provider: account.provider, account: account.label, windows: windows))
+            sampled[id] = windows
+        } catch {
+            FileHandle.standardError.write(Data("sluice: could not add to the history: \(error)\n".utf8))
+        }
     }
 
     func served(_ conversation: String, by id: String, cacheLifetime: TimeInterval) {

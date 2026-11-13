@@ -131,6 +131,17 @@ import Testing
         #expect(Codex.folders(inSettings: settings) == ["/w/my app", "/w/other"])
     }
 
+    @Test func theTimeLeftIsReadInItsTwoLargestUnits() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func left(_ seconds: Double) -> String { Window(name: "7d", used: 0, resetsAt: now + seconds).leftText(now: now) }
+        #expect(left(4 * 86400 + 20 * 3600 + 50 * 60) == "4d 20h")
+        #expect(left(3 * 3600 + 5 * 60) == "3h 5m")
+        #expect(left(86400 + 20) == "1d")
+        #expect(left(12 * 60) == "12m")
+        // A reset that has just passed is not time owed.
+        #expect(left(-90) == "0m")
+    }
+
     @Test func codexWindowsAreNamedByTheirLength() throws {
         let body = #"{"plan_type":"prolite","rate_limit":{"primary_window":{"used_percent":3,"limit_window_seconds":604800,"reset_at":1795144120},"secondary_window":null}}"#
         let usage = try Codex.usage(in: Data(body.utf8))

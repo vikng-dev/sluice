@@ -15,11 +15,19 @@ public struct Window: Sendable, Codable, Equatable {
 }
 
 public extension Window {
-    /// When the window resets, as a person reads it: the time today, or the weekday and time.
+    /// When the window resets, as a person reads it: the time when that is today, or the weekday and time.
     var resetText: String {
-        // The same reset is reported a second or so apart from one answer to the next.
-        let resetsAt = Date(timeIntervalSinceReferenceDate: (resetsAt.timeIntervalSinceReferenceDate / 60).rounded() * 60)
-        return resetsAt.formatted(resetsAt.timeIntervalSinceNow < 86400 ? Date.FormatStyle(date: .omitted, time: .shortened) : Date.FormatStyle().weekday(.abbreviated).hour().minute())
+        let resetsAt = settled.resetsAt
+        return resetsAt.formatted(Calendar.current.isDateInToday(resetsAt) ? Date.FormatStyle(date: .omitted, time: .shortened) : Date.FormatStyle().weekday(.abbreviated).hour().minute())
+    }
+
+    /// How long until the window resets, in its two largest units and without one that is nought:
+    /// "4d 20h", "1d", "3h 5m", "12m".
+    func leftText(now: Date) -> String {
+        let minutes = max(0, Int((resetsAt.timeIntervalSince(now) / 60).rounded()))
+        let (days, hours) = (minutes / 1440, minutes / 60 % 24)
+        let parts = days > 0 ? [(days, "d"), (hours, "h")] : hours > 0 ? [(hours, "h"), (minutes % 60, "m")] : [(minutes, "m")]
+        return parts.enumerated().filter { $0.offset == 0 || $0.element.0 > 0 }.map { "\($0.element.0)\($0.element.1)" }.joined(separator: " ")
     }
 
     var percentText: String { "\(Int((used * 100).rounded()))%" }

@@ -96,6 +96,22 @@ private actor Hits {
         #expect(try await accounts.candidates(provider: "fake", pin: "mine", folder: nil, conversation: nil).accounts.map(\.label) == ["mine"])
     }
 
+    @Test func aReadingIsALineOfHistoryOnlyWhenItSaysSomethingNew() async throws {
+        let stored = [Account(provider: "fake", subject: "a", organization: nil, label: "a", accessToken: "", refreshToken: "", expiresAt: .distantFuture)]
+        let lines = OSAllocatedUnfairLock(initialState: [Sample]())
+        let accounts = try Accounts(storage: Storage(
+            loadAccounts: { stored }, storeAccounts: { _ in }, config: { Config() }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in },
+            appendSample: { sample in lines.withLock { $0.append(sample) } }
+        ))
+        let reset = Date().addingTimeInterval(86400)
+        await accounts.answered("fake/a", reporting: [Window(name: "7d", used: 0.4, resetsAt: reset)])
+        // The same reading again, its reset a second off as providers report it.
+        await accounts.answered("fake/a", reporting: [Window(name: "7d", used: 0.4, resetsAt: reset.addingTimeInterval(1))])
+        await accounts.answered("fake/a", reporting: [Window(name: "7d", used: 0.41, resetsAt: reset)])
+        #expect(lines.withLock { $0.map { $0.windows.map(\.used) } } == [[0.4], [0.41]])
+        #expect(lines.withLock { $0.first?.account } == "a")
+    }
+
     @Test func aRemovedAccountIsForgottenAndOnlyDeleteRemoves() async throws {
         let stored = OSAllocatedUnfairLock(initialState: ["a", "b"].map { Account(provider: "fake", subject: $0, organization: nil, label: $0, accessToken: "", refreshToken: "", expiresAt: .distantFuture) })
         let storage = Storage(loadAccounts: { stored.withLock { $0 } }, storeAccounts: { next in stored.withLock { $0 = next } }, config: { Config() }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in })
