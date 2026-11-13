@@ -105,6 +105,24 @@ private let program = Bundle.main.executableURL!
         }
     }
 
+    /// A new profile has its own client folders, which are set to talk to Sluice like the others.
+    func addProfile(shownAs label: String) {
+        change { try $0.add(profileShownAs: label) }
+        if refusal.isEmpty, routed { route(true) }
+    }
+
+    /// Asks first: what the profile claimed becomes the default profile's work.
+    func removeProfile(_ profile: String) {
+        let alert = NSAlert()
+        alert.messageText = "Remove \(config.shown(profile))?"
+        alert.informativeText = "Its accounts and the work it claims go to the default profile. Its client folders are left as they are."
+        alert.addButton(withTitle: "Remove").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        change { try $0.remove(profile: profile) }
+    }
+
     /// Asks which folders. All of them are claimed, or none.
     func claimFolders(for profile: String) {
         let chooser = NSOpenPanel()
@@ -178,6 +196,7 @@ struct SluiceApp: App {
             Panel(
                 problem: running.problem.isEmpty ? running.refusal : running.problem, accounts: running.accounts, config: running.config, identities: running.identities, titles: titles, now: Date(),
                 routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, 
+                addProfile: running.addProfile, removeProfile: running.removeProfile,
                 claimFolders: running.claimFolders, claimOwner: running.claimOwner, unclaim: { running.unclaim($1, from: $0) }, quit: running.quit
             )
             .task { await running.watch() }

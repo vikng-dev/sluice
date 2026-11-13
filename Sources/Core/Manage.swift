@@ -26,6 +26,23 @@ public extension Config {
         profiles[name] = Profile()
     }
 
+    /// A new profile from what it is to be shown as. Its name is the label's plain characters, numbered
+    /// when another profile has them; the label is kept where it says more than the name.
+    @discardableResult mutating func add(profileShownAs label: String) throws -> String {
+        let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !label.isEmpty else { throw ConfigError(description: "a profile needs a name") }
+        let plain = label.lowercased().split(whereSeparator: { !($0.isASCII && ($0.isLetter || $0.isNumber)) }).joined(separator: "-")
+        let base = plain.isEmpty ? "profile" : plain
+        var name = base, count = 1
+        while names.contains(name) {
+            count += 1
+            name = "\(base)-\(count)"
+        }
+        try add(profile: name)
+        if label != name { try self.label(name, as: label) }
+        return name
+    }
+
     /// Its accounts are then listed nowhere, which makes them the default profile's.
     mutating func remove(profile name: String) throws {
         guard name != Self.defaultProfile else { throw ConfigError(description: "the default profile always exists") }

@@ -147,6 +147,19 @@ import Testing
 @Suite struct ManageTests {
     func config(_ json: String) throws -> Config { try JSONDecoder().decode(Config.self, from: Data(json.utf8)) }
 
+    @Test func aNewProfileIsNamedFromWhatItIsShownAsInCharactersAFolderCanHave() throws {
+        var config = Config()
+        #expect(try config.add(profileShownAs: " Side Projects ") == "side-projects")
+        #expect(config.shown("side-projects") == "Side Projects")
+        // A name with no plain characters still gets one, and so does the next.
+        #expect(try config.add(profileShownAs: "עבודה") == "profile")
+        #expect(try config.add(profileShownAs: "בית") == "profile-2")
+        // What is typed as a plain name needs no label.
+        #expect(try config.add(profileShownAs: "work") == "work")
+        #expect(config.profiles["work"]?.label == nil)
+        #expect(throws: ConfigError.self) { try config.add(profileShownAs: "Work") }
+    }
+
     @Test func aMovedAccountLeavesItsProfileAndJoinsTheOther() throws {
         var config = try config(#"{"profiles":{"a":{"accounts":["x","y"]},"b":{}}}"#)
         try config.move(account: "y", to: "b")

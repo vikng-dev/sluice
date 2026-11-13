@@ -18,6 +18,8 @@ struct Panel: View {
     let remove: (AccountStatus) -> Void
     let rename: (_ profile: String, _ label: String) -> Void
     let tint: (_ profile: String, Tint?) -> Void
+    let addProfile: (_ shownAs: String) -> Void
+    let removeProfile: (_ profile: String) -> Void
     /// Asks which folders, and claims them.
     let claimFolders: (_ profile: String) -> Void
     /// Asks which owner, and claims it.
@@ -96,7 +98,8 @@ struct Panel: View {
                         name: section.name, profile: config.profiles[section.name],
                         takesTheRest: section.name == Config.defaultProfile && profiles.count > 1, empty: section.pools.isEmpty, titles: titles,
                         signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) },
-                        claimFolders: { claimFolders(section.name) }, claimOwner: { claimOwner(section.name) }, unclaim: { unclaim(section.name, $0) }
+                        claimFolders: { claimFolders(section.name) }, claimOwner: { claimOwner(section.name) },
+                        remove: section.name == Config.defaultProfile ? nil : { removeProfile(section.name) }, unclaim: { unclaim(section.name, $0) }
                     )
                     .padding(.horizontal, 10)
                     VStack(alignment: .leading, spacing: 10) {
@@ -117,6 +120,7 @@ struct Panel: View {
                 .padding(.top, 4)
                 .framed("profile:\(section.name)")
             }
+            NewProfile(add: addProfile).padding(.horizontal, 10).padding(.top, 4)
             HStack {
                 Text("Sluice \(Sluice.version)").font(.caption).foregroundStyle(.tertiary)
                 Spacer()
@@ -207,6 +211,8 @@ private struct ProfileCaption: View {
     let setTint: (Tint?) -> Void
     let claimFolders: () -> Void
     let claimOwner: () -> Void
+    /// Nil for the default profile, which always exists.
+    let remove: (() -> Void)?
     let unclaim: (Claim) -> Void
     @State private var hovered = false
     @State private var picking = false
@@ -289,6 +295,10 @@ private struct ProfileCaption: View {
                     Divider()
                     Button(action: claimFolders) { Label("Add folders…", systemImage: "folder") }
                     Button(action: claimOwner) { Label { Text("Add a repository owner…") } icon: { githubMark().map(Image.init(nsImage:)) } }
+                    if let remove {
+                        Divider()
+                        Button(role: .destructive, action: remove) { Label("Remove this profile…", systemImage: "trash") }
+                    }
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -308,6 +318,43 @@ private struct ProfileCaption: View {
             picking = false
             open = false
         }
+    }
+}
+
+/// Where the next profile would be: a click types what it is to be shown as, and Return makes it. One
+/// half typed and walked away from is not made.
+private struct NewProfile: View {
+    let add: (String) -> Void
+    @State private var editing = false
+    @State private var draft = ""
+    @FocusState private var typing: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "plus").imageScale(.small).frame(width: 11, height: 11)
+            if editing {
+                TextField("Name", text: $draft)
+                    .textFieldStyle(.plain).font(.caption.weight(.semibold)).focused($typing)
+                    .onAppear { typing = true }
+                    .onSubmit {
+                        guard editing else { return }
+                        editing = false
+                        add(draft)
+                    }
+                    .onExitCommand { editing = false }
+                    .onChange(of: typing) { _, typing in if !typing { editing = false } }
+            } else {
+                Text("New profile").font(.caption.weight(.semibold))
+            }
+            Spacer()
+        }
+        .foregroundStyle(.tertiary)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            draft = ""
+            editing = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in editing = false }
     }
 }
 
