@@ -49,6 +49,14 @@ swapped requests read their own cache normally, so the id rewrite does not distu
 `5h-status`, `7d-status` or `7d_oi-status` (a per-model weekly window) reads `rejected` is a spent
 allowance; any other `429` is a rate limit. Confirm against the first real one.
 
+**How far `claude -p` bends (probed 2026-11-13, all served from the plan through Sluice).** Its
+`system` always opens with two blocks Claude Code writes itself: a billing header
+(`x-anthropic-billing-header: cc_version=…; cc_entrypoint=sdk-…`) and the line "You are a Claude
+agent, built on Anthropic's Claude Agent SDK." Everything after them is the caller's:
+`--system-prompt` replaces the whole default prompt with the caller's text; `--tools ""` with
+`--strict-mcp-config` sends no tools at all; `--mcp-config` adds the caller's own tools, named
+`mcp__<server>__<tool>`; `--json-schema` returns structured output.
+
 **Requests that are not Claude Code's (probed 2026-11-13).** A plain Messages request on a
 subscription token is not served from the plan: it is refused with a bare `429` (`rate_limit_error`,
 message `Error`, no rate-limit headers), and one carrying another app's tools is answered `400`,
