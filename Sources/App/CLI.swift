@@ -195,7 +195,7 @@ func command(_ arguments: [String]) async {
         print("Profile \(words[2]) is \(color?.rawValue ?? "no color").")
     case ("profile", let verb) where verb == "star" || verb == "unstar":
         guard words.count == 4 else { fail("usage: sluice profile \(verb!) <name> <provider>") }
-        guard providers.contains(where: { $0.name == words[3] }) else { fail("no provider \(words[3]); there is: \(providers.map(\.name).joined(separator: ", "))") }
+        guard providers.contains(where: { $0.id == words[3] }) else { fail("no provider \(words[3]); there is: \(providers.map(\.id).joined(separator: ", "))") }
         _ = change { try $0.star(words[2], words[3], verb == "star") }
         print("Profile \(words[2])'s \(words[3]) pool is \(verb == "star" ? "" : "no longer ")shown in the menu bar.")
     case ("profile", "remove"):
