@@ -140,7 +140,7 @@ public final class Relay: Sendable {
             try await finishSignIn(code: code, state: state, writer)
         case .relay(let id, let pin, let target):
             guard let provider = providers[id] else { return try await writer.send(404, text: "sluice: no provider \(id)") }
-            let conversation = provider.conversation(of: request)
+            let conversation = provider.conversation(of: request), asked = Date()
             let candidates: [Account], profile: String
             do {
                 (profile, candidates) = try await accounts.candidates(provider: id, pin: pin, folder: request.callerFolder, conversation: conversation?.id)
@@ -186,9 +186,9 @@ public final class Relay: Sendable {
                 if let conversation, !reading.refused {
                     await accounts.served(conversation.id, by: account.id, cacheLifetime: conversation.cacheLifetime)
                 }
-                let accounts = accounts
+                let accounts = accounts, folder = request.callerFolder
                 let counted = Metered(base: body, count: provider.count) { spend in
-                    Task { await accounts.spent(spend, by: account.id, for: profile) }
+                    Task { await accounts.spent(spend, by: account.id, for: profile, folder: folder, conversation: conversation?.id, since: asked) }
                 }
                 return try await writer.send(response.statusCode, headers: headers, body: counted)
             }

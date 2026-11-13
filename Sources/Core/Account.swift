@@ -298,6 +298,10 @@ actor Accounts {
     private func record(_ windows: [Window], for id: String) {
         problems[id] = nil
         for window in windows {
+            // A provider's answers and its usage endpoint round the same use a point apart, so within one
+            // window a reading a point lower than the last says nothing new.
+            if let kept = memory.usage[id]?.first(where: { $0.name == window.name }), kept.settled.resetsAt == window.settled.resetsAt,
+               window.used < kept.used, kept.used - window.used < 0.015 { continue }
             memory.usage[id, default: []].removeAll { $0.name == window.name }
             memory.usage[id, default: []].append(window)
         }
@@ -322,10 +326,14 @@ actor Accounts {
     }
 
     /// An answer that cost something is a line of history. One that cannot be written is reported and lost.
-    func spent(_ spend: Spend, by id: String, for profile: String) {
+    func spent(_ spend: Spend, by id: String, for profile: String, folder: String?, conversation: String?, since asked: Date) {
         guard spend != Spend(), let account = accounts.first(where: { $0.id == id }) else { return }
+        let now = Date()
         do {
-            try storage.appendServed(Served(at: Date(), provider: account.provider, account: account.label, profile: profile, spend: spend))
+            try storage.appendServed(Served(
+                at: now, provider: account.provider, account: account.label, profile: profile, folder: folder, conversation: conversation,
+                seconds: (now.timeIntervalSince(asked) * 10).rounded() / 10, spend: spend
+            ))
         } catch {
             FileHandle.standardError.write(Data("sluice: could not add to the history: \(error)\n".utf8))
         }

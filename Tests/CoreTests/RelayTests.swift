@@ -109,7 +109,10 @@ private actor Hits {
         // The same reading again, its reset a second off as providers report it.
         await accounts.answered("fake/a", reporting: [Window(name: "7d", used: 0.4, resetsAt: reset.addingTimeInterval(1))])
         await accounts.answered("fake/a", reporting: [Window(name: "7d", used: 0.41, resetsAt: reset)])
-        #expect(lines.withLock { $0.map { $0.windows.map(\.used) } } == [[0.4], [0.41]])
+        // The provider's two sources round a point apart; a real fall, as at a reset, is kept.
+        await accounts.answered("fake/a", reporting: [Window(name: "7d", used: 0.4, resetsAt: reset)])
+        await accounts.answered("fake/a", reporting: [Window(name: "7d", used: 0.1, resetsAt: reset)])
+        #expect(lines.withLock { $0.map { $0.windows.map(\.used) } } == [[0.4], [0.41], [0.1]])
         #expect(lines.withLock { $0.first?.account } == "a")
     }
 

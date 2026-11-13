@@ -21,13 +21,20 @@ public struct Spend: Codable, Sendable, Equatable {
     public init() {}
 }
 
-/// A request an account answered, and for whose work. Each that cost anything is a line of
-/// `requests.jsonl`. Like a reading it is numbers, and never what was asked or answered.
+/// A request an account answered: for whose work, from which folder, in which conversation, how long
+/// the answer took and what it cost. Each that cost anything is a line of `requests.jsonl`. It says
+/// where and how much, and never what was asked or answered.
 public struct Served: Codable, Sendable, Equatable {
     public var at: Date
     public var provider: String
     public var account: String
     public var profile: String
+    /// Nil when the caller's folder could not be read.
+    public var folder: String?
+    /// Nil for a request that belongs to no conversation.
+    public var conversation: String?
+    /// From the request arriving to the last of the answer.
+    public var seconds: Double
     public var spend: Spend
 }
 

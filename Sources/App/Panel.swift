@@ -310,7 +310,7 @@ private struct ProfileCaption: View {
                 Spacer()
                 let starred = profile?.starred == true
                 Button { star(!starred) } label: { Image(systemName: starred ? "star.fill" : "star").font(.caption) }
-                    .buttonStyle(.plain).foregroundStyle(starred ? AnyShapeStyle(.yellow) : AnyShapeStyle(.secondary))
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
                     .help(starred ? "Shown in the menu bar. Click to take it out" : "Show how much of its pools is used in the menu bar")
                     .opacity(starred || hovered ? 1 : 0)
                 Menu {

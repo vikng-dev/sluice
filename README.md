@@ -126,7 +126,7 @@ Within a profile's pool:
 
 Sluice signs in to each account itself and keeps the tokens in its own Keychain item. What it
 observed (windows, warm conversations) is kept in `~/Library/Application Support/Sluice`, so a
-restart forgets nothing. Two histories are kept there too, a line at a time, as numbers and never as what was asked or answered: `readings.jsonl`, an account and how full its windows were whenever that changed, and `requests.jsonl`, each answered request with its account, profile, model and the tokens it cost as the provider counted them. Usage over time is read from these. Each answer updates the account it came through, and every five minutes
+restart forgets nothing. Two histories are kept there too, a line at a time, as numbers and never as what was asked or answered: `readings.jsonl`, an account and how full its windows were whenever that changed, and `requests.jsonl`, each answered request with its account, profile, folder, conversation, model, how long it took and the tokens it cost as the provider counted them. Usage over time is read from these. Each answer updates the account it came through, and every five minutes
 Sluice asks the providers about all of them, so an idle account's numbers are current too. It never spends paid extra usage. What it knows about each provider's wire format is in
 [docs/wire.md](docs/wire.md).
 
