@@ -40,6 +40,7 @@ struct Panel: View {
     /// Which of the panel's two views is shown: the accounts, or their use over time.
     @AppStorage("showsUse") private var showsUse = false
     @State private var carried: Carried?
+    @State private var armed: String?
     /// The account let go on the place for a new profile, which is now being named for it.
     @State private var founder: AccountStatus?
     /// Where each profile, each account's row and the place for a new profile is in the panel.
@@ -131,7 +132,7 @@ struct Panel: View {
                             let profile = config.profiles[section.name]
                             // A profile that has nothing is removed from where it says so.
                             let bare = section.name != Config.defaultProfile && profile?.folders.isEmpty != false && profile?.owners.isEmpty != false
-                            NoAccounts(remove: bare ? { removeProfile(section.name) } : nil)
+                            NoAccounts(name: section.name, remove: bare ? { removeProfile(section.name) } : nil)
                         }
                         ForEach(section.pools) { pool in
                             PoolView(
@@ -193,8 +194,12 @@ struct Panel: View {
         }
         .padding(10)
         .frame(width: 392)
+        .contentShape(Rectangle())
+        .onTapGesture { armed = nil }
+        .environment(\.armed, $armed)
         .task(id: showsUse) { if showsUse { loadHistory() } }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in if showsUse { loadHistory() } }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in armed = nil }
         .onPreferenceChange(Frames.self) { frames = $0 }
         .coordinateSpace(name: Frames.space)
         // The carried account's row, lifted off the panel and following the pointer.
@@ -232,6 +237,41 @@ private struct Frames: PreferenceKey {
 private extension View {
     func framed(_ key: String) -> some View {
         background(GeometryReader { Color.clear.preference(key: Frames.self, value: [key: $0.frame(in: .named(Frames.space))]) })
+    }
+}
+
+/// The one action in the panel that waits for its check or its cross, by a name of its own. Naming
+/// another, a click on nothing, and the panel closing all let it go.
+private struct ArmedKey: EnvironmentKey {
+    static let defaultValue: Binding<String?> = .constant(nil)
+}
+
+private extension EnvironmentValues {
+    var armed: Binding<String?> {
+        get { self[ArmedKey.self] }
+        set { self[ArmedKey.self] = newValue }
+    }
+}
+
+/// The check and the cross an action shows where it is once clicked, in place of a dialog. The check does
+/// it and the cross backs out. The check is red where what it does cannot be undone.
+private struct Confirm: View {
+    var undoable = false
+    var ready = true
+    let act: () -> Void
+    let back: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Button(action: act) { mark("checkmark", ink: .white, on: undoable ? Color.accentColor : .red) }
+                .disabled(!ready).opacity(ready ? 1 : 0.4).help(undoable ? "Keep it" : "Do it. This cannot be undone")
+            Button(action: back) { mark("xmark", ink: .secondary, on: Color.primary.opacity(0.12)) }.help("Leave it")
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func mark(_ symbol: String, ink: Color, on fill: Color) -> some View {
+        Image(systemName: symbol).font(.system(size: 7.5, weight: .heavy)).foregroundStyle(ink).frame(width: 14, height: 14).background(fill, in: Circle())
     }
 }
 
@@ -286,6 +326,10 @@ private struct ProfileCaption: View {
 
     private var claims: [Claim] { (profile?.folders ?? []).map(Claim.folder) + (profile?.owners ?? []).map(Claim.owner) }
 
+    @Environment(\.armed) private var armed
+    /// What its removal goes by while it waits to be confirmed.
+    private var removal: String { "profile:\(name)" }
+
     /// The claims at a glance, beside the name: how many folders and how many owners.
     @ViewBuilder private var summary: some View {
         let folders = profile?.folders.count ?? 0, owners = profile?.owners.count ?? 0
@@ -329,7 +373,7 @@ private struct ProfileCaption: View {
                         .onExitCommand { editing = false }
                         .onChange(of: typing) { _, typing in if !typing { keep() } }
                 } else {
-                    Text(profile?.label ?? name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(profile?.label ?? name).font(.caption.weight(.semibold)).foregroundStyle(.secondary).strikethrough(armed.wrappedValue == removal)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             draft = profile?.label ?? ""
@@ -355,16 +399,22 @@ private struct ProfileCaption: View {
                     Divider()
                     Button(action: claimFolders) { Label("Add folders…", systemImage: "folder") }
                     Button(action: claimOwner) { Label { Text("Add a repository owner…") } icon: { githubMark().map(Image.init(nsImage:)) } }
-                    if let remove {
+                    if remove != nil {
                         Divider()
-                        Button(role: .destructive, action: remove) { Label("Remove this profile…", systemImage: "trash") }
+                        Button(role: .destructive) { armed.wrappedValue = removal } label: { Label("Remove this profile", systemImage: "trash") }
                     }
                 } label: {
                     Image(systemName: "plus")
                 }
                 .bare()
                 .help("Add an account, or work that belongs to this profile")
-                .opacity(hovered || empty ? 1 : 0)
+                .opacity(armed.wrappedValue == removal ? 0 : hovered || empty ? 1 : 0)
+                .overlay(alignment: .trailing) {
+                    if let remove, armed.wrappedValue == removal {
+                        Confirm { armed.wrappedValue = nil; remove() } back: { armed.wrappedValue = nil }
+                            .help("Its accounts and the work it claims go to the default profile. Its client folders are left as they are")
+                    }
+                }
             }
             if open, !claims.isEmpty {
                 Flow { ForEach(claims, id: \.self) { claim in ClaimChip(claim: claim) { unclaim(claim) } } }.font(.caption2)
@@ -384,16 +434,22 @@ private struct ProfileCaption: View {
 /// The card of a profile with no accounts. One with no claims either can be removed from here, which
 /// shows when the pointer is on it.
 private struct NoAccounts: View {
+    let name: String
     let remove: (() -> Void)?
     @State private var hovered = false
+    @Environment(\.armed) private var armed
 
     var body: some View {
         HStack {
             Text("No accounts").font(.callout).foregroundStyle(.secondary)
             Spacer()
             if let remove {
-                Button("Remove profile", action: remove).buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
-                    .opacity(hovered ? 1 : 0)
+                if armed.wrappedValue == "bare:\(name)" {
+                    Confirm { armed.wrappedValue = nil; remove() } back: { armed.wrappedValue = nil }
+                } else {
+                    Button("Remove profile") { armed.wrappedValue = "bare:\(name)" }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
+                        .opacity(hovered ? 1 : 0)
+                }
             }
         }
         .contentShape(Rectangle())
@@ -401,9 +457,9 @@ private struct NoAccounts: View {
     }
 }
 
-/// Where the next profile would be. A click types what it is to be shown as, and Return makes it; one
-/// half typed and walked away from is not made. An account let go here gets a profile of its own: the
-/// name is offered from its address, and Return makes the profile with the account in it.
+/// Where the next profile would be. A click types what it is to be shown as, and the check after the
+/// name makes it; one half typed and walked away from is not made. An account let go here gets a profile
+/// of its own: the name is offered from its address, and the check makes the profile with the account in it.
 private struct NewProfile: View {
     @Binding var founder: AccountStatus?
     /// Whether an account is being carried, and whether it is over this.
@@ -424,6 +480,14 @@ private struct NewProfile: View {
         founder = nil
     }
 
+    private var named: Bool { !draft.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    private func make() {
+        guard editing, named else { return }
+        add(draft)
+        leave()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
@@ -431,21 +495,19 @@ private struct NewProfile: View {
                 if editing {
                     TextField("Name", text: $draft)
                         .textFieldStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(.primary).focused($typing)
+                        .frame(width: 150)
                         .onAppear { typing = true }
-                        .onSubmit {
-                            guard editing else { return }
-                            add(draft)
-                            leave()
-                        }
+                        .onSubmit(make)
                         .onExitCommand(perform: leave)
                         .onChange(of: typing) { _, typing in if !typing { leave() } }
+                    Confirm(undoable: true, ready: named, act: make, back: leave)
                 } else {
                     Text(carrying ? "New profile for this account" : "New profile").font(.caption.weight(.semibold))
                 }
                 Spacer()
             }
             if editing, let founder {
-                Text("\(founder.label) moves into it. Return makes the profile, Esc does not.").font(.caption2).padding(.leading, 17)
+                Text("\(founder.label) moves into it").font(.caption2).padding(.leading, 17)
             }
         }
         .foregroundStyle(carrying ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
@@ -528,6 +590,11 @@ private struct Flow: Layout {
         for (subview, point) in zip(subviews, place(subviews, in: bounds.width).points) {
             subview.place(at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y), proposal: .unspecified)
         }
+    }
+
+    /// Its text sits where its first item's does, whatever else is on the line.
+    func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGFloat? {
+        subviews.first.map { bounds.minY + $0.dimensions(in: .unspecified)[guide] }
     }
 
     private func place(_ subviews: Subviews, in width: Double) -> (points: [CGPoint], size: CGSize) {
@@ -713,6 +780,9 @@ private struct AccountRow: View {
     /// A click on who it is or on its bar opens the row, and closes it again.
     private var opens: Bool { limits.count > 1 || !holds.isEmpty }
 
+    @Environment(\.armed) private var armed
+    private var removing: Bool { armed.wrappedValue == "remove:\(account.id)" }
+
     private func open() {
         if opens { opened.toggle() }
     }
@@ -721,15 +791,21 @@ private struct AccountRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(account.label).font(.callout).lineLimit(1).truncationMode(.middle)
+                    .strikethrough(removing).foregroundStyle(removing ? .secondary : .primary)
                 if let client {
                     Image(systemName: "person.crop.circle.fill").font(.caption).foregroundStyle(.secondary)
                         .help("\(client) itself is signed in as this account in this profile. What \(client) does outside Sluice is this account's; its requests are paid by the whole pool.")
                 }
                 if serving { Circle().fill(.green).frame(width: 6, height: 6).help("Answering requests now") }
                 if let actions {
-                    Menu { Button("Remove…", role: .destructive) { actions.remove(account) } } label: { Image(systemName: "ellipsis") }
-                        .bare()
-                        .opacity(hovered ? 1 : 0)
+                    if removing {
+                        Confirm { armed.wrappedValue = nil; actions.remove(account) } back: { armed.wrappedValue = nil }
+                            .help("Sluice forgets this sign-in and stops using the account. Signing it in again needs the browser")
+                    } else {
+                        Button { armed.wrappedValue = "remove:\(account.id)" } label: { Image(systemName: "trash").font(.caption) }
+                            .buttonStyle(.plain).foregroundStyle(.secondary).help("Remove this account")
+                            .opacity(hovered ? 1 : 0)
+                    }
                 }
                 Spacer(minLength: 4)
                 if let plan = account.plan {
@@ -765,17 +841,24 @@ private struct AccountRow: View {
                     Text("Resets").font(.caption).foregroundStyle(.secondary).frame(width: 44, alignment: .leading)
                     Flow {
                         ForEach(holds, id: \.reset.id) { reset, count in
-                            Button { actions?.useReset(reset, account) } label: {
-                                HStack(spacing: 4) {
-                                    Text(reset.kind(for: account) + (count > 1 ? " ×\(count)" : "")).fontWeight(.semibold)
-                                    if let expires = reset.expiresAt { Text(SluiceCore.Window(name: "", used: 0, resetsAt: expires).leftText(now: now)).opacity(0.7) }
+                            let using = "reset:\(account.id):\(reset.id)"
+                            HStack(spacing: 4) {
+                                Button { armed.wrappedValue = using } label: {
+                                    HStack(spacing: 4) {
+                                        Text(reset.kind(for: account) + (count > 1 ? " ×\(count)" : "")).fontWeight(.semibold)
+                                        if let expires = reset.expiresAt { Text(SluiceCore.Window(name: "", used: 0, resetsAt: expires).leftText(now: now)).opacity(0.7) }
+                                    }
+                                    .font(.caption2.monospacedDigit()).lineLimit(1).fixedSize()
+                                    .foregroundStyle(reset.usable ? Color.green : Color.secondary)
+                                    .padding(.horizontal, 7).padding(.vertical, 2).background(reset.usable ? Color.green.opacity(0.16) : Color.primary.opacity(0.06), in: Capsule())
+                                    .overlay { if armed.wrappedValue == using { Capsule().strokeBorder(Color.red.opacity(0.8), lineWidth: 1) } }
                                 }
-                                .font(.caption2.monospacedDigit()).lineLimit(1).fixedSize()
-                                .foregroundStyle(reset.usable ? Color.green : Color.secondary)
-                                .padding(.horizontal, 7).padding(.vertical, 2).background(reset.usable ? Color.green.opacity(0.16) : Color.primary.opacity(0.06), in: Capsule())
+                                .buttonStyle(.plain).disabled(!reset.usable || actions == nil)
+                                .help(reset.usable ? "Use it: what it refills is whole again at once. It lapses in the time shown" : "Its provider would not take it now")
+                                if armed.wrappedValue == using {
+                                    Confirm { armed.wrappedValue = nil; actions?.useReset(reset, account) } back: { armed.wrappedValue = nil }
+                                }
                             }
-                            .buttonStyle(.plain).disabled(!reset.usable)
-                            .help(reset.usable ? "Use it: what it refills is whole again at once. It lapses in the time shown" : "Its provider would not take it now")
                         }
                     }
                 }
