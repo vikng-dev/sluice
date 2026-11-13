@@ -1,23 +1,40 @@
 import SluiceCore
 import SwiftUI
 
-/// What opens from the menu bar: every profile's accounts and how much of each allowance is used.
+/// What opens from the menu bar: each profile's pools, one per provider, and how much of each is used.
 struct Panel: View {
     let state: String
     let problem: String
     let accounts: [AccountStatus]
+    /// Every profile's name, the default first.
+    let profiles: [String]
     /// By profile: the account each client is itself signed in as there, nil where it is signed out.
-    let signIns: [String: [(client: String, account: String?)]]
+    let signIns: [String: [(provider: String, client: String, account: String?)]]
+    /// What each provider's subscriptions are sold as, by its id.
+    let titles: [String: String]
     let now: Date
     /// Whether the clients are set up to talk to Sluice, and how to change that.
     let routed: Bool
     let route: (Bool) -> Void
     let quit: () -> Void
 
-    private var profiles: [(name: String, accounts: [AccountStatus])] {
-        Dictionary(grouping: accounts, by: \.profile)
-            .map { (name: $0.key, accounts: $0.value.sorted { ($0.provider, $0.label) < ($1.provider, $1.label) }) }
-            .sorted { ($0.name == Config.defaultProfile ? "" : $0.name) < ($1.name == Config.defaultProfile ? "" : $1.name) }
+    /// A provider nobody has an account at has no pool anywhere, and a profile with no pool is not shown.
+    private var sections: [(name: String, pools: [Pool])] {
+        let providers = Set(accounts.map(\.provider)).sorted()
+        return profiles.map { profile in
+            (name: profile, pools: providers.compactMap { provider -> Pool? in
+                let all = accounts.filter { $0.provider == provider }
+                let own = all.filter { $0.profile == profile }.sorted { $0.label < $1.label }
+                let serving = own.isEmpty ? all.filter { $0.profile == Config.defaultProfile } : own
+                guard !serving.isEmpty else { return nil }
+                let signIn = signIns[profile]?.first { $0.provider == provider }
+                return Pool(
+                    provider: provider, title: titles[provider] ?? provider, accounts: own, client: signIn?.client ?? provider, identity: signIn?.account,
+                    identityIsAnothers: signIn?.account.map { identity in all.contains { $0.label == identity } && !serving.contains { $0.label == identity } } ?? false
+                )
+            })
+        }
+        .filter { !$0.pools.isEmpty }
     }
 
     var body: some View {
@@ -38,16 +55,13 @@ struct Panel: View {
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
             if accounts.isEmpty { Text("No accounts yet. Run: sluice login").font(.callout).foregroundStyle(.secondary) }
-            ForEach(profiles, id: \.name) { profile in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(profile.name.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
-                        Spacer()
-                        ForEach(signIns[profile.name] ?? [], id: \.client) {
-                            SignIn(client: $0.client, account: $0.account, pooled: profile.accounts.map(\.label))
-                        }
+            ForEach(sections, id: \.name) { section in
+                VStack(alignment: .leading, spacing: 10) {
+                    // One profile needs no name.
+                    if sections.count > 1 {
+                        Text(section.name.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
                     }
-                    ForEach(profile.accounts, id: \.id) { AccountRow(account: $0, now: now) }
+                    ForEach(section.pools) { PoolView(pool: $0, now: now) }
                 }
             }
             Divider()
@@ -71,66 +85,128 @@ struct Panel: View {
     }
 }
 
-private extension AccountStatus {
-    var id: String { provider + ":" + label }
+/// One profile's accounts at one provider: the accounts a request from that profile's work may be paid by.
+private struct Pool: Identifiable {
+    let provider: String
+    let title: String
+    /// Empty when the profile has none of its own here, and the default profile's serve it.
+    let accounts: [AccountStatus]
+    /// The provider's client, and the account it is itself signed in as in the profile.
+    let client: String
+    let identity: String?
+    /// The identity is an account that pays for another profile's work.
+    let identityIsAnothers: Bool
+    var id: String { provider }
 }
 
-/// Whom a client is itself signed in as in a profile, which is not a setting of Sluice's but the client's own.
-private struct SignIn: View {
-    let client: String
-    let account: String?
-    /// The accounts whose usage the profile shares.
-    let pooled: [String]
+private extension AccountStatus {
+    var id: String { provider + ":" + label }
+    /// The window that resets last, read as how much of the account is left; an earlier one as its pace.
+    var budget: SluiceCore.Window? { windows.last }
+    var weight: Double { Double(plan?.multiple ?? 1) }
+}
 
-    private static let owns = "What it does outside Sluice (connectors, the browser, published pages) is this account's. The accounts below only share their usage."
+private struct PoolView: View {
+    let pool: Pool
+    let now: Date
+
+    /// When the pool next gets allowance back.
+    private var nextReset: SluiceCore.Window? {
+        pool.accounts.compactMap(\.budget).filter { $0.used > 0 }.min { $0.resetsAt < $1.resetsAt }
+    }
 
     var body: some View {
-        if let account {
-            let shared = pooled.contains(account)
-            Text("signed in as \(account)").font(.caption2).foregroundStyle(shared ? .secondary : Color.orange).lineLimit(1).truncationMode(.middle)
-                .help("\(client) is signed in as \(account) in this profile. \(Self.owns)" + (shared ? "" : " Its own usage is not shared here: it is not one of this profile's accounts."))
-        } else {
-            Text("\(client) is not signed in").font(.caption2).foregroundStyle(.orange)
-                .help("Run \(client) in this profile and use /login. Connectors, the browser and published pages need its own sign-in.")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                if let mark = providerMark(pool.provider) {
+                    Image(nsImage: mark).resizable().frame(width: 13, height: 13).foregroundStyle(.secondary)
+                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
+                }
+                Text(pool.title).font(.callout.weight(.semibold))
+                Spacer()
+                if pool.accounts.isEmpty {
+                    Text("paid by default's accounts").font(.caption).foregroundStyle(.secondary)
+                } else if let nextReset {
+                    Text("next reset \(nextReset.resetText)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                if !pool.accounts.isEmpty {
+                    PoolBar(accounts: pool.accounts)
+                    ForEach(pool.accounts, id: \.id) { AccountRow(account: $0, client: pool.identity == $0.label ? pool.client : nil, now: now) }
+                }
+                if let identity = pool.identity, !pool.accounts.contains(where: { $0.label == identity }) {
+                    Label("\(pool.client) is signed in as \(identity)", systemImage: "person.crop.circle")
+                        .font(.caption).foregroundStyle(pool.identityIsAnothers ? Color.orange : .secondary).lineLimit(1).truncationMode(.middle)
+                        .help(pool.identityIsAnothers
+                            ? "What \(pool.client) does outside Sluice here is this account's, and this account pays for another profile's work."
+                            : "What \(pool.client) does outside Sluice here is this account's. It is not one of the accounts above.")
+                }
+            }
+            .padding(.leading, 20)
         }
+    }
+}
+
+/// The pool as one bar: a part for each account, as wide as its plan is large and as full as its budget is used.
+private struct PoolBar: View {
+    let accounts: [AccountStatus]
+
+    var body: some View {
+        GeometryReader { space in
+            let room: Double = space.size.width - Double(accounts.count - 1) * 2
+            let total: Double = accounts.map(\.weight).reduce(0, +)
+            HStack(spacing: 2) {
+                ForEach(accounts, id: \.id) { account in
+                    let width: Double = max(4, room * account.weight / total)
+                    Bar(used: account.budget?.used ?? 0)
+                        .frame(width: width)
+                        .opacity(account.problem == nil ? 1 : 0.45)
+                        .help(account.label)
+                }
+            }
+        }
+        .frame(height: 5)
     }
 }
 
 private struct AccountRow: View {
     let account: AccountStatus
+    /// The client that is itself signed in as this account in the profile, if one is.
+    let client: String?
     let now: Date
 
     /// It answered a request within the last minute.
     private var serving: Bool { account.lastAnswered.map { now.timeIntervalSince($0) < 60 } ?? false }
 
+    /// What keeps the account from serving, or soon will: a spent window, or a pace window nearly spent.
+    private var note: (text: String, color: Color)? {
+        if let spent = account.windows.last(where: { $0.used >= 1 }) { return ("\(spent.name) limit reached, back \(spent.resetText)", .red) }
+        if let near = account.windows.dropLast().first(where: { $0.used >= 0.85 }) { return ("\(near.name) limit at \(near.percentText), resets \(near.resetText)", .orange) }
+        return account.windows.isEmpty && account.problem == nil ? ("No usage reported", .secondary) : nil
+    }
+
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 7) {
-            if let mark = providerMark(account.provider) {
-                Image(nsImage: mark).resizable().frame(width: 13, height: 13).foregroundStyle(.secondary)
-                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
-                    .help(account.provider).accessibilityLabel(account.provider)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(account.label).font(.callout).lineLimit(1).truncationMode(.middle)
+                if let client {
+                    Image(systemName: "person.crop.circle.fill").font(.caption).foregroundStyle(.secondary)
+                        .help("\(client) itself is signed in as this account in this profile. What \(client) does outside Sluice is this account's; its requests are paid by the whole pool.")
+                }
+                if serving { Circle().fill(.green).frame(width: 6, height: 6).help("Answering requests now") }
+                Spacer(minLength: 4)
+                if let plan = account.plan { Badge(text: plan.tier, symbol: plan.business ? "briefcase.fill" : nil).help(plan.name) }
+                if let budget = account.budget {
+                    Text(budget.percentText).font(.caption.monospacedDigit()).frame(width: 34, alignment: .trailing)
+                        .foregroundStyle(budget.used >= 1 ? Color.red : budget.used >= 0.85 ? .orange : .primary)
+                }
             }
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(account.label).font(.callout).lineLimit(1).truncationMode(.middle)
-                    if serving { Circle().fill(.green).frame(width: 6, height: 6).help("Answering requests now") }
-                    Spacer()
-                    if providerMark(account.provider) == nil { Text(account.provider).font(.caption).foregroundStyle(.secondary) }
-                    if let plan = account.plan { Badge(text: plan.tier, symbol: plan.business ? "briefcase.fill" : nil).help(plan.name) }
-                }
-                if let problem = account.problem {
-                    Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-                } else if account.windows.isEmpty {
-                    Text("No usage reported").font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(account.windows, id: \.name) { window in
-                    HStack(spacing: 8) {
-                        Text(window.name).font(.caption.monospaced()).foregroundStyle(.secondary).frame(width: 20, alignment: .leading)
-                        Bar(used: window.used)
-                        Text(window.percentText).font(.caption.monospacedDigit()).frame(width: 34, alignment: .trailing)
-                        Text(window.resetText).font(.caption).foregroundStyle(.secondary).frame(width: 74, alignment: .trailing)
-                    }
-                }
+            .help(account.windows.map { "\($0.name) \($0.percentText), resets \($0.resetText)" }.joined(separator: "\n"))
+            if let problem = account.problem {
+                Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            } else if let note {
+                Text(note.text).font(.caption).foregroundStyle(note.color)
             }
         }
     }

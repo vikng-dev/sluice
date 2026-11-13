@@ -4,6 +4,7 @@ import SluiceCore
 /// Claude subscriptions, as Claude Code reaches them. Wire facts: docs/wire.md.
 public struct Claude: Provider {
     public let id = "claude"
+    public let name = "Claude"
     public let client = "claude"
     public let upstream = URL(string: "https://api.anthropic.com")!
     public let redirect: URL? = nil

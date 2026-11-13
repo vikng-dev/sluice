@@ -99,6 +99,11 @@ keys"), codex-cli 0.160.0. The same entry also works as `-c` overrides placed la
 `authorization` and `chatgpt-account-id`; the relay adds both and the turn is served. With
 `requires_openai_auth = true` it sends its own two headers and also `GET …/models`.
 
+**Its own sign-in and folder (checked 2026-11-13).** `CODEX_HOME` names the folder that holds its
+config, sessions, memories and sign-in; in a new one `codex login status` says "Not logged in". A
+ChatGPT sign-in kept in a file is `auth.json` there, and its `tokens.id_token` carries the `email`
+claim; a sign-in by API key has no tokens.
+
 **Sign-in.** The Codex CLI's OAuth client (`app_EMoamEEZ73f0CkXaXp7hrann`) redirects only to
 `http://localhost:1455/auth/callback`. The token endpoint takes form posts; the access token is a
 JWT whose `exp` is its expiry and whose `https://api.openai.com/auth` claim holds

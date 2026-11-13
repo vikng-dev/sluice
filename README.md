@@ -4,9 +4,10 @@ A macOS menu bar app that pools your AI coding subscriptions behind one local ad
 Claude Code and Codex talk to Sluice on localhost; Sluice decides which of your accounts answers.
 
 **Status: early.** Claude Code and Codex are relayed across pools of accounts. The menu bar panel shows
-each profile's accounts with the tier each is on, how much of each allowance is used and when it
-resets, marks the
-account answering now, and says when the clients are not going through Sluice. `sluice status` prints the same.
+each profile's pools, one per provider: a bar with a part for every account, as wide as its plan is
+large and as full as its week is used, and under it each account's plan, the share of its week used,
+which one a client is itself signed in as, and which is answering now. It also says when the clients
+are not going through Sluice. `sluice status` prints the same accounts.
 
 ## Use it
 
@@ -26,10 +27,10 @@ sluice setup
 That does two things, and `sluice setup --undo` reverses both:
 
 - It writes Sluice's address into each client's own settings (`settings.json` in every profile's
-  Claude Code folder, `~/.codex/config.toml`) and touches nothing else in them.
-- It links a stand-in for `claude` into `~/.config/sluice/bin` and puts that folder first on your
+  Claude Code folder, `config.toml` in every profile's Codex folder) and touches nothing else in them.
+- It links stand-ins for `claude` and `codex` into `~/.config/sluice/bin` and puts that folder first on your
   PATH with one marked line in your shell's startup file. The stand-in opens the profile the
-  current folder belongs to, then runs the real Claude Code.
+  current folder belongs to, then runs the real client.
 
 **Stop routing** in the panel's menu, and quitting, turn only the address off: the clients go back to
 their providers, and work still opens in its own profile.
@@ -50,8 +51,8 @@ included. A client that calls Anthropic's API itself is not; see [docs/wire.md](
 
 ## Profiles
 
-A profile is a separate setup: its own Claude Code folder (history, memory, sign-in, connectors) and
-its own pool of accounts. Work belongs to one profile, and a profile's requests are only ever served
+A profile is a separate setup: its own Claude Code and Codex folders (history, memory, sign-in,
+connectors) and its own pool of accounts at each provider. Work belongs to one profile, and a profile's requests are only ever served
 by that profile's accounts. They are changed with the `sluice` command, and a change holds at once:
 
 ```sh
@@ -85,13 +86,15 @@ edited by hand too:
 - **`folders`** and **`owners`** say what work is the profile's: anything under a folder, the deepest
   claim winning; failing that, any git repository whose origin remote has that owner. Everything
   else is `default`'s.
-- `default` keeps Claude Code's usual folder, `~/.claude`; another profile keeps `~/.claude-<name>`.
+- `default` keeps the clients' usual folders, `~/.claude` and `~/.codex`; another profile keeps
+  `~/.claude-<name>` and `~/.codex-<name>`, which start empty.
 - A provider a profile has no account at is served by `default`'s accounts.
 
-Claude Code is itself signed in as one account in each profile, with `/login` there. That account owns
-what Claude Code does outside the relay: connectors, the browser, published pages. Sluice does not set
-it; it reads it from Claude Code and shows it beside the profile's name, in the panel and in
-`sluice profile list`. A profile's other accounts only share their usage.
+A client is itself signed in as one account in each profile (`/login` in Claude Code, `codex login`).
+That account owns what the client does outside the relay: connectors, the browser, published pages.
+It has nothing to do with paying: every request is paid by the pool, and Codex runs signed out. Sluice
+does not set it; it reads it from the client and marks that account in the panel and in
+`sluice profile list`.
 
 The relay finds the profile itself: it asks macOS which program sent a request and which folder that
 program runs in. So a client started some way that skips the stand-in still has its requests served

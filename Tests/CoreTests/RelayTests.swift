@@ -9,6 +9,7 @@ private struct Fake: Provider {
     let upstream: URL
     let redirect: URL? = nil
     let client = "fake"
+    let name = "Fake"
     func home(of profile: String) -> (variable: String, folder: URL)? { nil }
     func signedIn(in profile: String) throws -> String? { nil }
     func route(_ on: Bool, profiles: [String]) {}

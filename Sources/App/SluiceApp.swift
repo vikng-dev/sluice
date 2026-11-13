@@ -15,7 +15,8 @@ let keeperLabel = "dev.vikng.sluice.relay"
     var problem = handoverProblem
     var routed = false
     var accounts: [AccountStatus] = []
-    var signIns: [String: [(client: String, account: String?)]] = [:]
+    var profiles: [String] = []
+    var signIns: [String: [(provider: String, client: String, account: String?)]] = [:]
     private var sluice: (server: Server, relay: Relay)?
 
     init() {
@@ -62,10 +63,13 @@ let keeperLabel = "dev.vikng.sluice.relay"
     /// Keeps the accounts current for the panel; reading them is local and asks no provider.
     func watch() async {
         while !Task.isCancelled {
+            // `sluice setup` and a new profile change this from outside the app.
+            check()
             if let relay = sluice?.relay {
                 do {
                     accounts = try await relay.status()
-                    signIns = try Dictionary(uniqueKeysWithValues: Set(accounts.map(\.profile)).map { ($0, try SluiceProviders.signIns(in: $0)) })
+                    profiles = try Storage.live.config().names
+                    signIns = try Dictionary(uniqueKeysWithValues: profiles.map { ($0, try SluiceProviders.signIns(in: $0)) })
                 } catch {
                     problem = "\(error)"
                 }
@@ -99,7 +103,8 @@ struct SluiceApp: App {
     var body: some Scene {
         MenuBarExtra {
             Panel(
-                state: running.state, problem: running.problem, accounts: running.accounts, signIns: running.signIns, now: Date(),
+                state: running.state, problem: running.problem, accounts: running.accounts, profiles: running.profiles, signIns: running.signIns,
+                titles: Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0.name) }), now: Date(),
                 routed: running.routed, route: running.route, quit: running.quit
             )
             .task { await running.watch() }

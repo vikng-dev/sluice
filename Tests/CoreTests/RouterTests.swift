@@ -117,6 +117,12 @@ import Testing
         #expect(throws: UserFileError.self) { try Claude.account(inState: Data(#"{"oauthAccount":{"#.utf8), path: "") }
     }
 
+    @Test func codexsOwnSignInIsTheEmailInItsTokenAndAnAPIKeyIsNobody() throws {
+        let claims = Data(#"{"email":"me@home.example"}"#.utf8).base64EncodedString().replacingOccurrences(of: "=", with: "")
+        #expect(try Codex.account(inSignIn: Data(#"{"auth_mode":"chatgpt","tokens":{"id_token":"h.\#(claims).s"}}"#.utf8), path: "") == "me@home.example")
+        #expect(try Codex.account(inSignIn: Data(#"{"OPENAI_API_KEY":"k","tokens":null}"#.utf8), path: "") == nil)
+    }
+
     @Test func codexWindowsAreNamedByTheirLength() throws {
         let body = #"{"plan_type":"prolite","rate_limit":{"primary_window":{"used_percent":3,"limit_window_seconds":604800,"reset_at":1795144120},"secondary_window":null}}"#
         let usage = try Codex.usage(in: Data(body.utf8))

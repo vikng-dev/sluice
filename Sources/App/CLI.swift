@@ -55,7 +55,7 @@ private struct ProfileReport: Encodable {
 }
 
 /// A client's own sign-in in a profile, in words.
-private func said(_ signIn: (client: String, account: String?)) -> String {
+private func said(_ signIn: (provider: String, client: String, account: String?)) -> String {
     signIn.account.map { "\(signIn.client) signed in as \($0)" } ?? "\(signIn.client) not signed in"
 }
 
@@ -146,13 +146,13 @@ func command(_ arguments: [String]) async {
             } else {
                 guard let me = Bundle.main.executableURL?.resolvingSymlinksInPath() else { fail("could not find this program's own path") }
                 try setUp(program: me)
-                print("Claude Code and Codex now talk to Sluice. In a new shell, claude opens the profile its folder belongs to. Undo with: sluice setup --undo")
+                print("Claude Code and Codex now talk to Sluice. In a new shell, claude and codex open the profile their folder belongs to. Undo with: sluice setup --undo")
             }
         } catch {
             fail("\(error)")
         }
     case ("profile", "list"):
-        let reports: [(report: ProfileReport, signIns: [(client: String, account: String?)])]
+        let reports: [(report: ProfileReport, signIns: [(provider: String, client: String, account: String?)])]
         do {
             let config = try Storage.live.config()
             reports = try config.names.map { name in

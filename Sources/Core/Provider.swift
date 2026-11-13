@@ -5,6 +5,8 @@ import Foundation
 public protocol Provider: Sendable {
     /// The first path segment of the provider's local address, e.g. `claude`.
     var id: String { get }
+    /// What its subscriptions are sold as, e.g. `Claude`.
+    var name: String { get }
     /// The command that runs this provider's client, e.g. `claude`.
     var client: String { get }
     /// Where the client keeps a profile, and the variable that tells it so; nil when it keeps one folder for all.

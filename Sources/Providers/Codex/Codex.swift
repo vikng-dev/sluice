@@ -4,6 +4,7 @@ import SluiceCore
 /// ChatGPT subscriptions, as the Codex CLI reaches them. Wire facts: docs/wire.md.
 public struct Codex: Provider {
     public let id = "codex"
+    public let name = "ChatGPT"
     public let client = "codex"
     public let upstream = URL(string: "https://chatgpt.com/backend-api/codex")!
     /// The Codex CLI's OAuth client accepts only this address.
@@ -16,27 +17,46 @@ public struct Codex: Provider {
 
     public init() {}
 
-    /// Codex's user config, in the folder Codex itself would use. A project's own config cannot name a provider.
-    private var settings: UserFile {
-        let folder = ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex")
-        return UserFile(folder.appending(path: "config.toml"))
+    /// Codex keeps its sessions, memories, tool sign-ins and its own sign-in in one folder, so each profile has its own.
+    public func home(of profile: String) -> (variable: String, folder: URL)? {
+        ("CODEX_HOME", FileManager.default.homeDirectoryForCurrentUser.appending(path: profile == Config.defaultProfile ? ".codex" : ".codex-\(profile)"))
     }
 
-    /// Codex needs no sign-in of its own and keeps nothing a profile must separate, so it has one folder.
-    public func home(of profile: String) -> (variable: String, folder: URL)? { nil }
-    public func signedIn(in profile: String) throws -> String? { nil }
+    public func signedIn(in profile: String) throws -> String? {
+        let file = UserFile(home(of: profile)!.folder.appending(path: "auth.json"))
+        guard let data = try file.read() else { return nil }
+        return try Self.account(inSignIn: data, path: file.path)
+    }
+
+    /// A sign-in by API key holds no tokens and is nobody's subscription.
+    static func account(inSignIn data: Data, path: String) throws -> String? {
+        guard let all = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw UserFileError(path: path, reason: "not the JSON object Codex's sign-in should be")
+        }
+        return ((all["tokens"] as? [String: Any])?["id_token"] as? String).flatMap(claims)?["email"] as? String
+    }
+
+    /// Codex's user config in a profile. A project's own config cannot name a provider.
+    private func settings(of profile: String) -> UserFile {
+        UserFile(home(of: profile)!.folder.appending(path: "config.toml"))
+    }
 
     public func route(_ on: Bool, profiles: [String]) throws {
-        if !on, try settings.read() == nil { return }
-        try settings.write(Data(Self.pointed(try text(), at: on ? address : nil, path: settings.path).utf8))
+        for settings in profiles.map(settings) {
+            // Nothing to take out of a file that is not there.
+            if !on, try settings.read() == nil { continue }
+            try settings.write(Data(Self.pointed(try Self.text(settings), at: on ? address : nil, path: settings.path).utf8))
+        }
     }
 
     public func isRouted(profiles: [String]) throws -> Bool {
-        let lines = try text().split(separator: "\n")
-        return lines.contains(Substring(Self.choice)) && lines.contains(Substring(Self.entry(address)[2]))
+        try profiles.map(settings).allSatisfy {
+            let lines = try Self.text($0).split(separator: "\n")
+            return lines.contains(Substring(Self.choice)) && lines.contains(Substring(Self.entry(address)[2]))
+        }
     }
 
-    private func text() throws -> String {
+    private static func text(_ settings: UserFile) throws -> String {
         String(decoding: try settings.read() ?? Data(), as: UTF8.self)
     }
 
