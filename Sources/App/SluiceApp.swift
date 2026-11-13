@@ -207,8 +207,8 @@ private let program = Bundle.main.executableURL!
         change { try $0.star(profile, provider, starred) }
     }
 
-    func autoReset(_ profile: String, _ provider: String, _ on: Bool) {
-        change { try $0.autoReset(profile, provider, on) }
+    func autoReset(_ on: Bool) {
+        change { $0.useResets(on) }
     }
 
     /// What the menu bar shows in place of the glyph: the starred pools by profile, each profile's colour

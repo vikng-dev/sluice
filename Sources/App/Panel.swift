@@ -21,8 +21,8 @@ struct Panel: View {
     let star: (_ profile: String, _ provider: String, Bool) -> Void
     /// Asks first, and spends the reset.
     let useReset: (Reset, AccountStatus) -> Void
-    /// Whether a pool uses the resets it holds without being asked.
-    let autoReset: (_ profile: String, _ provider: String, Bool) -> Void
+    /// Whether pools use the resets they hold without being asked.
+    let autoReset: (Bool) -> Void
     /// Makes a profile, and when it is made for an account, with that account in it.
     let addProfile: (_ shownAs: String, _ founder: AccountStatus?) -> Void
     let removeProfile: (_ profile: String) -> Void
@@ -137,7 +137,7 @@ struct Panel: View {
                             PoolView(
                                 pool: pool, now: now, carried: carried?.account.id, actions: actions,
                                 starred: config.profiles[section.name]?.starred.contains(pool.provider) == true, star: { star(section.name, pool.provider, $0) },
-                                autoResets: config.profiles[section.name]?.autoResets.contains(pool.provider) == true, autoReset: { autoReset(section.name, pool.provider, $0) }
+                                autoResets: config.autoResets
                             )
                         }
                     }
@@ -164,6 +164,11 @@ struct Panel: View {
                     NewProfile(founder: $founder, carrying: carried != nil, targeted: overNew) { addProfile($0, founder) }
                         .framed("new")
                 }
+                Button { autoReset(!config.autoResets) } label: {
+                    Image(systemName: config.autoResets ? "bolt.fill" : "bolt").font(.caption).frame(width: 24, height: 16).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(config.autoResets ? Color.green : .secondary)
+                .help(config.autoResets ? "Resets are used for you: when a pool is out, or one is about to lapse. Click to use them only yourself" : "Use resets for me: when a pool is out, or one is about to lapse")
                 HStack(spacing: 2) {
                     ForEach([(false, "rectangle.stack", "Accounts"), (true, "chart.xyaxis.line", "Use over time")], id: \.0) { use, symbol, name in
                         Button { showsUse = use } label: {
@@ -595,65 +600,15 @@ private struct PoolView: View {
     let actions: RowActions
     let starred: Bool
     let star: (Bool) -> Void
+    /// Sluice uses resets without being asked.
     let autoResets: Bool
-    let autoReset: (Bool) -> Void
 
     @State private var hovered = false
-    @State private var showsResets = false
+    /// The accounts whose rows are open.
+    @State private var opened: Set<String> = []
 
-    /// The resets the pool's accounts hold, the soonest to lapse first. An account's resets that differ
-    /// only in name are one line, which uses the first of them.
-    private var held: [(id: String, reset: Reset, count: Int, account: AccountStatus)] {
-        pool.accounts.flatMap { account in
-            var lines: [(id: String, reset: Reset, count: Int, account: AccountStatus)] = []
-            for reset in account.resets {
-                if let same = lines.firstIndex(where: { ($0.reset.refills, $0.reset.givesBack, $0.reset.expiresAt, $0.reset.usable) == (reset.refills, reset.givesBack, reset.expiresAt, reset.usable) }) {
-                    lines[same].count += reset.left
-                } else {
-                    lines.append(("\(account.id):\(reset.id)", reset, reset.left, account))
-                }
-            }
-            return lines
-        }
-        .sorted { ($0.reset.expiresAt ?? .distantFuture) < ($1.reset.expiresAt ?? .distantFuture) }
-    }
-
-    /// The resets by the account that holds them, each one a chip that uses it, and whether Sluice uses
-    /// them by itself.
-    private var resets: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(pool.accounts.filter { account in held.contains { $0.account.id == account.id } }, id: \.id) { account in
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(account.label).font(.caption).lineLimit(1).truncationMode(.middle).frame(width: 118, alignment: .leading)
-                    Flow {
-                        ForEach(held.filter { $0.account.id == account.id }, id: \.id) { line in
-                            Button { actions.useReset(line.reset, account) } label: {
-                                HStack(spacing: 4) {
-                                    Text(line.reset.kind(for: account) + (line.count > 1 ? " ×\(line.count)" : "")).fontWeight(.semibold)
-                                    if let expires = line.reset.expiresAt { Text(SluiceCore.Window(name: "", used: 0, resetsAt: expires).leftText(now: now)).opacity(0.7) }
-                                }
-                                .font(.caption2.monospacedDigit()).lineLimit(1).fixedSize()
-                                .foregroundStyle(line.reset.usable ? Color.green : Color.secondary)
-                                .padding(.horizontal, 7).padding(.vertical, 2).background(line.reset.usable ? Color.green.opacity(0.16) : Color.primary.opacity(0.06), in: Capsule())
-                            }
-                            .buttonStyle(.plain).disabled(!line.reset.usable)
-                            .help(line.reset.usable ? "Use it: what it refills is whole again at once. Lapses in the time shown" : "Its provider would not take it now")
-                        }
-                    }
-                }
-            }
-            Divider()
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Use them for me").font(.caption)
-                    Text("when the pool is out, or one is about to lapse").font(.caption2).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 4)
-                Toggle("Use them for me", isOn: Binding(get: { autoResets }, set: autoReset)).labelsHidden().toggleStyle(.switch).controlSize(.mini)
-            }
-        }
-        .padding(8).background(Color.green.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
-    }
+    /// The accounts that hold a reset.
+    private var holders: Set<String> { Set(pool.accounts.filter { !$0.resets.isEmpty }.map(\.id)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -669,22 +624,24 @@ private struct PoolView: View {
                     .opacity(hovered ? 1 : 0)
                 Spacer()
                 Share(used: pool.accounts.used, worded: true)
-                if !held.isEmpty {
-                    Button { showsResets.toggle() } label: {
-                        Label("\(held.map(\.count).reduce(0, +))", systemImage: autoResets ? "arrow.triangle.2.circlepath" : "arrow.counterclockwise").labelStyle(Tight())
+                if !holders.isEmpty {
+                    // A reset is its account's, so the count opens the rows that hold one, and closes them again.
+                    Button { if holders.isSubset(of: opened) { opened.subtract(holders) } else { opened.formUnion(holders) } } label: {
+                        Label("\(pool.accounts.flatMap(\.resets).map(\.left).reduce(0, +))", systemImage: autoResets ? "bolt.fill" : "arrow.counterclockwise").labelStyle(Tight())
                             .font(.caption2.weight(.semibold)).foregroundStyle(.green)
-                            .padding(.horizontal, 6).padding(.vertical, 2).background(Color.green.opacity(showsResets ? 0.3 : 0.16), in: Capsule())
+                            .padding(.horizontal, 6).padding(.vertical, 2).background(Color.green.opacity(0.16), in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    .help(autoResets ? "Resets its accounts hold. Sluice uses them when the pool is out, or one is about to lapse" : "Resets its accounts hold")
+                    .help("Resets its accounts hold" + (autoResets ? ", used for you when the pool is out or one is about to lapse" : "") + ". Click for the accounts that hold them")
                 }
             }
             .contentShape(Rectangle())
             .onHover { hovered = $0 }
-            if showsResets, !held.isEmpty { resets }
             VStack(alignment: .leading, spacing: 9) {
                 ForEach(pool.accounts, id: \.id) { account in
-                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, actions: actions)
+                    AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, actions: actions, opened: opened.contains(account.id)) {
+                        opened.formSymmetricDifference([account.id])
+                    }
                         .opacity(carried == account.id ? 0.3 : 1)
                         .framed("row:\(account.id)")
                 }
@@ -723,8 +680,20 @@ private struct AccountRow: View {
     /// It answered a request within the last minute.
     private var serving: Bool { account.lastAnswered.map { now.timeIntervalSince($0) < 60 } ?? false }
 
-    /// Open, the row lists every limit the account has.
-    @State private var opened = false
+    /// Open, the row lists every limit the account has and the resets it holds.
+    var opened = false
+    var toggle: () -> Void = {}
+
+    /// The resets it holds. Those that differ only in name are one, which uses the first of them.
+    private var holds: [(reset: Reset, count: Int)] {
+        account.resets.reduce(into: []) { lines, reset in
+            if let same = lines.firstIndex(where: { ($0.reset.refills, $0.reset.givesBack, $0.reset.expiresAt, $0.reset.usable) == (reset.refills, reset.givesBack, reset.expiresAt, reset.usable) }) {
+                lines[same].count += reset.left
+            } else {
+                lines.append((reset, reset.left))
+            }
+        }
+    }
 
     /// The week, then the shorter windows, then the limits on a part of its use.
     private var limits: [SluiceCore.Window] { account.windows.reversed() + account.scoped }
@@ -763,8 +732,10 @@ private struct AccountRow: View {
     }
 
     /// A click on who it is or on its bar opens the row, and closes it again.
+    private var opens: Bool { limits.count > 1 || !holds.isEmpty }
+
     private func open() {
-        if limits.count > 1 { opened.toggle() }
+        if opens { toggle() }
     }
 
     private var details: some View {
@@ -804,11 +775,32 @@ private struct AccountRow: View {
                         }
                         .contentShape(Rectangle())
                         .onTapGesture(perform: open)
-                        .help(limits.count == 1 ? "" : opened ? "Click for the one that stops it next" : "Click for every limit it has")
+                        .help(!opens ? "" : opened ? "Click for the one that stops it next" : "Click for every limit it has")
                         Share(used: limit.used).frame(width: Self.share, alignment: .trailing)
                         Clock(window: limit, now: now).frame(width: Self.clock, alignment: .trailing)
                     }
                 }
+            }
+            if opened, !holds.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Resets").font(.caption).foregroundStyle(.secondary).frame(width: 44, alignment: .leading)
+                    Flow {
+                        ForEach(holds, id: \.reset.id) { reset, count in
+                            Button { actions?.useReset(reset, account) } label: {
+                                HStack(spacing: 4) {
+                                    Text(reset.kind(for: account) + (count > 1 ? " ×\(count)" : "")).fontWeight(.semibold)
+                                    if let expires = reset.expiresAt { Text(SluiceCore.Window(name: "", used: 0, resetsAt: expires).leftText(now: now)).opacity(0.7) }
+                                }
+                                .font(.caption2.monospacedDigit()).lineLimit(1).fixedSize()
+                                .foregroundStyle(reset.usable ? Color.green : Color.secondary)
+                                .padding(.horizontal, 7).padding(.vertical, 2).background(reset.usable ? Color.green.opacity(0.16) : Color.primary.opacity(0.06), in: Capsule())
+                            }
+                            .buttonStyle(.plain).disabled(!reset.usable)
+                            .help(reset.usable ? "Use it: what it refills is whole again at once. It lapses in the time shown" : "Its provider would not take it now")
+                        }
+                    }
+                }
+                .padding(.top, 2)
             }
         }
     }

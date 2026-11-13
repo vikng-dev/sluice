@@ -100,10 +100,10 @@ private actor Hits {
     }
 
     /// The first reset is refused in so many words, which costs nothing, so the second is used.
-    @Test func aPoolThatIsOutAnswersAfterOneOfItsResetsIsUsedOnlyWhereItsProfileSaidSo() async throws {
+    @Test func aPoolThatIsOutAnswersAfterOneOfItsResetsIsUsedOnlyWhenToldToUseThem() async throws {
         let account = Account(provider: "fake", subject: "a", organization: nil, label: "a", accessToken: "", refreshToken: "", expiresAt: .distantFuture)
         var asked = Config()
-        try asked.autoReset(Config.defaultProfile, "fake", true)
+        asked.useResets(true)
         for (config, port, expected) in [(asked, UInt16(47620), ["a", "reset r", "a"]), (Config(), 47622, ["a"])] {
             let hits = Hits()
             let provider = try Server(port: port) { request, writer in

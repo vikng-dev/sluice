@@ -118,8 +118,6 @@ public struct Profile: Codable, Sendable, Equatable {
     public internal(set) var color: Tint?
     /// The providers whose pool here is shown in the menu bar.
     public internal(set) var starred: [String] = []
-    /// The providers whose pool here uses the resets it holds without being asked.
-    public internal(set) var autoResets: [String] = []
     /// The accounts that serve its relayed requests.
     public internal(set) var accounts: [String] = []
     /// Folders (`~` allowed) whose work belongs to this profile.
@@ -134,7 +132,6 @@ public struct Profile: Codable, Sendable, Equatable {
         label = try keys.decodeIfPresent(String.self, forKey: .label)
         color = try keys.decodeIfPresent(Tint.self, forKey: .color)
         starred = try keys.decodeIfPresent([String].self, forKey: .starred) ?? []
-        autoResets = try keys.decodeIfPresent([String].self, forKey: .autoResets) ?? []
         accounts = try keys.decodeIfPresent([String].self, forKey: .accounts) ?? []
         folders = try keys.decodeIfPresent([String].self, forKey: .folders) ?? []
         owners = try keys.decodeIfPresent([String].self, forKey: .owners) ?? []
@@ -146,29 +143,39 @@ public struct Profile: Codable, Sendable, Equatable {
         try keys.encodeIfPresent(label, forKey: .label)
         try keys.encodeIfPresent(color, forKey: .color)
         if !starred.isEmpty { try keys.encode(starred, forKey: .starred) }
-        if !autoResets.isEmpty { try keys.encode(autoResets, forKey: .autoResets) }
         if !accounts.isEmpty { try keys.encode(accounts, forKey: .accounts) }
         if !folders.isEmpty { try keys.encode(folders, forKey: .folders) }
         if !owners.isEmpty { try keys.encode(owners, forKey: .owners) }
     }
 
-    private enum CodingKeys: CodingKey { case label, color, starred, autoResets, accounts, folders, owners }
+    private enum CodingKeys: CodingKey { case label, color, starred, accounts, folders, owners }
 }
 
-/// `config.json`, written by hand or by the `sluice` command: the profiles. Work no profile claims, and
+/// `config.json`, written by hand or by the `sluice` command: the profiles, and what holds for them all. Work no profile claims, and
 /// an account no profile lists, belong to the profile named `default`, which exists whether or not it
 /// is written down.
 public struct Config: Codable, Sendable, Equatable {
     public static let defaultProfile = "default"
     public internal(set) var profiles: [String: Profile] = [:]
+    /// A pool uses the resets its accounts hold without being asked: when it is out, and before one lapses.
+    public internal(set) var autoResets = false
 
     public init() {}
 
     public init(from decoder: any Decoder) throws {
-        profiles = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent([String: Profile].self, forKey: .profiles) ?? [:]
+        let keys = try decoder.container(keyedBy: CodingKeys.self)
+        profiles = try keys.decodeIfPresent([String: Profile].self, forKey: .profiles) ?? [:]
+        autoResets = try keys.decodeIfPresent(Bool.self, forKey: .autoResets) ?? false
     }
 
-    private enum CodingKeys: CodingKey { case profiles }
+    /// Only what is set is written, as a person would write it.
+    public func encode(to encoder: any Encoder) throws {
+        var keys = encoder.container(keyedBy: CodingKeys.self)
+        try keys.encode(profiles, forKey: .profiles)
+        if autoResets { try keys.encode(true, forKey: .autoResets) }
+    }
+
+    private enum CodingKeys: CodingKey { case profiles, autoResets }
 
     /// Every profile's name, the default first.
     public var names: [String] { [Self.defaultProfile] + profiles.keys.filter { $0 != Self.defaultProfile }.sorted() }
@@ -289,14 +296,13 @@ actor Accounts {
 
     /// The profile the caller's folder belongs to, and the accounts to try, in order: its pool at the
     /// provider, or of that pool the one account a pin in the address names. With them, the accounts a
-    /// reset may be used on when all of those refuse: none, unless the profile said so for this pool.
+    /// reset may be used on when all of those refuse: none, unless the user said to use resets for them.
     func candidates(provider: String, pin: String?, folder: String?, conversation: String?) throws -> (profile: String, accounts: [Account], refillable: [Account]) {
         let config = try storage.config()
         let profile = folder.map { config.profile(for: $0) } ?? Config.defaultProfile
         var pool = config.pool(accounts.filter { $0.provider == provider }, for: profile)
         if let pin { pool = pool.filter { $0.label == pin } }
-        let refillable = config.profiles[profile]?.autoResets.contains(provider) == true ? pool : []
-        return (profile, pin == nil ? memory.router.order(pool, conversation: conversation, usage: memory.usage, now: Date()) : pool, refillable)
+        return (profile, pin == nil ? memory.router.order(pool, conversation: conversation, usage: memory.usage, now: Date()) : pool, config.autoResets ? pool : [])
     }
 
     var all: [Account] { accounts }
@@ -358,10 +364,10 @@ actor Accounts {
         return (account, pick.reset)
     }
 
-    /// A reset of the account's to use before it lapses. None unless its profile said so for its pool,
-    /// and none while the profiles cannot be read.
+    /// A reset of the account's to use before it lapses. None unless the user said to use resets for them,
+    /// and none while the config cannot be read.
     func lapsing(_ account: Account, now: Date = Date()) -> Reset? {
-        guard let config = try? storage.config(), config.profiles[config.profile(ofAccount: account.label)]?.autoResets.contains(account.provider) == true else { return nil }
+        guard (try? storage.config())?.autoResets == true else { return nil }
         return Refill.lapsing(holder(account, now: now), now: now)
     }
 
