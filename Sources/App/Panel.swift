@@ -18,19 +18,18 @@ struct Panel: View {
     let route: (Bool) -> Void
     let quit: () -> Void
 
-    /// A provider nobody has an account at has no pool anywhere, and a profile with no pool is not shown.
+    /// A profile has a pool where it has accounts, and a profile with no pool is not shown.
     private var sections: [(name: String, pools: [Pool])] {
         let providers = Set(accounts.map(\.provider)).sorted()
         return profiles.map { profile in
             (name: profile, pools: providers.compactMap { provider -> Pool? in
                 let all = accounts.filter { $0.provider == provider }
                 let own = all.filter { $0.profile == profile }.sorted { $0.label < $1.label }
-                let serving = own.isEmpty ? all.filter { $0.profile == Config.defaultProfile } : own
-                guard !serving.isEmpty else { return nil }
+                guard !own.isEmpty else { return nil }
                 let signIn = signIns[profile]?.first { $0.provider == provider }
                 return Pool(
                     provider: provider, title: titles[provider] ?? provider, accounts: own, client: signIn?.client ?? provider, identity: signIn?.account,
-                    identityIsAnothers: signIn?.account.map { identity in all.contains { $0.label == identity } && !serving.contains { $0.label == identity } } ?? false
+                    identityIsAnothers: signIn?.account.map { identity in all.contains { $0.label == identity } && !own.contains { $0.label == identity } } ?? false
                 )
             })
         }
@@ -89,7 +88,6 @@ struct Panel: View {
 private struct Pool: Identifiable {
     let provider: String
     let title: String
-    /// Empty when the profile has none of its own here, and the default profile's serve it.
     let accounts: [AccountStatus]
     /// The provider's client, and the account it is itself signed in as in the profile.
     let client: String
@@ -124,17 +122,13 @@ private struct PoolView: View {
                 }
                 Text(pool.title).font(.callout.weight(.semibold))
                 Spacer()
-                if pool.accounts.isEmpty {
-                    Text("paid by default's accounts").font(.caption).foregroundStyle(.secondary)
-                } else if let nextReset {
+                if let nextReset {
                     Text("next reset \(nextReset.resetText)").font(.caption).foregroundStyle(.secondary)
                 }
             }
             VStack(alignment: .leading, spacing: 6) {
-                if !pool.accounts.isEmpty {
-                    PoolBar(accounts: pool.accounts)
-                    ForEach(pool.accounts, id: \.id) { AccountRow(account: $0, client: pool.identity == $0.label ? pool.client : nil, now: now) }
-                }
+                PoolBar(accounts: pool.accounts)
+                ForEach(pool.accounts, id: \.id) { AccountRow(account: $0, client: pool.identity == $0.label ? pool.client : nil, now: now) }
                 if let identity = pool.identity, !pool.accounts.contains(where: { $0.label == identity }) {
                     Label("\(pool.client) is signed in as \(identity)", systemImage: "person.crop.circle")
                         .font(.caption).foregroundStyle(pool.identityIsAnothers ? Color.orange : .secondary).lineLimit(1).truncationMode(.middle)

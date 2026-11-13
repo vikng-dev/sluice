@@ -59,6 +59,15 @@ private actor Hits {
         withExtendedLifetime((provider, server)) {}
     }
 
+    @Test func aPinDoesNotReachIntoAnotherProfile() async throws {
+        let config = try JSONDecoder().decode(Config.self, from: Data(#"{"profiles":{"work":{"accounts":["w"]}}}"#.utf8))
+        let stored = ["w", "mine"].map { Account(provider: "fake", subject: $0, organization: nil, label: $0, accessToken: "", refreshToken: "", expiresAt: .distantFuture) }
+        let accounts = try Accounts(storage: Storage(loadAccounts: { stored }, storeAccounts: { _ in }, config: { config }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in }))
+        // A caller with no folder is doing the default profile's work.
+        #expect(try await accounts.candidates(provider: "fake", pin: "w", folder: nil, conversation: nil).accounts.isEmpty)
+        #expect(try await accounts.candidates(provider: "fake", pin: "mine", folder: nil, conversation: nil).accounts.map(\.label) == ["mine"])
+    }
+
     @Test func aRemovedAccountIsForgottenAndOnlyDeleteRemoves() async throws {
         let stored = OSAllocatedUnfairLock(initialState: ["a", "b"].map { Account(provider: "fake", subject: $0, organization: nil, label: $0, accessToken: "", refreshToken: "", expiresAt: .distantFuture) })
         let storage = Storage(loadAccounts: { stored.withLock { $0 } }, storeAccounts: { next in stored.withLock { $0 = next } }, config: { Config() }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in })

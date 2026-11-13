@@ -88,9 +88,9 @@ import Testing
         #expect(config.pool(all, for: "default").map(\.label) == ["mine"])
     }
 
-    @Test func aProviderAProfileHasNoAccountAtIsServedByTheDefault() throws {
+    @Test func aProfileWithNoAccountAtAProviderIsNotServedByAnothers() throws {
         let config = try config(#"{"profiles":{"work":{"accounts":["w"]}}}"#)
-        #expect(config.pool([account("mine", at: "other")], for: "work").map(\.label) == ["mine"])
+        #expect(config.pool([account("mine", at: "other")], for: "work").isEmpty)
     }
 
     @Test func theOwnerIsReadFromEitherRemoteForm() {

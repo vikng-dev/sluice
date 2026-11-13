@@ -157,11 +157,10 @@ public struct Config: Codable, Sendable, Equatable {
         profiles.first { $0.value.accounts.contains(label) }?.key ?? Self.defaultProfile
     }
 
-    /// The accounts that may serve `profile`: its own and no other's. A provider the profile has no
-    /// account at is served by the default profile's, so one sign-in there is enough for every profile.
+    /// The accounts that may pay for `profile`'s work: its own and no other's, so a profile with none
+    /// at a provider cannot use that provider.
     func pool(_ accounts: [Account], for profile: String) -> [Account] {
-        let own = accounts.filter { self.profile(ofAccount: $0.label) == profile }
-        return own.isEmpty ? accounts.filter { self.profile(ofAccount: $0.label) == Self.defaultProfile } : own
+        accounts.filter { self.profile(ofAccount: $0.label) == profile }
     }
 }
 
@@ -235,14 +234,14 @@ actor Accounts {
         accounts = next
     }
 
-    /// The accounts to try, in order: the one account a pin in the address names, or else the pool of
-    /// the profile the caller's folder belongs to.
-    func candidates(provider: String, pin: String?, folder: String?, conversation: String?) throws -> [Account] {
-        let own = accounts.filter { $0.provider == provider }
-        if let pin { return own.filter { $0.label == pin } }
+    /// The profile the caller's folder belongs to, and the accounts to try, in order: its pool at the
+    /// provider, or of that pool the one account a pin in the address names.
+    func candidates(provider: String, pin: String?, folder: String?, conversation: String?) throws -> (profile: String, accounts: [Account]) {
         let config = try storage.config()
-        let pool = config.pool(own, for: folder.map { config.profile(for: $0) } ?? Config.defaultProfile)
-        return memory.router.order(pool, conversation: conversation, usage: memory.usage, now: Date())
+        let profile = folder.map { config.profile(for: $0) } ?? Config.defaultProfile
+        let pool = config.pool(accounts.filter { $0.provider == provider }, for: profile)
+        if let pin { return (profile, pool.filter { $0.label == pin }) }
+        return (profile, memory.router.order(pool, conversation: conversation, usage: memory.usage, now: Date()))
     }
 
     var all: [Account] { accounts }

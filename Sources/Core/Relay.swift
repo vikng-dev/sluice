@@ -139,14 +139,17 @@ public final class Relay: Sendable {
         case .relay(let id, let pin, let target):
             guard let provider = providers[id] else { return try await writer.send(404, text: "sluice: no provider \(id)") }
             let conversation = provider.conversation(of: request)
-            let candidates: [Account]
+            let candidates: [Account], profile: String
             do {
-                candidates = try await accounts.candidates(provider: id, pin: pin, folder: request.callerFolder, conversation: conversation?.id)
+                (profile, candidates) = try await accounts.candidates(provider: id, pin: pin, folder: request.callerFolder, conversation: conversation?.id)
             } catch {
                 return try await writer.send(500, text: "sluice: \(error)")
             }
+            // Work whose folder is not known is taken for the default profile's.
+            if request.callerFolder == nil { Self.logger.notice("a \(id, privacy: .public) request came from a program whose folder could not be read") }
             guard !candidates.isEmpty else {
-                return try await writer.send(503, text: "sluice: no \(id) account can serve this\(request.callerFolder.map { " from \($0)" } ?? ""); run: sluice status")
+                let wanted = pin.map { "the \(provider.name) account \($0)" } ?? "a \(provider.name) account"
+                return try await writer.send(403, text: "sluice: profile \(profile) does not have \(wanted), and work is only paid by its own profile's accounts. See: sluice status")
             }
             for (index, candidate) in candidates.enumerated() {
                 let isLast = index == candidates.count - 1

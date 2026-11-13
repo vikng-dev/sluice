@@ -88,7 +88,8 @@ edited by hand too:
   else is `default`'s.
 - `default` keeps the clients' usual folders, `~/.claude` and `~/.codex`; another profile keeps
   `~/.claude-<name>` and `~/.codex-<name>`, which start empty.
-- A provider a profile has no account at is served by `default`'s accounts.
+- A profile's work is paid only by its own accounts. At a provider where it has none, its requests
+  are refused; no other profile's account serves them, pinned or not.
 
 A client is itself signed in as one account in each profile (`/login` in Claude Code, `codex login`).
 That account owns what the client does outside the relay: connectors, the browser, published pages.
