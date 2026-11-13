@@ -1,3 +1,4 @@
+import os
 import ServiceManagement
 import SluiceCore
 import SluiceProviders
@@ -22,7 +23,10 @@ let keeperLabel = "dev.vikng.sluice.relay"
                 server = try await startSluice()
                 relay = "Relaying on port \(Sluice.port)"
             } catch {
-                relay = "Not relaying: \(error.localizedDescription)"
+                relay = "Not relaying: \(error)"
+                Logger(subsystem: "dev.vikng.sluice", category: "app").error("not relaying: \(String(describing: error), privacy: .public)")
+                // Clients may be set to talk to Sluice, so a kept copy does not sit there deaf: launchd starts it again.
+                if ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == keeperLabel { exit(1) }
             }
         }
     }

@@ -21,6 +21,7 @@ public struct Codex: Provider {
     }
 
     public func route(_ on: Bool) throws {
+        if !on, try settings.read() == nil { return }
         try settings.write(Data(Self.pointed(try text(), at: on ? address : nil, path: settings.path).utf8))
     }
 

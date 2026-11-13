@@ -24,6 +24,8 @@ public struct Claude: Provider {
     }
 
     public func route(_ on: Bool) throws {
+        // Nothing to take out of a file that is not there.
+        if !on, try settings.read() == nil { return }
         try settings.write(Self.pointed(try settings.read(), at: on ? address : nil, path: settings.path))
     }
 
