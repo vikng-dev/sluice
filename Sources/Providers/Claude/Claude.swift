@@ -5,6 +5,7 @@ import SluiceCore
 public struct Claude: Provider {
     public let id = "claude"
     public let upstream = URL(string: "https://api.anthropic.com")!
+    public let redirect: URL? = nil
 
     /// Claude Code's public OAuth client, and the scopes it asks for.
     static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"

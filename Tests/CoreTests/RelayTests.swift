@@ -6,6 +6,7 @@ import Testing
 private struct Fake: Provider {
     let id = "fake"
     let upstream: URL
+    let redirect: URL? = nil
     func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL { upstream }
     func signIn(code: String, state: String, redirectURI: String, verifier: String) async throws -> Account { throw ProviderError.signedOut }
     func refresh(_ account: Account) async throws -> Account { account }
@@ -33,7 +34,7 @@ private actor Hits {
         }
         try await provider.start()
         let accounts = ["a", "b"].map { Account(provider: "fake", subject: $0, organization: nil, label: $0, accessToken: "", refreshToken: "", expiresAt: .distantFuture) }
-        let relay = try Relay(providers: [Fake(upstream: URL(string: "http://127.0.0.1:47611")!)], vault: Vault(load: { accounts }, store: { _ in }), port: 47612) { Config() }
+        let relay = try Relay(providers: [Fake(upstream: URL(string: "http://127.0.0.1:47611")!)], storage: Storage(loadAccounts: { accounts }, storeAccounts: { _ in }, config: { Config() }, loadMemory: { Memory() }, storeMemory: { _ in }), port: 47612)
         let server = try Server(port: 47612) { try await relay.handle($0, $1) }
         try await server.start()
 

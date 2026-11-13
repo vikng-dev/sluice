@@ -82,3 +82,13 @@ import Testing
         #expect(reading(200, ["7d-reset": "9000", "7d-utilization": "0"]).windows.map(\.name) == ["7d"])
     }
 }
+
+@Suite struct CodexReadingTests {
+    @Test func windowsAreNamedByTheirLengthAndAnUnusedSlotIsSkipped() {
+        let reading = Codex().reading(status: 200, headers: [
+            "x-codex-primary-used-percent": "42", "x-codex-primary-window-minutes": "10080", "x-codex-primary-reset-at": "9000",
+            "x-codex-secondary-used-percent": "0", "x-codex-secondary-window-minutes": "0", "x-codex-secondary-reset-at": "",
+        ])
+        #expect(reading == Reading(windows: [Window(name: "7d", used: 0.42, resetsAt: Date(timeIntervalSince1970: 9000))], refused: false))
+    }
+}

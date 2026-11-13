@@ -41,6 +41,10 @@ public final class Server: Sendable {
         }
     }
 
+    public func stop() {
+        listener.cancel()
+    }
+
     private static func serve(_ peer: Peer, _ handler: Handler) async {
         var buffer = Data()
         do {

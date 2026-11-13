@@ -7,6 +7,9 @@ public protocol Provider: Sendable {
     var id: String { get }
     /// Where a relayed request's path is appended.
     var upstream: URL { get }
+    /// Where the provider's sign-in must land when its OAuth client is registered to one fixed address;
+    /// nil when any local address will do. Sluice listens there for the length of a sign-in.
+    var redirect: URL? { get }
     func authorizeURL(redirectURI: String, state: String, challenge: String) -> URL
     func signIn(code: String, state: String, redirectURI: String, verifier: String) async throws -> Account
     /// The account with renewed tokens.
@@ -50,13 +53,20 @@ public enum ProviderError: Error, CustomStringConvertible {
 public enum HTTPCall {
     private static let session = URLSession(configuration: .ephemeral)
 
-    public static func send(_ method: String, _ url: URL, headers: [String: String] = [:], json: [String: String]? = nil) async throws -> (status: Int, body: Data) {
+    public static func send(_ method: String, _ url: URL, headers: [String: String] = [:], json: [String: String]? = nil, form: [String: String]? = nil) async throws -> (status: Int, body: Data) {
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.httpMethod = method
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         if let json {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(json)
+        }
+        if let form {
+            var fields = URLComponents()
+            fields.queryItems = form.map(URLQueryItem.init)
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            // `percentEncodedQuery` leaves "+" alone, which a form reads as a space.
+            request.httpBody = Data((fields.percentEncodedQuery ?? "").replacingOccurrences(of: "+", with: "%2B").utf8)
         }
         let (body, response) = try await session.data(for: request)
         return ((response as! HTTPURLResponse).statusCode, body)
@@ -66,6 +76,16 @@ public enum HTTPCall {
 /// Sign-ins in flight: the PKCE verifier each browser round trip must come back to.
 actor SignIns {
     private var pending: [String: (provider: String, verifier: String)] = [:]
+    /// Listeners on providers' fixed redirect ports, by port, open while a sign-in there is in flight.
+    private var listeners: [Int: Server] = [:]
+
+    func listen(on port: Int, _ start: () async throws -> Server) async throws {
+        if listeners[port] == nil { listeners[port] = try await start() }
+    }
+
+    func close(port: Int) {
+        listeners.removeValue(forKey: port)?.stop()
+    }
 
     func begin(provider: String) -> (state: String, challenge: String) {
         let verifier = Data((0..<32).map { _ in UInt8.random(in: .min ... .max) }).base64URL

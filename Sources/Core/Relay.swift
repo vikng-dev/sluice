@@ -51,13 +51,9 @@ public final class Relay: Sendable {
     private let upstream = Upstream()
     private let redirectURI: String
 
-    public convenience init(providers: [any Provider], vault: Vault, port: UInt16) throws {
-        try self.init(providers: providers, vault: vault, port: port, config: Config.load)
-    }
-
-    init(providers: [any Provider], vault: Vault, port: UInt16, config: @escaping @Sendable () throws -> Config) throws {
+    public init(providers: [any Provider], storage: Storage, port: UInt16) throws {
         self.providers = Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0) })
-        accounts = try Accounts(vault: vault, config: config)
+        accounts = try Accounts(storage: storage)
         redirectURI = "http://localhost:\(port)/callback"
     }
 
@@ -69,23 +65,31 @@ public final class Relay: Sendable {
             do {
                 try await writer.send(200, contentType: "application/json", text: String(decoding: JSONEncoder().encode(accounts.status()), as: UTF8.self))
             } catch {
-                try await writer.send(500, text: "sluice: \(Config.url.path) could not be read: \(error)")
+                try await writer.send(500, text: "sluice: \(error)")
             }
         case .login(let id):
             guard let provider = providers[id] else { return try await writer.send(404, text: "sluice: no provider \(id)") }
+            if let port = provider.redirect?.port {
+                do {
+                    try await signIns.listen(on: port) {
+                        let server = try Server(port: UInt16(port)) { [self] request, writer in
+                            let items = URLComponents(string: request.target)?.queryItems ?? []
+                            func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
+                            guard let code = value("code"), let state = value("state") else { return try await writer.send(400, text: "sluice: the sign-in came back without a code") }
+                            try await finishSignIn(code: code, state: state, writer)
+                            await signIns.close(port: port)
+                        }
+                        try await server.start()
+                        return server
+                    }
+                } catch {
+                    return try await writer.send(500, text: "sluice: \(id) signs in on port \(port), which is in use: \(error.localizedDescription)")
+                }
+            }
             let (state, challenge) = await signIns.begin(provider: id)
-            try await writer.redirect(to: provider.authorizeURL(redirectURI: redirectURI, state: state, challenge: challenge))
+            try await writer.redirect(to: provider.authorizeURL(redirectURI: provider.redirect?.absoluteString ?? redirectURI, state: state, challenge: challenge))
         case .callback(let code, let state):
-            guard let pending = await signIns.finish(state: state), let provider = providers[pending.provider] else {
-                return try await writer.send(400, text: "sluice: this sign-in was not started here, or was already used")
-            }
-            do {
-                let account = try await provider.signIn(code: code, state: state, redirectURI: redirectURI, verifier: pending.verifier)
-                try await accounts.save(account)
-                try await writer.send(200, text: "Signed in to \(provider.id) as \(account.label). You can close this tab.")
-            } catch {
-                try await writer.send(502, text: "sluice: sign-in failed: \(error)")
-            }
+            try await finishSignIn(code: code, state: state, writer)
         case .relay(let id, let pin, let target):
             guard let provider = providers[id] else { return try await writer.send(404, text: "sluice: no provider \(id)") }
             let conversation = provider.conversation(of: request)
@@ -93,7 +97,7 @@ public final class Relay: Sendable {
             do {
                 candidates = try await accounts.candidates(provider: id, pin: pin, conversation: conversation?.id)
             } catch {
-                return try await writer.send(500, text: "sluice: \(Config.url.path) could not be read: \(error)")
+                return try await writer.send(500, text: "sluice: \(error)")
             }
             guard !candidates.isEmpty else {
                 return try await writer.send(503, text: "sluice: \(pin.map { "no \(id) account is named \($0)" } ?? "no \(id) account is in the pool"); run: sluice status")
@@ -133,6 +137,19 @@ public final class Relay: Sendable {
                 }
                 return try await writer.send(response.statusCode, headers: headers, body: body)
             }
+        }
+    }
+
+    private func finishSignIn(code: String, state: String, _ writer: ResponseWriter) async throws {
+        guard let pending = await signIns.finish(state: state), let provider = providers[pending.provider] else {
+            return try await writer.send(400, text: "sluice: this sign-in was not started here, or was already used")
+        }
+        do {
+            let account = try await provider.signIn(code: code, state: state, redirectURI: provider.redirect?.absoluteString ?? redirectURI, verifier: pending.verifier)
+            try await accounts.save(account)
+            try await writer.send(200, text: "Signed in to \(provider.id) as \(account.label). You can close this tab.")
+        } catch {
+            try await writer.send(502, text: "sluice: sign-in failed: \(error)")
         }
     }
 

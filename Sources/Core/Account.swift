@@ -31,49 +31,74 @@ public struct VaultError: Error, CustomStringConvertible {
     public var description: String { "Keychain: \(SecCopyErrorMessageString(status, nil) as String? ?? "status \(status)")" }
 }
 
-/// Where accounts are kept.
-public struct Vault: Sendable {
-    let load: @Sendable () throws -> [Account]
-    let store: @Sendable ([Account]) throws -> Void
+/// Where Sluice keeps things between runs.
+public struct Storage: Sendable {
+    var loadAccounts: @Sendable () throws -> [Account]
+    var storeAccounts: @Sendable ([Account]) throws -> Void
+    /// Read at each placement, so an edit takes effect at once.
+    var config: @Sendable () throws -> Config
+    var loadMemory: @Sendable () throws -> Memory
+    var storeMemory: @Sendable (Memory) throws -> Void
 
-    /// Every account in one Keychain item, so a save is atomic.
-    public static let keychain: Vault = {
+    /// Accounts in one Keychain item, so a save is atomic; the hand-edited config in `~/.config/sluice`;
+    /// what was observed in Application Support.
+    public static let live: Storage = {
         let query: [String: any Sendable] = [
             kSecClass as String: kSecClassGenericPassword as String,
             kSecAttrService as String: "dev.vikng.sluice",
             kSecAttrAccount as String: "accounts",
         ]
-        return Vault(
-            load: {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let configFile = home.appending(path: ".config/sluice/config.json")
+        let memoryFile = home.appending(path: "Library/Application Support/Sluice/memory.json")
+        return Storage(
+            loadAccounts: {
                 var item: CFTypeRef?
                 let status = SecItemCopyMatching(query.merging([kSecReturnData as String: true]) { $1 } as CFDictionary, &item)
                 if status == errSecItemNotFound { return [] }
                 guard status == errSecSuccess, let data = item as? Data else { throw VaultError(status: status) }
                 return try JSONDecoder().decode([Account].self, from: data)
             },
-            store: { accounts in
+            storeAccounts: { accounts in
                 let data = try JSONEncoder().encode(accounts)
                 var status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
                 if status == errSecItemNotFound {
                     status = SecItemAdd(query.merging([kSecValueData as String: data]) { $1 } as CFDictionary, nil)
                 }
                 guard status == errSecSuccess else { throw VaultError(status: status) }
+            },
+            config: { try readJSON(configFile, or: Config()) },
+            loadMemory: { try readJSON(memoryFile, or: Memory()) },
+            storeMemory: { memory in
+                try FileManager.default.createDirectory(at: memoryFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try JSONEncoder().encode(memory).write(to: memoryFile, options: .atomic)
             }
         )
     }()
 }
 
-/// `~/.config/sluice/config.json`, read at each placement so an edit takes effect at once.
+/// A JSON file's contents, or `empty` when the file does not exist yet.
+private func readJSON<T: Decodable>(_ file: URL, or empty: T) throws -> T {
+    guard FileManager.default.fileExists(atPath: file.path) else { return empty }
+    do { return try JSONDecoder().decode(T.self, from: Data(contentsOf: file)) } catch { throw UnreadableFile(path: file.path, cause: error) }
+}
+
+struct UnreadableFile: Error, CustomStringConvertible {
+    let path: String
+    let cause: any Error
+    var description: String { "\(path) could not be read: \(cause)" }
+}
+
+/// `config.json`, written by hand.
 struct Config: Decodable {
     /// Labels of accounts that only a pin reaches.
     var pinOnly: Set<String> = []
+}
 
-    static let url = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/sluice/config.json")
-
-    @Sendable static func load() throws -> Config {
-        guard FileManager.default.fileExists(atPath: url.path) else { return Config() }
-        return try JSONDecoder().decode(Config.self, from: Data(contentsOf: url))
-    }
+/// What Sluice observed and would otherwise relearn after a restart.
+struct Memory: Codable {
+    var usage: [String: [Window]] = [:]
+    var router = Router()
 }
 
 public struct AccountStatus: Codable, Sendable {
@@ -86,25 +111,23 @@ public struct AccountStatus: Codable, Sendable {
 
 /// The accounts, what each provider last said about them, and where conversations are held.
 actor Accounts {
-    private let vault: Vault
+    private let storage: Storage
     private var accounts: [Account]
     private var refreshing: [String: Task<Account, any Error>] = [:]
-    private var usage: [String: [Window]] = [:]
-    private var router = Router()
-    private let config: @Sendable () throws -> Config
+    private var memory: Memory
 
-    init(vault: Vault, config: @escaping @Sendable () throws -> Config) throws {
-        self.vault = vault
-        self.config = config
-        accounts = try vault.load()
+    init(storage: Storage) throws {
+        self.storage = storage
+        accounts = try storage.loadAccounts()
+        memory = try storage.loadMemory()
     }
 
     func status() throws -> [AccountStatus] {
-        let config = try config(), now = Date()
+        let config = try storage.config(), now = Date()
         return accounts.map {
             AccountStatus(
                 provider: $0.provider, label: $0.label, pinOnly: config.pinOnly.contains($0.label),
-                windows: (usage[$0.id] ?? []).filter { $0.resetsAt > now }, warmConversations: router.warmConversations(on: $0.id, now: now)
+                windows: (memory.usage[$0.id] ?? []).filter { $0.resetsAt > now }, warmConversations: memory.router.warmConversations(on: $0.id, now: now)
             )
         }
     }
@@ -112,26 +135,35 @@ actor Accounts {
     func save(_ account: Account) throws {
         var next = accounts
         if let index = next.firstIndex(where: { $0.id == account.id }) { next[index] = account } else { next.append(account) }
-        try vault.store(next)
+        try storage.storeAccounts(next)
         accounts = next
     }
 
     func candidates(provider: String, pin: String?, conversation: String?) throws -> [Account] {
-        router.order(
-            accounts.filter { $0.provider == provider }, pin: pin, pinOnly: try config().pinOnly,
-            conversation: conversation, usage: usage, now: Date()
+        memory.router.order(
+            accounts.filter { $0.provider == provider }, pin: pin, pinOnly: try storage.config().pinOnly,
+            conversation: conversation, usage: memory.usage, now: Date()
         )
     }
 
     func record(_ windows: [Window], for id: String) {
         for window in windows {
-            usage[id, default: []].removeAll { $0.name == window.name }
-            usage[id, default: []].append(window)
+            memory.usage[id, default: []].removeAll { $0.name == window.name }
+            memory.usage[id, default: []].append(window)
         }
+        if !windows.isEmpty { remember() }
     }
 
     func served(_ conversation: String, by id: String, cacheLifetime: TimeInterval) {
-        router.served(conversation, by: id, cacheLifetime: cacheLifetime, now: Date())
+        memory.router.served(conversation, by: id, cacheLifetime: cacheLifetime, now: Date())
+        remember()
+    }
+
+    /// Memory is relearned from the next responses, so a failed write costs only that and is reported, not fatal.
+    private func remember() {
+        do { try storage.storeMemory(memory) } catch {
+            FileHandle.standardError.write(Data("sluice: could not save what was observed: \(error)\n".utf8))
+        }
     }
 
     /// The account with a token good for at least five more minutes, renewed once however many requests ask.

@@ -15,8 +15,8 @@ public struct Window: Sendable, Codable, Equatable {
 }
 
 /// Decides which account answers. Pure: time and usage come in as arguments.
-struct Router {
-    private struct Hold {
+struct Router: Codable {
+    private struct Hold: Codable {
         var account: String
         var warmUntil: Date
     }
