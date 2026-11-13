@@ -118,7 +118,11 @@ private let program = Bundle.main.executableURL!
         change { config in for folder in chooser.urls { try config.claim(folder: folder.path, for: profile) } }
     }
 
-    func claim(owner: String, for profile: String) {
+    /// Asks which owner, offering those no profile claims yet.
+    func claimOwner(for profile: String) {
+        let claimed = Set(config.profiles.values.flatMap(\.owners).map { $0.lowercased() })
+        func unclaimed(_ owners: [String]) -> [String] { owners.filter { !claimed.contains($0.lowercased()) } }
+        guard let owner = askForOwner(of: config.shown(profile), known: unclaimed(knownOwners()), find: { unclaimed(await githubOwners(like: $0)) }) else { return }
         change { try $0.claim(owner: owner, for: profile) }
     }
 
@@ -173,8 +177,8 @@ struct SluiceApp: App {
         MenuBarExtra {
             Panel(
                 problem: running.problem.isEmpty ? running.refusal : running.problem, accounts: running.accounts, config: running.config, identities: running.identities, titles: titles, now: Date(),
-                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, owners: knownOwners, search: githubOwners,
-                claimFolders: running.claimFolders, claimOwner: { running.claim(owner: $1, for: $0) }, unclaim: { running.unclaim($1, from: $0) }, quit: running.quit
+                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, 
+                claimFolders: running.claimFolders, claimOwner: running.claimOwner, unclaim: { running.unclaim($1, from: $0) }, quit: running.quit
             )
             .task { await running.watch() }
         } label: {

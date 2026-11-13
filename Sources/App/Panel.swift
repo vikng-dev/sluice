@@ -18,22 +18,14 @@ struct Panel: View {
     let remove: (AccountStatus) -> Void
     let rename: (_ profile: String, _ label: String) -> Void
     let tint: (_ profile: String, Tint?) -> Void
-    /// The owners of the repositories the clients have worked in.
-    let owners: () -> [String]
-    /// The owners elsewhere whose name is like what was typed.
-    let search: (String) async -> [String]
     /// Asks which folders, and claims them.
     let claimFolders: (_ profile: String) -> Void
-    let claimOwner: (_ profile: String, _ owner: String) -> Void
+    /// Asks which owner, and claims it.
+    let claimOwner: (_ profile: String) -> Void
     let unclaim: (_ profile: String, Claim) -> Void
     let quit: () -> Void
 
     private var profiles: [String] { config.names }
-    /// Of the owners offered, those no profile claims yet.
-    private func unclaimed(_ owners: [String]) -> [String] {
-        let claimed = Set(config.profiles.values.flatMap(\.owners).map { $0.lowercased() })
-        return owners.filter { !claimed.contains($0.lowercased()) }
-    }
     @State private var carried: Carried?
     /// Where each profile and each account's row is in the panel.
     @State private var frames: [String: CGRect] = [:]
@@ -103,9 +95,8 @@ struct Panel: View {
                     ProfileCaption(
                         name: section.name, profile: config.profiles[section.name],
                         takesTheRest: section.name == Config.defaultProfile && profiles.count > 1, empty: section.pools.isEmpty, titles: titles,
-                        owners: { unclaimed(owners()) }, search: { unclaimed(await search($0)) },
                         signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) },
-                        claimFolders: { claimFolders(section.name) }, claimOwner: { claimOwner(section.name, $0) }, unclaim: { unclaim(section.name, $0) }
+                        claimFolders: { claimFolders(section.name) }, claimOwner: { claimOwner(section.name) }, unclaim: { unclaim(section.name, $0) }
                     )
                     .padding(.horizontal, 10)
                     VStack(alignment: .leading, spacing: 10) {
@@ -201,8 +192,8 @@ enum Claim: Hashable {
 
 /// A profile's name, color and claims, each changed where it is: a click on the name types a new one, a
 /// click on the dot offers the colors, and a click on the count of its claims lays them out, each let go
-/// by the × it shows under the pointer, with a + after them for another. The + that gives the profile an
-/// account shows when the pointer is on it, and always on an empty one.
+/// by the × it shows under the pointer. The + that gives the profile an account or a claim shows when the
+/// pointer is on it, and always on an empty one.
 private struct ProfileCaption: View {
     let name: String
     /// Nil for a profile the config says nothing about.
@@ -211,35 +202,21 @@ private struct ProfileCaption: View {
     let takesTheRest: Bool
     let empty: Bool
     let titles: [String: String]
-    /// The owners this Mac's repositories have, and those elsewhere like what was typed: what is
-    /// offered while an owner is typed.
-    let owners: () -> [String]
-    let search: (String) async -> [String]
     let signIn: (_ provider: String) -> Void
     let rename: (_ label: String) -> Void
     let setTint: (Tint?) -> Void
     let claimFolders: () -> Void
-    let claimOwner: (String) -> Void
+    let claimOwner: () -> Void
     let unclaim: (Claim) -> Void
     @State private var hovered = false
     @State private var picking = false
     /// Whether the claims are laid out, and not only counted.
     @State private var open = false
-    /// What is being typed: the label, or an owner to claim. Kept apart from the text: a field that is
-    /// going away writes its text once more, and that must not open it again.
-    @State private var typed: Typed?
+    /// Whether the name is being typed. Kept apart from the text: a field that is going away writes its
+    /// text once more, and that must not open it again.
+    @State private var editing = false
     @State private var draft = ""
     @FocusState private var typing: Bool
-    @State private var known: [String] = []
-    @State private var found: [String] = []
-
-    private enum Typed { case label, owner }
-
-    /// The owners offered for what is typed so far: this Mac's first.
-    private var offered: [String] {
-        let near = known.filter { draft.isEmpty || $0.localizedCaseInsensitiveContains(draft) }
-        return Array((near + found.filter { name in !near.contains { $0.lowercased() == name.lowercased() } }).prefix(6))
-    }
 
     private var claims: [Claim] { (profile?.folders ?? []).map(Claim.folder) + (profile?.owners ?? []).map(Claim.owner) }
 
@@ -256,41 +233,11 @@ private struct ProfileCaption: View {
         Circle().fill(tint?.color ?? Color.secondary.opacity(0.4)).frame(width: size, height: size)
     }
 
-    private func type(_ what: Typed, from text: String) {
-        draft = text
-        typed = what
-    }
-
-    /// An unchanged label is not written, and neither is an owner with no name.
+    /// An unchanged label is not written, so leaving the field writes nothing.
     private func keep() {
-        let text = draft.trimmingCharacters(in: .whitespaces)
-        switch typed {
-        case .label: if draft != profile?.label ?? "" { rename(draft) }
-        case .owner: if !text.isEmpty { claimOwner(text) }
-        case nil: break
-        }
-        typed = nil
-    }
-
-    /// Typing that is walked away from: a label is kept, as it is one the profile already has; an owner
-    /// half typed is not claimed.
-    private func leave() {
-        if typed == .label { keep() } else { typed = nil }
-    }
-
-    private func field(_ placeholder: String) -> some View {
-        TextField(placeholder, text: $draft)
-            .textFieldStyle(.plain).focused($typing)
-            .onAppear { typing = true }
-            .onSubmit(keep)
-            .onExitCommand { typed = nil }
-            .onChange(of: typing) { _, typing in if !typing { leave() } }
-    }
-
-    private func typeAnOwner() {
-        known = owners()
-        found = []
-        type(.owner, from: "")
+        guard editing else { return }
+        editing = false
+        if draft != profile?.label ?? "" { rename(draft) }
     }
 
     var body: some View {
@@ -308,24 +255,29 @@ private struct ProfileCaption: View {
                         }
                         .buttonStyle(.plain).help(option?.rawValue.capitalized ?? "No color")
                     }
-                } else if typed == .label {
-                    field(name).font(.caption.weight(.semibold))
+                } else if editing {
+                    TextField(name, text: $draft)
+                        .textFieldStyle(.plain).font(.caption.weight(.semibold)).focused($typing)
+                        .onAppear { typing = true }
+                        .onSubmit(keep)
+                        .onExitCommand { editing = false }
+                        .onChange(of: typing) { _, typing in if !typing { keep() } }
                 } else {
                     Text(profile?.label ?? name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         .contentShape(Rectangle())
-                        .onTapGesture { type(.label, from: profile?.label ?? "") }
-                        .help("Click to change what this profile is shown as")
-                    // The default profile on its own has all the work, and nothing to say about it.
-                    if takesTheRest || !claims.isEmpty || name != Config.defaultProfile {
-                        Button { open.toggle() } label: {
-                            HStack(spacing: 6) {
-                                summary.labelStyle(Tight())
-                                Image(systemName: "chevron.right").imageScale(.small).rotationEffect(.degrees(open ? 90 : 0))
-                            }
-                            .font(.caption2).foregroundStyle(.tertiary).contentShape(Rectangle())
+                        .onTapGesture {
+                            draft = profile?.label ?? ""
+                            editing = true
                         }
-                        .buttonStyle(.plain).help("The work that belongs to this profile")
+                        .help("Click to change what this profile is shown as")
+                    Button { open.toggle() } label: {
+                        HStack(spacing: 6) {
+                            summary.labelStyle(Tight())
+                            if !claims.isEmpty { Image(systemName: "chevron.right").imageScale(.small).rotationEffect(.degrees(open ? 90 : 0)) }
+                        }
+                        .font(.caption2).foregroundStyle(.tertiary).contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain).disabled(claims.isEmpty).help("The work that belongs to this profile")
                 }
                 Spacer()
                 Menu {
@@ -334,61 +286,25 @@ private struct ProfileCaption: View {
                             Label { Text("Add a \(title) account") } icon: { providerMark(provider).map(Image.init(nsImage:)) }
                         }
                     }
+                    Divider()
+                    Button(action: claimFolders) { Label("Add folders…", systemImage: "folder") }
+                    Button(action: claimOwner) { Label { Text("Add a repository owner…") } icon: { githubMark().map(Image.init(nsImage:)) } }
                 } label: {
                     Image(systemName: "plus")
                 }
                 .bare()
-                .help("Add an account to this profile")
+                .help("Add an account, or work that belongs to this profile")
                 .opacity(hovered || empty ? 1 : 0)
             }
-            if open || typed == .owner {
-                Flow {
-                    ForEach(claims, id: \.self) { claim in ClaimChip(claim: claim) { unclaim(claim) } }
-                    if typed == .owner {
-                        HStack(spacing: 3) {
-                            OwnerMark()
-                            field("owner").frame(width: 110)
-                        }
-                        .chip()
-                        // Asked once the typing has paused, so that a name is one search and not one a letter.
-                        .task(id: draft) {
-                            guard draft.count > 1, (try? await Task.sleep(for: .milliseconds(350))) != nil else { return }
-                            let found = await search(draft)
-                            if !Task.isCancelled { self.found = found }
-                        }
-                        ForEach(offered, id: \.self) { owner in
-                            Button {
-                                claimOwner(owner)
-                                typed = nil
-                            } label: {
-                                Text(owner).lineLimit(1).padding(.horizontal, 6).padding(.vertical, 3)
-                                    .overlay { Capsule().strokeBorder(Color.primary.opacity(0.2), style: StrokeStyle(lineWidth: 1, dash: [3, 2])) }
-                                    .contentShape(Capsule())
-                            }
-                            .buttonStyle(.plain).foregroundStyle(.secondary).help("Claim \(owner)'s repositories for this profile")
-                        }
-                    } else {
-                        // A chip as tall as the claims', with the menu on it.
-                        Text("+").hidden().padding(.horizontal, 5).chip().overlay {
-                            Menu {
-                                Button(action: claimFolders) { Label("Folders…", systemImage: "folder") }
-                                Button(action: typeAnOwner) { Label { Text("A repository owner…") } icon: { githubMark().map(Image.init(nsImage:)) } }
-                            } label: {
-                                Image(systemName: "plus").font(.caption)
-                            }
-                            .bare().font(.body)
-                        }
-                        .help("Add work that belongs to this profile")
-                    }
-                }
-                .font(.caption2)
+            if open, !claims.isEmpty {
+                Flow { ForEach(claims, id: \.self) { claim in ClaimChip(claim: claim) { unclaim(claim) } } }.font(.caption2)
             }
         }
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
         // The panel closes when it stops being the key window, and is the same view when it opens again.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
-            leave()
+            keep()
             picking = false
             open = false
         }
@@ -420,16 +336,10 @@ private struct ClaimChip: View {
             Text(look.text).lineLimit(1).truncationMode(.middle)
         }
         .foregroundStyle(.secondary)
-        .chip()
+        .padding(.horizontal, 6).padding(.vertical, 3).background(Color.primary.opacity(0.06), in: Capsule())
         .frame(maxWidth: 240)
         .onHover { hovered = $0 }
         .help(look.help)
-    }
-}
-
-private extension View {
-    func chip() -> some View {
-        padding(.horizontal, 6).padding(.vertical, 3).background(Color.primary.opacity(0.06), in: Capsule())
     }
 }
 
