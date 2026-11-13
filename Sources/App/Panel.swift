@@ -658,8 +658,7 @@ private struct PoolView: View {
             }
             .contentShape(Rectangle())
             .onHover { hovered = $0 }
-            VStack(alignment: .leading, spacing: 6) {
-                PoolBar(accounts: pool.accounts).padding(.leading, AccountRow.gutter)
+            VStack(alignment: .leading, spacing: 9) {
                 ForEach(pool.accounts, id: \.id) { account in
                     AccountRow(account: account, client: pool.identity == account.label ? pool.client : nil, now: now, actions: actions)
                         .opacity(carried == account.id ? 0.3 : 1)
@@ -678,28 +677,8 @@ private struct PoolView: View {
     }
 }
 
-/// The pool as one bar: a part for each account, as wide as its plan is large and as full as its budget is used.
-private struct PoolBar: View {
-    let accounts: [AccountStatus]
-
-    var body: some View {
-        GeometryReader { space in
-            let room: Double = space.size.width - Double(accounts.count - 1) * 2
-            let total: Double = accounts.map(\.weight).reduce(0, +)
-            HStack(spacing: 2) {
-                ForEach(accounts, id: \.id) { account in
-                    let width: Double = max(4, room * account.weight / total)
-                    Bar(used: account.budget?.used ?? 0)
-                        .frame(width: width)
-                        .opacity(account.problem == nil ? 1 : 0.45)
-                        .help(account.label)
-                }
-            }
-        }
-        .frame(height: 5)
-    }
-}
-
+/// One account of a pool: who it is on a line, and under it the limit that stops it next, or every limit
+/// it has once opened.
 private struct AccountRow: View {
     let account: AccountStatus
     /// The client that is itself signed in as this account in the profile, if one is.
@@ -725,6 +704,12 @@ private struct AccountRow: View {
 
     /// The week, then the shorter windows, then the limits on a part of its use.
     private var limits: [SluiceCore.Window] { account.windows.reversed() + account.scoped }
+
+    /// The limits under the name: the one that stops it next, and opened, the others after it.
+    private var shown: [SluiceCore.Window] {
+        guard let tightest else { return [] }
+        return [tightest] + (opened ? limits.filter { $0.name != tightest.name } : [])
+    }
 
     /// What stops the account next: its budget, unless another of its limits is fuller and near its end.
     private var tightest: SluiceCore.Window? {
@@ -754,12 +739,9 @@ private struct AccountRow: View {
     }
 
     private var details: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(account.label).font(.callout).lineLimit(1).truncationMode(.middle)
-                    .contentShape(Rectangle())
-                    .onTapGesture { if limits.count > 1 { opened.toggle() } }
-                    .help(limits.count > 1 ? "Click for every limit it has" : "")
                 if let client {
                     Image(systemName: "person.crop.circle.fill").font(.caption).foregroundStyle(.secondary)
                         .help("\(client) itself is signed in as this account in this profile. What \(client) does outside Sluice is this account's; its requests are paid by the whole pool.")
@@ -771,35 +753,31 @@ private struct AccountRow: View {
                         .opacity(hovered ? 1 : 0)
                 }
                 Spacer(minLength: 4)
-                if let plan = account.plan { Badge(text: plan.tier, symbol: plan.business ? "briefcase.fill" : nil).help(plan.name + (plan.price.map { ", $\($0) a month" } ?? "")) }
-                if let tightest {
-                    if tightest.name != account.budget?.name {
-                        Text(tightest.name == tightest.title.lowercased() ? tightest.title : tightest.name).font(.caption2.weight(.semibold))
-                            .foregroundStyle(tightest.used >= 1 ? Color.red : tightest.used >= 0.85 ? .orange : .secondary)
-                            .help("Its \(tightest.title) limit is the one closest to stopping it")
-                    }
-                    Share(used: tightest.used).frame(width: Self.share, alignment: .trailing)
-                    Clock(window: tightest, now: now).frame(width: Self.clock, alignment: .trailing)
-                } else {
-                    Text("unused").font(.caption).foregroundStyle(.tertiary).frame(width: Self.share + Self.clock + 6, alignment: .trailing)
-                        .help("Nothing was used in its current windows, or its provider has not said")
+                if let plan = account.plan {
+                    // A symbol inside the text takes the text's size and sits on its baseline.
+                    ((plan.business ? Text("\(Image(systemName: "briefcase.fill")) ") : Text("")) + Text(plan.tier))
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+                        .help(plan.name + (plan.price.map { ", $\($0) a month" } ?? ""))
                 }
             }
             if let problem = account.problem {
                 Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-            } else if opened {
-                VStack(spacing: 4) {
-                    ForEach(limits, id: \.name) { limit in
-                        HStack(spacing: 6) {
-                            Text(limit.title).font(.caption).foregroundStyle(.secondary).frame(width: 48, alignment: .leading)
-                            Bar(used: limit.used).frame(width: 120)
-                            Spacer(minLength: 4)
-                            Share(used: limit.used).frame(width: Self.share, alignment: .trailing)
-                            Clock(window: limit, now: now).frame(width: Self.clock, alignment: .trailing)
+            } else if shown.isEmpty {
+                Text("unused").font(.caption).foregroundStyle(.tertiary).help("Nothing was used in its current windows, or its provider has not said")
+            } else {
+                ForEach(shown, id: \.name) { limit in
+                    HStack(spacing: 8) {
+                        HStack(spacing: 8) {
+                            Text(limit.title).font(.caption).foregroundStyle(.secondary).frame(width: 44, alignment: .leading)
+                            Bar(used: limit.used)
                         }
+                        .contentShape(Rectangle())
+                        .onTapGesture { if limits.count > 1 { opened.toggle() } }
+                        .help(limits.count == 1 ? "" : opened ? "Click for the one that stops it next" : "Click for every limit it has")
+                        Share(used: limit.used).frame(width: Self.share, alignment: .trailing)
+                        Clock(window: limit, now: now).frame(width: Self.clock, alignment: .trailing)
                     }
                 }
-                .padding(.leading, 10).padding(.vertical, 2)
             }
         }
     }
@@ -863,18 +841,7 @@ private struct Bar: View {
                     .frame(width: max(space.size.height, space.size.width * min(used, 1)))
             }
         }
-        .frame(height: 5)
+        .frame(height: 4)
     }
 }
 
-private struct Badge: View {
-    let text: String
-    let symbol: String?
-
-    var body: some View {
-        // A symbol inside the text takes the text's size and sits on its baseline.
-        ((symbol.map { Text("\(Image(systemName: $0)) ").foregroundStyle(.secondary) } ?? Text("")) + Text(text))
-            .lineLimit(1).fixedSize()
-            .font(.caption2).padding(.horizontal, 5).padding(.vertical, 1).background(.quaternary, in: Capsule())
-    }
-}
