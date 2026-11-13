@@ -31,15 +31,21 @@ func gateGlyph(open: Bool) -> NSImage {
     return image
 }
 
-/// A provider's mark, drawn in the text colour. The drawings are in Assets/providers, named by provider;
-/// a provider without one is shown by name.
-@MainActor func providerMark(_ provider: String) -> NSImage? {
-    if let known = marks[provider] { return known }
-    guard let url = Bundle.main.url(forResource: provider, withExtension: "svg", subdirectory: "providers"), let mark = NSImage(contentsOf: url) else { return nil }
+/// A provider's mark. The drawings are in Assets/providers, named by provider; a provider without one is
+/// shown by name.
+@MainActor func providerMark(_ provider: String) -> NSImage? { mark("providers/\(provider)") }
+
+/// GitHub's mark, which stands for a repository's owner.
+@MainActor func githubMark() -> NSImage? { mark("github") }
+
+/// A drawing among the app's resources, drawn in the text colour.
+@MainActor private func mark(_ path: String) -> NSImage? {
+    if let known = marks[path] { return known }
+    guard let url = Bundle.main.resourceURL?.appending(path: "\(path).svg"), let mark = NSImage(contentsOf: url) else { return nil }
     mark.isTemplate = true
     // A menu draws an image at its own size.
     mark.size = NSSize(width: 14, height: 14)
-    marks[provider] = mark
+    marks[path] = mark
     return mark
 }
 

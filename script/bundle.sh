@@ -12,7 +12,7 @@ bin=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
 rm -rf dist
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp Assets/AppIcon.icns "$app/Contents/Resources/"
-cp -R Assets/providers "$app/Contents/Resources/"
+cp -R Assets/providers Assets/github.svg "$app/Contents/Resources/"
 cp "$bin/SluiceApp" "$app/Contents/MacOS/Sluice"
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

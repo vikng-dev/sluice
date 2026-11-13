@@ -303,7 +303,9 @@ private struct ProfileCaption: View {
                     }
                     Divider()
                     Button(action: claimFolders) { Label("Add folders…", systemImage: "folder") }
-                    Button { type(.owner, from: "") } label: { Label("Add a repository owner", systemImage: "at") }
+                    Button { type(.owner, from: "") } label: {
+                        Label { Text("Add a repository owner") } icon: { githubMark().map(Image.init(nsImage:)) }
+                    }
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -316,7 +318,7 @@ private struct ProfileCaption: View {
                     ForEach(claims, id: \.self) { claim in ClaimChip(claim: claim) { unclaim(claim) } }
                     if typed == .owner {
                         HStack(spacing: 3) {
-                            Image(systemName: "at")
+                            OwnerMark()
                             field("owner").frame(width: 110)
                         }
                         .padding(.horizontal, 6).padding(.vertical, 2)
@@ -343,16 +345,21 @@ private struct ClaimChip: View {
     let remove: () -> Void
     @State private var hovered = false
 
-    private var look: (mark: String, text: String, help: String) {
+    private var look: (text: String, help: String) {
         switch claim {
-        case .folder(let folder): ("folder", folder, "Work in \(folder) belongs to this profile")
-        case .owner(let owner): ("at", owner, "Work in a repository whose origin is \(owner)'s belongs to this profile")
+        case .folder(let folder): (folder, "Work in \(folder) belongs to this profile")
+        case .owner(let owner): (owner, "Work in a repository whose origin is \(owner)'s belongs to this profile")
         }
     }
 
     var body: some View {
         HStack(spacing: 3) {
-            Button(action: remove) { Image(systemName: hovered ? "xmark" : look.mark).frame(width: 11) }
+            Button(action: remove) {
+                Group {
+                    if hovered { Image(systemName: "xmark") } else if case .owner = claim { OwnerMark() } else { Image(systemName: "folder") }
+                }
+                .frame(width: 11)
+            }
                 .buttonStyle(.plain).disabled(!hovered).help("Let it go: this work is then another profile's")
             Text(look.text).lineLimit(1).truncationMode(.middle)
         }
@@ -362,6 +369,13 @@ private struct ClaimChip: View {
         .frame(maxWidth: 240)
         .onHover { hovered = $0 }
         .help(look.help)
+    }
+}
+
+/// What marks a repository's owner: GitHub's mark, or failing the drawing an @.
+private struct OwnerMark: View {
+    var body: some View {
+        if let mark = githubMark() { Image(nsImage: mark).resizable().frame(width: 10, height: 10) } else { Image(systemName: "at") }
     }
 }
 

@@ -150,7 +150,7 @@ One Swift package, no dependencies.
 | `Sources/Providers` | One folder per provider (Claude, Codex), each answering the contract. |
 | `Sources/App` | The one program: the menu bar app and the `sluice` command. |
 | `skills` | A skill that teaches an agent to run the `sluice` command. |
-| `Assets` | The app icon: its drawing, and the built `.icns`. The menu bar glyph is drawn in code from the same shapes. Each provider's mark, named by provider. |
+| `Assets` | The app icon: its drawing, and the built `.icns`. The menu bar glyph is drawn in code from the same shapes. Each provider's mark, named by provider, and GitHub's. |
 
 ## Build
 
