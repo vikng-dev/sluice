@@ -226,7 +226,7 @@ private struct ProfileCaption: View {
                         .onExitCommand { draft = nil }
                         .onChange(of: typing) { _, typing in if !typing { keep() } }
                 } else {
-                    Text((label ?? name).uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
+                    Text(label ?? name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         .contentShape(Rectangle())
                         .onTapGesture { draft = label ?? "" }
                         .help("Click to change what this profile is shown as")
