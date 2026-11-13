@@ -61,7 +61,8 @@ included. A client that calls Anthropic's API itself is not; see [docs/wire.md](
   Sluice asks macOS which program sent a request and which folder it runs in. `pins` goes by that
   folder, and the deepest rule wins. Failing that, `owners` goes by the owner in the origin remote
   of the git repository the folder is in. Nothing is set per project, and any program on this Mac
-  is pinned the same way. A harness can also name the account itself:
+  is pinned the same way. A rule binds the provider its account is at: with a Claude account pinned
+  to a folder, Codex there still uses its pool. A harness can also name the account itself:
   `http://localhost:7483/claude/pin/<email>`, which beats both rules.
 
 Sluice signs in to each account itself and keeps the tokens in its own Keychain item. What it

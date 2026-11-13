@@ -168,11 +168,13 @@ actor Accounts {
     }
 
     /// The accounts to try, in order. A pin in the address wins; without one the caller's folder may name one.
+    /// A folder's rule names one account, so it binds the provider that account is at and leaves the others pooled.
     func candidates(provider: String, pin: String?, folder: String?, conversation: String?) throws -> [Account] {
-        let config = try storage.config()
+        let config = try storage.config(), own = accounts.filter { $0.provider == provider }
+        let rule = folder.flatMap { config.pin(for: $0, home: NSHomeDirectory()) }.flatMap { label in own.contains { $0.label == label } ? label : nil }
         return memory.router.order(
-            accounts.filter { $0.provider == provider },
-            pin: pin ?? folder.flatMap { config.pin(for: $0, home: NSHomeDirectory()) }, pinOnly: config.pinOnly,
+            own,
+            pin: pin ?? rule, pinOnly: config.pinOnly,
             conversation: conversation, usage: memory.usage, now: Date()
         )
     }
