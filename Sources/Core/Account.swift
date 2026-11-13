@@ -42,6 +42,9 @@ public struct Storage: Sendable {
     var storeMemory: @Sendable (Memory) throws -> Void
     var appendSample: @Sendable (Sample) throws -> Void = { _ in }
     var appendServed: @Sendable (Served) throws -> Void = { _ in }
+    /// The histories, oldest first.
+    public var readings: @Sendable () throws -> [Sample] = { [] }
+    public var requests: @Sendable () throws -> [Served] = { [] }
 
     /// Accounts in one Keychain item, so a save is atomic; the config in `~/.config/sluice`;
     /// what was observed, and the history of it, in Application Support.
@@ -84,7 +87,9 @@ public struct Storage: Sendable {
                 try JSONEncoder().encode(memory).write(to: memoryFile, options: .atomic)
             },
             appendSample: { try append($0, to: readingsFile) },
-            appendServed: { try append($0, to: requestsFile) }
+            appendServed: { try append($0, to: requestsFile) },
+            readings: { try lines(of: readingsFile) },
+            requests: { try lines(of: requestsFile) }
         )
     }()
 }

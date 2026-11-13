@@ -177,6 +177,28 @@ import Testing
         #expect(told.withLock { $0.map(\.input) } == [8])
     }
 
+    @Test func aPoolLastsLongerForWhatComesBackAtAReset() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        // Half of one account is left, and it is whole again in ten hours; the other is untouched.
+        let pool = [Member(weight: 1, used: 0.5, resetsAt: now + 10 * 3600), Member(weight: 1, used: 0, resetsAt: nil)]
+        // At a twentieth of the pool an hour: the first is spent in 5h, is back at 10h, and all is spent at 25h, not 15h.
+        #expect(Forecast.dry(pool, burn: 0.05, now: now) == now + 25 * 3600)
+        #expect(Forecast.dry(pool, burn: 0.001, now: now) == nil)
+        #expect(Forecast.dry([Member(weight: 1, used: 1, resetsAt: now + 3600)], burn: 0.05, now: now) == now)
+    }
+
+    @Test func howFastAPoolIsUsedCountsNewHighsAndNotTheRoundingBetween() {
+        let start = Date(timeIntervalSince1970: 1_000_000), reset = start + 86400
+        func sample(_ hours: Double, _ used: Double, _ reset: Date) -> Sample {
+            Sample(at: start + hours * 3600, provider: "p", account: "a", windows: [Window(name: "5h", used: 0.9, resetsAt: start + 60), Window(name: "7d", used: used, resetsAt: reset)])
+        }
+        let samples = [sample(0, 0.40, reset), sample(1, 0.42, reset), sample(1.5, 0.41, reset), sample(2, 0.42, reset), sample(3, 0.03, reset + 7 * 86400)]
+        // Two points, then three in a new window: five in four hours, on the half of the pool this account is.
+        let burn = Forecast.burn([(samples, 1), ([], 1)], from: start, to: start + 4 * 3600)
+        #expect(abs((burn ?? 0) - 0.05 / 2 / 4) < 1e-9)
+        #expect(Forecast.burn([(samples, 1)], from: start, to: start + 600) == nil)
+    }
+
     @Test func theTimeLeftIsReadInItsTwoLargestUnits() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         func left(_ seconds: Double) -> String { Window(name: "7d", used: 0, resetsAt: now + seconds).leftText(now: now) }

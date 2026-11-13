@@ -61,6 +61,15 @@ func append(_ entry: some Encodable, to file: URL) throws {
     try handle.write(contentsOf: line)
 }
 
+/// A history file's lines, oldest first; none when there is no file yet. A line that cannot be read is
+/// left out: the last may be half written, and an older build wrote less.
+func lines<Entry: Decodable>(of file: URL) throws -> [Entry] {
+    guard FileManager.default.fileExists(atPath: file.path) else { return [] }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    return try Data(contentsOf: file).split(separator: UInt8(ascii: "\n")).compactMap { try? decoder.decode(Entry.self, from: $0) }
+}
+
 /// Reads what an answer cost out of its body as it passes, an event at a time: a stream says it in
 /// events, each a line, and an answer in one piece is one event. It keeps the count and nothing else.
 struct Meter {

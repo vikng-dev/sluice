@@ -22,6 +22,7 @@ private let program = Bundle.main.executableURL!
     var accounts: [AccountStatus] = []
     var config = Config()
     var identities: [String: [Identity]] = [:]
+    var history = History()
     private var sluice: (server: Server, relay: Relay)?
 
     init() {
@@ -171,6 +172,17 @@ private let program = Bundle.main.executableURL!
         change { try $0.color(profile, tint) }
     }
 
+    /// The histories are read off the main thread: a week of requests is many lines.
+    func loadHistory() {
+        Task {
+            do {
+                history = try await Task.detached { History(samples: try Storage.live.readings(), requests: try Storage.live.requests()) }.value
+            } catch {
+                problem = "\(error)"
+            }
+        }
+    }
+
     func star(_ profile: String, _ starred: Bool) {
         change { try $0.star(profile, starred) }
     }
@@ -222,7 +234,8 @@ struct SluiceApp: App {
                 problem: running.problem.isEmpty ? running.refusal : running.problem, accounts: running.accounts, config: running.config, identities: running.identities, titles: titles, now: Date(),
                 routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, star: running.star,
                 addProfile: running.addProfile, removeProfile: running.removeProfile,
-                claimFolders: running.claimFolders, claimOwner: running.claimOwner, unclaim: { running.unclaim($1, from: $0) }, quit: running.quit
+                claimFolders: running.claimFolders, claimOwner: running.claimOwner, unclaim: { running.unclaim($1, from: $0) },
+                history: running.history, loadHistory: running.loadHistory, quit: running.quit
             )
         } label: {
             // The glyph says whether clients are routed; while they are, the starred profiles take its place.

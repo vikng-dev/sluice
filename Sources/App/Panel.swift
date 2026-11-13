@@ -27,9 +27,14 @@ struct Panel: View {
     /// Asks which owner, and claims it.
     let claimOwner: (_ profile: String) -> Void
     let unclaim: (_ profile: String, Claim) -> Void
+    let history: History
+    /// Reads the histories again, for the view of use.
+    let loadHistory: () -> Void
     let quit: () -> Void
 
     private var profiles: [String] { config.names }
+    /// Which of the panel's two views is shown: the accounts, or their use over time.
+    @AppStorage("showsUse") private var showsUse = false
     @State private var carried: Carried?
     /// The account let go on the place for a new profile, which is now being named for it.
     @State private var founder: AccountStatus?
@@ -106,7 +111,16 @@ struct Panel: View {
                 .padding(10)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
             }
-            ForEach(sections, id: \.name) { section in
+            if showsUse {
+                // It scrolls where it is taller than a small screen has room for.
+                let use = UsageView(accounts: accounts, config: config, titles: titles, history: history, now: now)
+                ViewThatFits(in: .vertical) {
+                    use
+                    ScrollView { use }
+                }
+                .frame(maxHeight: 640)
+            }
+            ForEach(showsUse ? [] : sections, id: \.name) { section in
                 VStack(alignment: .leading, spacing: 6) {
                     ProfileCaption(
                         name: section.name, profile: config.profiles[section.name],
@@ -139,9 +153,25 @@ struct Panel: View {
                 .padding(.top, 4)
                 .framed("profile:\(section.name)")
             }
+            // The panel's last line: what the view shown can start, then the two views and the app's own menu.
             HStack(alignment: .top) {
-                NewProfile(founder: $founder, carrying: carried != nil, targeted: overNew) { addProfile($0, founder) }
-                    .framed("new")
+                if showsUse {
+                    Text("Last 7 days").font(.caption.weight(.semibold)).foregroundStyle(.tertiary).frame(height: 16)
+                    Spacer()
+                } else {
+                    NewProfile(founder: $founder, carrying: carried != nil, targeted: overNew) { addProfile($0, founder) }
+                        .framed("new")
+                }
+                HStack(spacing: 2) {
+                    ForEach([(false, "rectangle.stack", "Accounts"), (true, "chart.xyaxis.line", "Use over time")], id: \.0) { use, symbol, name in
+                        Button { showsUse = use } label: {
+                            Image(systemName: symbol).font(.caption).frame(width: 24, height: 16)
+                                .background(Color.primary.opacity(showsUse == use ? 0.12 : 0), in: RoundedRectangle(cornerRadius: 4))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).foregroundStyle(showsUse == use ? .primary : .secondary).help(name)
+                    }
+                }
                 Menu {
                     Text("Sluice \(Sluice.version)")
                     Divider()
@@ -157,6 +187,8 @@ struct Panel: View {
         }
         .padding(10)
         .frame(width: 392)
+        .task(id: showsUse) { if showsUse { loadHistory() } }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in if showsUse { loadHistory() } }
         .onPreferenceChange(Frames.self) { frames = $0 }
         .coordinateSpace(name: Frames.space)
         // The carried account's row, lifted off the panel and following the pointer.
@@ -312,7 +344,7 @@ private struct ProfileCaption: View {
                 Button { star(!starred) } label: { Image(systemName: starred ? "star.fill" : "star").font(.caption) }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .help(starred ? "Shown in the menu bar. Click to take it out" : "Show how much of its pools is used in the menu bar")
-                    .opacity(starred || hovered ? 1 : 0)
+                    .opacity(hovered ? 1 : 0)
                 Menu {
                     ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
                         Button { signIn(provider) } label: {
@@ -714,7 +746,7 @@ private struct AccountRow: View {
 }
 
 /// A share of an allowance, read as used or as left. A click on any of them turns them all.
-private struct Share: View {
+struct Share: View {
     let used: Double
     /// Says which it is, where the number alone would not.
     var worded = false
@@ -731,7 +763,7 @@ private struct Share: View {
 }
 
 /// When a window resets, read as the time left or as the time itself. A click on any of them turns them all.
-private struct Clock: View {
+struct Clock: View {
     let window: SluiceCore.Window
     let now: Date
     @AppStorage("readsResetTimes") private var times = false
