@@ -31,27 +31,26 @@ func gateGlyph(open: Bool) -> NSImage {
     return image
 }
 
-/// The starred profiles in the menu bar: each pool's provider mark and its share over a thin meter of
-/// that share in the profile's colour, a profile's pools close together and the profiles apart.
-@MainActor func counterGlyph(_ profiles: [(color: NSColor?, pools: [(provider: String, text: String, share: Double)])]) -> NSImage {
+/// The starred profiles in the menu bar: a short bar in the profile's colour, then each of its pools as
+/// the provider's mark and its share, a profile's pools close together and the profiles apart.
+@MainActor func counterGlyph(_ profiles: [(color: NSColor?, pools: [(provider: String, text: String)])]) -> NSImage {
     let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-    let (side, gap, between, apart, height) = (12.0, 2.0, 6.0, 12.0, 22.0)
+    let (side, gap, between, apart, height) = (12.0, 2.0, 6.0, 12.0, 18.0)
     /// What to draw and where, worked out here so that the drawing itself touches no state.
     var marks: [(image: NSImage, at: NSRect)] = [], texts: [(text: String, at: NSPoint)] = []
-    var meters: [(color: NSColor?, at: NSRect, share: Double)] = [], x = 0.0
+    var bars: [(color: NSColor?, at: NSRect)] = [], x = 0.0
     for (index, profile) in profiles.enumerated() {
         if index > 0 { x += apart - between }
+        bars.append((profile.color, NSRect(x: x, y: 2, width: 2.5, height: height - 4)))
+        x += 6
         for pool in profile.pools {
-            let from = x
             if let mark = providerMark(pool.provider) {
                 marks.append((mark, NSRect(x: x, y: (height - side) / 2, width: side, height: side)))
                 x += side + gap
             }
             let size = NSAttributedString(string: pool.text, attributes: [.font: font]).size()
             texts.append((pool.text, NSPoint(x: x, y: (height - size.height) / 2)))
-            x += size.width.rounded(.up)
-            meters.append((profile.color, NSRect(x: from, y: 1, width: x - from, height: 2), min(max(pool.share, 0), 1)))
-            x += between
+            x += size.width.rounded(.up) + between
         }
     }
     // It has colours of its own, so the bar does not colour it: it is drawn in black or white for the bar it
@@ -63,11 +62,10 @@ func gateGlyph(open: Bool) -> NSImage {
         ink.setFill()
         whole.fill(using: .sourceAtop)
         for text in texts { NSAttributedString(string: text.text, attributes: [.font: font, .foregroundColor: ink]).draw(at: text.at) }
-        for meter in meters {
-            ink.withAlphaComponent(0.22).setFill()
-            NSBezierPath(roundedRect: meter.at, xRadius: 1, yRadius: 1).fill()
-            (meter.color ?? ink).setFill()
-            NSBezierPath(roundedRect: NSRect(x: meter.at.minX, y: meter.at.minY, width: meter.at.width * meter.share, height: meter.at.height), xRadius: 1, yRadius: 1).fill()
+        for bar in bars {
+            // A profile without a colour has the grey its dot has in the panel.
+            (bar.color ?? ink.withAlphaComponent(0.35)).setFill()
+            NSBezierPath(roundedRect: bar.at, xRadius: 1.25, yRadius: 1.25).fill()
         }
         return true
     }

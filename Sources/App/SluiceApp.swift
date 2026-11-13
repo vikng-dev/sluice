@@ -189,11 +189,10 @@ private let program = Bundle.main.executableURL!
 
     /// What the menu bar shows in place of the glyph: each starred profile's colour and its pools, by
     /// provider, with how much of each is used or left. Empty when none is starred.
-    func counters(left: Bool) -> [(color: NSColor?, pools: [(provider: String, text: String, share: Double)])] {
+    func counters(left: Bool) -> [(color: NSColor?, pools: [(provider: String, text: String)])] {
         config.names.filter { config.profiles[$0]?.starred == true }.map { profile in
             let pools = Dictionary(grouping: accounts.filter { $0.profile == profile }, by: \.provider).sorted { $0.key < $1.key }.map { provider, pool in
-                let share = left ? 1 - pool.used : pool.used
-                return (provider: provider, text: "\(Int((share * 100).rounded()))%", share: share)
+                (provider: provider, text: "\(Int(((left ? 1 - pool.used : pool.used) * 100).rounded()))%")
             }
             return (config.profiles[profile]?.color.map { NSColor($0.color) }, pools)
         }
