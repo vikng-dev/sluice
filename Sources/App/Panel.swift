@@ -247,6 +247,11 @@ private struct ProfileCaption: View {
         }
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
+        // The panel closes when it stops being the key window, and is the same view when it opens again.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            keep()
+            picking = false
+        }
     }
 }
 
