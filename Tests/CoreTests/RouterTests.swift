@@ -16,8 +16,9 @@ import Testing
         [Window(name: "week", used: used, resetsAt: now.addingTimeInterval(hours * 3600))]
     }
 
-    func order(_ router: Router = Router(), conversation: String? = nil, usage: [String: [Window]]) -> [String] {
-        router.order([a, b, c], conversation: conversation, usage: usage, now: now).map(\.label)
+    func order(_ router: Router = Router(), conversation: String? = nil, model: String? = nil, usage: [String: [Window]], scoped: [String: [Window]] = [:], resets: [String: [Reset]] = [:]) -> [String] {
+        let pool = [a, b, c].map { Standing(account: $0.id, windows: usage[$0.id] ?? [], scoped: scoped[$0.id] ?? [], resets: resets[$0.id] ?? []) }
+        return router.order(pool, conversation: conversation, model: model, now: now).compactMap { id in [a, b, c].first { $0.id == id }?.label }
     }
 
     @Test func theAccountResettingSoonestGoesFirstAndUntouchedOnesLast() {
@@ -44,8 +45,19 @@ import Testing
         #expect(order(router, conversation: "talk", usage: [b.id: week(0.5, resetsIn: 90), c.id: week(1, resetsIn: 20)]) == ["b", "a"])
     }
 
-    @Test func aWindowPastItsResetNoLongerCounts() {
-        #expect(order(usage: [c.id: week(1, resetsIn: -1)]) == ["a", "b", "c"])
+    /// What it uses before the reset lapses is given back, so that is used before another account's week.
+    @Test func anAccountWhoseResetLapsesBeforeItsWeekComesBackGoesFirst() {
+        let usage = [b.id: week(0.5, resetsIn: 90), c.id: week(0.2, resetsIn: 20)]
+        let lapsing = Reset(id: "r", refills: ["week"], expiresAt: now.addingTimeInterval(10 * 3600), usable: false)
+        #expect(order(usage: usage, resets: [b.id: [lapsing]]) == ["b", "c", "a"])
+        #expect(order(usage: usage, resets: [a.id: [lapsing]]) == ["a", "c", "b"])
+    }
+
+    @Test func aRequestForAModelPassesOverAnAccountThatHasSpentThatModelsShare() {
+        let usage = [b.id: week(0.5, resetsIn: 90), c.id: week(0.2, resetsIn: 20)]
+        let spent = [c.id: [Window(name: "fable", used: 1, resetsAt: now.addingTimeInterval(20 * 3600))]]
+        #expect(order(model: "claude-fable-5", usage: usage, scoped: spent) == ["b", "a"])
+        #expect(order(model: "claude-sonnet-5", usage: usage, scoped: spent) == ["c", "b", "a"])
     }
 
 
@@ -54,33 +66,59 @@ import Testing
     }
 }
 
-@Suite struct RefillTests {
+@Suite struct ResetUseTests {
     let now = Date(timeIntervalSince1970: 1_000_000)
     func limit(_ name: String, _ used: Double, back hours: Double = 24) -> Window { Window(name: name, used: used, resetsAt: now.addingTimeInterval(hours * 3600)) }
     func reset(_ id: String, _ refills: [String], lapses hours: Double = 240, usable: Bool = true) -> Reset {
         Reset(id: id, refills: refills, expiresAt: now.addingTimeInterval(hours * 3600), usable: usable)
     }
+    func refill(_ pool: [Standing], model: String? = nil) -> (account: String, reset: Reset)? { Router().refill(pool, model: model, now: now) }
 
-    @Test func aPoolThatIsOutIsBroughtBackByTheResetThatWastesLeast() {
-        let model = Refill.Holder(account: "a", limits: [limit("7d", 0.6), limit("fable", 1)], resets: [reset("whole", ["5h", "7d", "fable"], lapses: 10), reset("model", ["fable"])])
-        // The reset for the one limit that is spent, though the wider one lapses sooner.
-        #expect(Refill.forSpent([model], now: now)?.reset.id == "model")
-        // A reset that leaves a spent limit spent brings nothing back, and one its provider will not take is not tried.
-        let both = Refill.Holder(account: "a", limits: [limit("5h", 1), limit("7d", 1)], resets: [reset("short", ["5h"]), reset("barred", ["5h", "7d"], usable: false)])
-        #expect(Refill.forSpent([both], now: now) == nil)
-        // Nothing known spent: the refusal was for something a reset is not known to mend.
-        #expect(Refill.forSpent([Refill.Holder(account: "a", limits: [limit("7d", 0.99)], resets: [reset("r", ["7d"])])], now: now) == nil)
-        // Between like resets, on the account that would otherwise be out longest.
-        let soon = Refill.Holder(account: "soon", limits: [limit("7d", 1, back: 1)], resets: [reset("s", ["7d"])])
-        let late = Refill.Holder(account: "late", limits: [limit("7d", 1, back: 90)], resets: [reset("l", ["7d"])])
-        #expect(Refill.forSpent([soon, late], now: now)?.account == "late")
+    @Test func aPoolThatIsOutIsBroughtBackByTheNarrowestResetUnlessAWiderOneIsAtItsLastChance() {
+        func held(wideLapses hours: Double) -> Standing {
+            Standing(account: "a", windows: [limit("7d", 0.6)], scoped: [limit("fable", 1)], resets: [reset("whole", ["5h", "7d", "fable"], lapses: hours), reset("model", ["fable"])])
+        }
+        // The wider one can still refill a whole week another time, so the one for the spent limit is used.
+        #expect(refill([held(wideLapses: 100)], model: "claude-fable-5")?.reset.id == "model")
+        // Lapsing before the limit comes back, the wider one will never refill more than it does now.
+        #expect(refill([held(wideLapses: 10)], model: "claude-fable-5")?.reset.id == "whole")
+        // A request for another model was not refused over that limit.
+        #expect(refill([held(wideLapses: 100)], model: "claude-sonnet-5") == nil)
     }
 
-    @Test func aResetAboutToLapseIsUsedOnlyWhereItRefillsSomethingUsed() {
-        let lapsing = reset("r", ["fable"], lapses: 1)
-        #expect(Refill.lapsing(Refill.Holder(account: "a", limits: [limit("7d", 0.4), limit("fable", 0.2)], resets: [lapsing]), now: now)?.id == "r")
-        #expect(Refill.lapsing(Refill.Holder(account: "a", limits: [limit("7d", 0.4), limit("fable", 0)], resets: [lapsing]), now: now) == nil)
-        #expect(Refill.lapsing(Refill.Holder(account: "a", limits: [limit("fable", 0.9)], resets: [reset("far", ["fable"], lapses: 48)]), now: now) == nil)
+    @Test func aResetThatWouldNotBringTheAccountBackIsNotSpent() {
+        // One that leaves a spent limit spent, and one its provider will not take.
+        let both = Standing(account: "a", windows: [limit("5h", 1), limit("7d", 1)], resets: [reset("short", ["5h"]), reset("barred", ["5h", "7d"], usable: false)])
+        #expect(refill([both]) == nil)
+        // Nothing known spent: the refusal was over something a reset is not known to mend.
+        #expect(refill([Standing(account: "a", windows: [limit("7d", 0.99)], resets: [reset("r", ["7d"])])]) == nil)
+    }
+
+    @Test func aResetForAWeekIsNotSpentToSkipASittingsWait() {
+        func out(_ held: Reset) -> Standing { Standing(account: "a", windows: [limit("5h", 1, back: 3), limit("7d", 0.5)], resets: [held]) }
+        #expect(refill([out(reset("wide", ["5h", "7d"]))]) == nil)
+        #expect(refill([out(reset("sitting", ["5h"]))])?.reset.id == "sitting")
+        // Lapsing before the sitting is over, it is lost otherwise.
+        #expect(refill([out(reset("wide", ["5h", "7d"], lapses: 2))])?.reset.id == "wide")
+    }
+
+    @Test func betweenLikeResetsTheAccountOutLongestIsBroughtBack() {
+        let soon = Standing(account: "soon", windows: [limit("7d", 1, back: 1)], resets: [reset("s", ["7d"])])
+        let late = Standing(account: "late", windows: [limit("7d", 1, back: 90)], resets: [reset("l", ["7d"])])
+        #expect(refill([soon, late])?.account == "late")
+    }
+
+    @Test func withNoRequestWaitingAResetIsUsedAtItsLastChanceOrJustBeforeItLapses() {
+        func due(_ limits: [Window], _ held: Reset) -> String? { Router().due(Standing(account: "a", windows: limits, resets: [held]), now: now)?.id }
+        // Spent, and the reset lapses before the week is back: it will never refill more.
+        #expect(due([limit("7d", 1, back: 72)], reset("r", ["7d"], lapses: 48)) == "r")
+        // Spent, but the reset outlives the week: it waits for the pool to be out.
+        #expect(due([limit("7d", 1, back: 72)], reset("r", ["7d"], lapses: 96)) == nil)
+        // About to lapse: used on what is used at all, and not where it would refill nothing.
+        #expect(due([limit("7d", 0.2)], reset("r", ["7d"], lapses: 1)) == "r")
+        #expect(due([limit("7d", 0)], reset("r", ["7d"], lapses: 1)) == nil)
+        // Its provider does not take it while the account has spent a limit it does not refill.
+        #expect(due([limit("5h", 1, back: 3), limit("7d", 0.2)], reset("r", ["7d"], lapses: 1)) == nil)
     }
 }
 
@@ -138,9 +176,11 @@ import Testing
     }
 
     @Test func theResetsAnAccountHoldsAreReadWithWhatEachRefillsAndTheOneToUseFirstAtTheHead() throws {
-        let body = #"{"cedar_ember":{"eligible":true,"next_grant_id":"full","grants":[{"id":"fable","clears":["five_hour","seven_day_overage_included"],"ends_at":"2027-03-09T07:59:00+00:00","gives_back_weekly":true,"paused":false,"resets_left":2,"usable_now":true},{"id":"spent","clears":["seven_day"],"ends_at":"2026-12-10T22:00:00+00:00","resets_left":0,"usable_now":false},{"id":"full","clears":["five_hour","seven_day","seven_day_overage_included"],"ends_at":"2026-12-10T22:00:00+00:00","gives_back_weekly":false,"paused":true,"resets_left":1,"usable_now":true}]}}"#
+        let body = #"{"cedar_ember":{"eligible":true,"next_grant_id":"full","cooldown_until":"2026-11-13T17:43:31.083050+00:00","grants":[{"id":"fable","clears":["five_hour","seven_day_overage_included"],"ends_at":"2027-03-09T07:59:00+00:00","gives_back_weekly":true,"paused":false,"resets_left":2,"usable_now":true},{"id":"cooling","clears":["seven_day"],"ends_at":"2027-03-09T07:59:00+00:00","resets_left":1,"usable_now":false,"unavailable_reason":"cooldown"},{"id":"spent","clears":["seven_day"],"ends_at":"2026-12-10T22:00:00+00:00","resets_left":0,"usable_now":false},{"id":"full","clears":["five_hour","seven_day","seven_day_overage_included"],"ends_at":"2026-12-10T22:00:00+00:00","gives_back_weekly":false,"paused":true,"resets_left":1,"usable_now":true}]}}"#
         let resets = try Claude.resets(inUsage: Data(body.utf8))
-        #expect(resets.map(\.id) == ["full", "fable"])
+        #expect(resets.map(\.id) == ["full", "fable", "cooling"])
+        // After one is used the others wait, and the answer says until when.
+        #expect(!resets[2].usable && Int(resets[2].usableAfter?.timeIntervalSince1970 ?? 0) == 1_794_591_811 && resets[1].usableAfter == nil)
         #expect(resets[0].refills == ["5h", "7d", "fable"] && !resets[0].usable && !resets[0].givesBack)
         #expect(resets[1].refills == ["5h", "fable"] && resets[1].usable && resets[1].givesBack && resets[1].left == 2)
         #expect(Int(resets[0].expiresAt?.timeIntervalSince1970 ?? 0) == 1_796_940_000)

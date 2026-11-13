@@ -67,6 +67,14 @@ public func forget(provider: String, account label: String) async throws {
     if try await !relayAccounts().contains(where: { $0.label == label }) { try Storage.live.change { $0.forget(account: label) } }
 }
 
+/// Uses a reset an account holds, which cannot be taken back.
+public func useReset(_ id: String, provider: String, account label: String) async throws {
+    guard let segment = label.addingPercentEncoding(withAllowedCharacters: .alphanumerics), let reset = id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else {
+        throw CommandError(description: "unreadable account or reset name")
+    }
+    _ = try await relay("POST", "/accounts/\(provider)/\(segment)?reset=\(reset)")
+}
+
 /// Sets this machine up: every client talks to Sluice in every profile, and `program` (Sluice itself)
 /// stands in for the clients to open the right profile.
 public func setUp(program: URL) throws {

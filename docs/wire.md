@@ -33,6 +33,9 @@ Requests with the credential and that id swapped are served normally.
 A window with no usage yet omits its headers (a fresh account sent no `5h-*`). Per-model weekly
 limits are not in the headers; they need the usage endpoint.
 
+**The model asked for (captured 2026-11-13).** Claude Code's `/v1/messages` body and Codex's
+`/backend-api/codex/responses` body both carry it as a top-level `model` string.
+
 **Usage, on request (captured 2026-11-13).** `GET https://api.anthropic.com/api/oauth/usage` with
 the bearer token and `anthropic-beta: oauth-2025-04-20`; the `user:inference` scope is enough.
 `five_hour` and `seven_day` are each `{utilization, resets_at}` or null: `utilization` is 0–100,
@@ -57,12 +60,22 @@ week; `ends_at` is ISO 8601 without fractional seconds; a used-up grant stays li
 the relay carry `User-Agent: claude-cli/<version> (external, <entrypoint>)` (`sdk-cli` seen for
 `claude -p`), which is where Sluice takes the version from.
 
-**Using a reset (not captured; read in Claude Code 2.1.323's program and OpenUsage 35e88e9).**
-`POST https://api.anthropic.com/api/organizations/<organization uuid>/reset_rate_limits` with the
-same headers and `{program: "cedar_ember", grant_id, request_id}`. The answer's `result` is `reset`
-or `already_used` when it took, else `not_limited`, `cooldown`, `ineligible` or `unavailable`, the
-last with a `reason` such as `not_next_grant`. Confirm against the first real one. A `result` not
-named here is taken for an error, not a refusal, so that automatic use stops instead of trying another.
+**Using a reset (captured 2026-11-13, one real use; the other answers read in Claude Code
+2.1.323's program).** `POST https://api.anthropic.com/api/organizations/<organization uuid>/reset_rate_limits`
+with the same headers and `{program: "cedar_ember", grant_id, request_id}` answered `200` with
+`{result: "reset", reason: null, reset: true, grant_id, resets_left: 0, cleared: ["five_hour",
+"seven_day_overage_included"], weekly_resets_at, cooldown_until}`. What it showed:
+
+- It was taken on an account at no limit (Fable share at 53%; the grant read `use_requires_limit:
+  false`), and though `next_grant_id` named another grant: the order is advice.
+- The Fable share went to 0 and the week from 66% to 39% (`gives_back_weekly`); the week's reset
+  time did not move.
+- For fifteen minutes the account's other grant read `usable_now: false, unavailable_reason:
+  "cooldown"`, with `cooldown_until` at the top of the block.
+
+Not seen: `result` may also be `already_used` (it took), `not_limited`, `cooldown`, `ineligible`,
+or `unavailable` with a `reason` such as `not_next_grant`. A `result` not named here is taken for an
+error, not a refusal, so that automatic use stops instead of trying another.
 
 **Plan (captured 2026-11-13).** `GET https://api.anthropic.com/api/oauth/profile`, same headers.
 `organization.organization_type` is `claude_max` or `claude_team`; `organization.rate_limit_tier`

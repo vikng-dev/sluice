@@ -150,6 +150,10 @@ public struct Codex: Provider {
         spend.output = usage["output_tokens"] as? Int ?? 0
     }
 
+    public func model(of request: HTTPRequest) -> String? {
+        JSONScan.topLevelValue(of: "model", in: request.body).flatMap { try? JSONDecoder().decode(String.self, from: request.body.subdata(in: $0)) }
+    }
+
     public func reading(status: Int, headers: [String: String]) -> Reading {
         let windows = ["primary", "secondary"].compactMap { slot -> Window? in
             func field(_ name: String) -> Double? { headers["x-codex-\(slot)-\(name)"].flatMap(Double.init) }

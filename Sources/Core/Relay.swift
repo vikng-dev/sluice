@@ -2,7 +2,7 @@ import Foundation
 import os
 
 /// A local address, read as a route. The grammar:
-/// `/login/<provider>`, `/callback?code=…&state=…`, `/status`, `/accounts/<provider>/<account>`, and
+/// `/login/<provider>`, `/callback?code=…&state=…`, `/status`, `/accounts/<provider>/<account>[?reset=<id>]`, and
 /// `/<provider>[/pin/<account>]/<the provider's own path and query>`. The caller's folder decides the
 /// profile (see `Config.profile`); a pin names one account of that profile's pool.
 enum Route: Equatable {
@@ -92,7 +92,7 @@ public final class Relay: Sendable {
                 log("\(account.provider) \(account.label) usage check failed: \(error)")
             }
             if await accounts.owesResets(account.id) { await checkResets(of: fresh, at: provider) }
-            if let reset = await accounts.lapsing(account) {
+            if let reset = await accounts.due(account) {
                 do { try await use(reset, of: fresh, at: provider) } catch { await notTaken(reset, by: fresh, error) }
             }
         }
@@ -140,12 +140,12 @@ public final class Relay: Sendable {
     /// itself, or one a reset was just used on. What is known may be stale, so each is asked how it stands
     /// before a reset is spent. A reset its provider refused in so many words was not spent, so the next
     /// is tried; any other failure ends it, so that an answer misread costs one reset at most.
-    private func refill(_ pool: [Account], at provider: any Provider) async -> Account? {
+    private func refill(_ pool: [Account], for model: String?, at provider: any Provider) async -> Account? {
         for account in pool {
             if let fresh = try? await accounts.fresh(account.id, using: provider) { await checkStanding(of: fresh, at: provider) }
         }
-        if let open = await accounts.open(among: pool) { return open }
-        while let (account, reset) = await accounts.refill(for: pool), let fresh = try? await accounts.fresh(account.id, using: provider) {
+        if let open = await accounts.open(among: pool, model: model) { return open }
+        while let (account, reset) = await accounts.refill(for: pool, model: model), let fresh = try? await accounts.fresh(account.id, using: provider) {
             do {
                 try await use(reset, of: fresh, at: provider)
                 return fresh
@@ -168,8 +168,21 @@ public final class Relay: Sendable {
                 try await writer.send(500, text: "sluice: \(error)")
             }
         case .account(let provider, let label):
-            // The one thing asked of an account by address is to forget it.
-            guard request.method == "DELETE" else { return try await writer.send(405, text: "sluice: an account is removed with DELETE") }
+            // By address an account is forgotten, or has a reset it holds used.
+            if request.method == "POST", let id = Route.query("reset", in: request.target) {
+                do {
+                    guard let reset = try await status().first(where: { $0.provider == provider && $0.label == label })?.resets.first(where: { $0.id == id }) else {
+                        return try await writer.send(404, text: "sluice: the \(provider) account \(label) holds no reset \(id)")
+                    }
+                    try await use(reset, provider: provider, account: label)
+                    return try await writer.send(200, text: "used")
+                } catch let refusal as ResetRefused {
+                    return try await writer.send(409, text: "sluice: the reset was not used: \(refusal)")
+                } catch {
+                    return try await writer.send(502, text: "sluice: the reset may not have been used: \(error)")
+                }
+            }
+            guard request.method == "DELETE" else { return try await writer.send(405, text: "sluice: an account is removed with DELETE, and a reset used with POST and ?reset=<id>") }
             do {
                 guard try await accounts.remove(provider: provider, label: label) else { return try await writer.send(404, text: "sluice: no \(provider) account \(label)") }
                 log("\(provider) \(label) removed")
@@ -205,7 +218,7 @@ public final class Relay: Sendable {
             try await finishSignIn(code: code, state: state, writer)
         case .relay(let id, let pin, let target):
             guard let provider = providers[id] else { return try await writer.send(404, text: "sluice: no provider \(id)") }
-            let conversation = provider.conversation(of: request), asked = Date()
+            let conversation = provider.conversation(of: request), model = provider.model(of: request), asked = Date()
             // Under a new name the provider may tell of resets it would not tell of before.
             if let client = request.header("User-Agent").flatMap(provider.clientName), await accounts.seen(client: client, of: id) {
                 Task {
@@ -216,7 +229,7 @@ public final class Relay: Sendable {
             }
             let candidates: [Account], profile: String, refillable: [Account]
             do {
-                (profile, candidates, refillable) = try await accounts.candidates(provider: id, pin: pin, folder: request.callerFolder, conversation: conversation?.id)
+                (profile, candidates, refillable) = try await accounts.candidates(provider: id, pin: pin, folder: request.callerFolder, conversation: conversation?.id, model: model)
             } catch {
                 return try await writer.send(500, text: "sluice: \(error)")
             }
@@ -256,17 +269,21 @@ public final class Relay: Sendable {
                 let reading = provider.reading(status: response.statusCode, headers: Dictionary(headers.map { ($0.0.lowercased(), $0.1) }) { $1 })
                 await accounts.answered(account.id, reporting: reading.windows)
                 log("\(id) \(account.label) \(request.method) \(target.prefix { $0 != "?" }) \(response.statusCode)\(reading.refused ? " spent" : "")")
-                if reading.refused, !isLast { continue }
-                // The whole pool is out. Where the profile said so, a reset it holds brings an account back
-                // and the request is sent to that one, once.
-                if reading.refused, !refilled, !refillable.isEmpty {
-                    let back = await refills.one(for: "\(profile)/\(id)/\(pin ?? "")", refusedAt: Date()) { [self] in await refill(refillable, at: provider) }
+                // The whole pool is out. Where the user said so, a reset it holds brings an account back and
+                // the request is sent to that one, once.
+                if reading.refused, isLast, !refilled, !refillable.isEmpty {
+                    let back = await refills.one(for: "\(profile)/\(id)/\(pin ?? "")", refusedAt: Date()) { [self] in await refill(refillable, for: model, at: provider) }
                     if let back {
                         refilled = true
                         queue = [back]
                         continue
                     }
+                } else if reading.refused, !reading.windows.contains(where: { $0.used >= 1 }) {
+                    // It refused over a limit its answers do not report, such as one model's own: it is asked
+                    // how it stands, so that the next such request is not sent to it.
+                    Task { await checkStanding(of: account, at: provider) }
                 }
+                if reading.refused, !isLast { continue }
                 if let conversation, !reading.refused {
                     await accounts.served(conversation.id, by: account.id, cacheLifetime: conversation.cacheLifetime)
                 }

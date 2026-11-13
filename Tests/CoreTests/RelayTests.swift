@@ -40,6 +40,7 @@ private struct Fake: Provider {
     func refresh(_ account: Account) async throws -> Account { account }
     func prepare(_ request: inout HTTPRequest, for account: Account) { request.setHeader("X-Account", account.label) }
     func conversation(of request: HTTPRequest) -> (id: String, cacheLifetime: TimeInterval)? { nil }
+    func model(of request: HTTPRequest) -> String? { nil }
     func reading(status: Int, headers: [String: String]) -> Reading {
         Reading(windows: status == 429 ? [Window(name: "week", used: 1, resetsAt: .distantFuture)] : [], refused: status == 429)
     }
@@ -148,8 +149,8 @@ private actor Hits {
         let stored = ["w", "mine"].map { Account(provider: "fake", subject: $0, organization: nil, label: $0, accessToken: "", refreshToken: "", expiresAt: .distantFuture) }
         let accounts = try Accounts(storage: Storage(loadAccounts: { stored }, storeAccounts: { _ in }, config: { config }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in }))
         // A caller with no folder is doing the default profile's work.
-        #expect(try await accounts.candidates(provider: "fake", pin: "w", folder: nil, conversation: nil).accounts.isEmpty)
-        #expect(try await accounts.candidates(provider: "fake", pin: "mine", folder: nil, conversation: nil).accounts.map(\.label) == ["mine"])
+        #expect(try await accounts.candidates(provider: "fake", pin: "w", folder: nil, conversation: nil, model: nil).accounts.isEmpty)
+        #expect(try await accounts.candidates(provider: "fake", pin: "mine", folder: nil, conversation: nil, model: nil).accounts.map(\.label) == ["mine"])
     }
 
     @Test func aReadingIsALineOfHistoryOnlyWhenItSaysSomethingNew() async throws {

@@ -95,6 +95,9 @@ sluice \(Sluice.version)
 
   sluice account move <account> <profile>        the account serves that profile from now on
   sluice account remove <provider> <account>     forget the sign-in
+  sluice account refill <provider> <account> <reset>
+                                                 use a reset the account holds, by its id in `status --json`;
+                                                 what it refills is whole again at once, and it cannot be taken back
 
   sluice resets [auto | manual]                  whether a pool uses the resets it holds by itself: when it is out,
                                                  or one is about to lapse. With neither word, says which it is
@@ -233,6 +236,10 @@ func command(_ arguments: [String]) async {
         guard words.count == 4 else { fail("usage: sluice account remove <provider> <account>") }
         do { try await forget(provider: words[2], account: words[3]) } catch { fail("\(error)") }
         print("Removed the \(words[2]) account \(words[3]).")
+    case ("account", "refill"):
+        guard words.count == 5 else { fail("usage: sluice account refill <provider> <account> <reset>") }
+        do { try await useReset(words[4], provider: words[2], account: words[3]) } catch { fail("\(error)") }
+        print("Used the reset \(words[4]) of the \(words[2]) account \(words[3]).")
     default:
         if let first = words.first, first != "help" { fail("no such command: \(words.joined(separator: " ")). Run sluice for the list.") }
         print(usage)

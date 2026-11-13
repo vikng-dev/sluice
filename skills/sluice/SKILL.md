@@ -45,6 +45,7 @@ sluice profile unstar <name> <provider>
 sluice resets [auto | manual]                    # whether a pool uses the resets it holds by itself, when it is out
                                                  # or one is about to lapse; `manual` is the default
 sluice account move <account> <profile>
+sluice account refill <provider> <account> <reset>   # use a reset it holds (ids in `status --json`); cannot be undone
 sluice account remove <provider> <account>       # forgets the sign-in; signing in again needs a browser
 ```
 

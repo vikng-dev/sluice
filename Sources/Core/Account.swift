@@ -294,15 +294,17 @@ actor Accounts {
         accounts = next
     }
 
-    /// The profile the caller's folder belongs to, and the accounts to try, in order: its pool at the
-    /// provider, or of that pool the one account a pin in the address names. With them, the accounts a
-    /// reset may be used on when all of those refuse: none, unless the user said to use resets for them.
-    func candidates(provider: String, pin: String?, folder: String?, conversation: String?) throws -> (profile: String, accounts: [Account], refillable: [Account]) {
-        let config = try storage.config()
+    /// The profile the caller's folder belongs to, and the accounts to try for a request for `model`, in
+    /// order: its pool at the provider, or of that pool the one account a pin in the address names. With
+    /// them, the accounts a reset may be used on when all of those refuse: none, unless the user said to
+    /// use resets for them.
+    func candidates(provider: String, pin: String?, folder: String?, conversation: String?, model: String?) throws -> (profile: String, accounts: [Account], refillable: [Account]) {
+        let config = try storage.config(), now = Date()
         let profile = folder.map { config.profile(for: $0) } ?? Config.defaultProfile
         var pool = config.pool(accounts.filter { $0.provider == provider }, for: profile)
         if let pin { pool = pool.filter { $0.label == pin } }
-        return (profile, pin == nil ? memory.router.order(pool, conversation: conversation, usage: memory.usage, now: Date()) : pool, config.autoResets ? pool : [])
+        let order = pin == nil ? memory.router.order(pool.map { standing($0, now: now) }, conversation: conversation, model: model, now: now) : pool.map(\.id)
+        return (profile, order.compactMap { id in pool.first { $0.id == id } }, config.autoResets ? pool : [])
     }
 
     var all: [Account] { accounts }
@@ -329,9 +331,11 @@ actor Accounts {
 
     func client(of provider: String) -> String? { memory.clients?[provider] }
 
-    /// Providers answer about resets grudgingly, so each account is asked once an hour.
+    /// Providers answer about resets grudgingly, so each account is asked once an hour, and when a reset
+    /// its provider would not take until some time has reached that time.
     func owesResets(_ id: String, now: Date = Date()) -> Bool {
-        resetsAsked[id].map { now.timeIntervalSince($0) >= 3600 } ?? true
+        guard let asked = resetsAsked[id] else { return true }
+        return now.timeIntervalSince(asked) >= 3600 || (resets[id] ?? []).contains { !$0.usable && $0.usableAfter.map { $0 <= now } == true }
     }
 
     func record(resets held: [Reset], for id: String) {
@@ -349,26 +353,29 @@ actor Accounts {
         (resets[id] ?? []).filter { $0.left > 0 && $0.expiresAt.map { $0 > now } != false }
     }
 
-    private func holder(_ account: Account, now: Date) -> Refill.Holder {
-        Refill.Holder(account: account.id, limits: ((memory.usage[account.id] ?? []) + (scoped[account.id] ?? [])).filter { $0.resetsAt > now }, resets: held(by: account.id, now: now))
+    private func standing(_ account: Account, now: Date) -> Standing {
+        Standing(
+            account: account.id, windows: (memory.usage[account.id] ?? []).filter { $0.resetsAt > now },
+            scoped: (scoped[account.id] ?? []).filter { $0.resetsAt > now }, resets: held(by: account.id, now: now)
+        )
     }
 
-    /// Of these accounts, one with no limit spent.
-    func open(among pool: [Account], now: Date = Date()) -> Account? {
-        pool.first { !holder($0, now: now).limits.contains { $0.used >= 1 } }
+    /// Of these accounts, one that has spent no limit a request for `model` draws on.
+    func open(among pool: [Account], model: String?, now: Date = Date()) -> Account? {
+        pool.first { !standing($0, now: now).limits(for: model).contains { $0.used >= 1 } }
     }
 
-    /// The reset to use now that every one of these accounts is out, and the account it is on.
-    func refill(for pool: [Account], now: Date = Date()) -> (account: Account, reset: Reset)? {
-        guard let pick = Refill.forSpent(pool.map { holder($0, now: now) }, now: now), let account = pool.first(where: { $0.id == pick.account }) else { return nil }
+    /// The reset to use now that every one of these accounts refused a request for `model`, and the account it is on.
+    func refill(for pool: [Account], model: String?, now: Date = Date()) -> (account: Account, reset: Reset)? {
+        guard let pick = memory.router.refill(pool.map { standing($0, now: now) }, model: model, now: now), let account = pool.first(where: { $0.id == pick.account }) else { return nil }
         return (account, pick.reset)
     }
 
-    /// A reset of the account's to use before it lapses. None unless the user said to use resets for them,
-    /// and none while the config cannot be read.
-    func lapsing(_ account: Account, now: Date = Date()) -> Reset? {
+    /// A reset of the account's to use with no request waiting. None unless the user said to use resets
+    /// for them, and none while the config cannot be read.
+    func due(_ account: Account, now: Date = Date()) -> Reset? {
         guard (try? storage.config())?.autoResets == true else { return nil }
-        return Refill.lapsing(holder(account, now: now), now: now)
+        return memory.router.due(standing(account, now: now), now: now)
     }
 
     /// The provider would not take the reset. It is not offered again until the account's resets are next read.

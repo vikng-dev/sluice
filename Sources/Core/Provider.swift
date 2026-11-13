@@ -36,6 +36,9 @@ public protocol Provider: Sendable {
     /// The conversation a request belongs to, and how long its prompt cache lives after this request.
     /// Nil for a request that belongs to none.
     func conversation(of request: HTTPRequest) -> (id: String, cacheLifetime: TimeInterval)?
+    /// The model a request asks for; nil where it asks for none. A limit on one model's use is named so
+    /// that the model's name has the limit's in it.
+    func model(of request: HTTPRequest) -> String?
     /// What a response's status and headers (names lowercased) say about the account that answered.
     func reading(status: Int, headers: [String: String]) -> Reading
     /// Reads into `spend` what one event of an answer says it cost: the JSON of a stream's event, or of an
@@ -68,14 +71,17 @@ public struct Reset: Codable, Sendable, Equatable, Identifiable {
     public var expiresAt: Date?
     /// Whether the provider would take it now.
     public var usable: Bool
+    /// When the provider said it would take it again, for one it will not take now; nil when it named no time.
+    public var usableAfter: Date?
 
-    public init(id: String, refills: [String], givesBack: Bool = false, left: Int = 1, expiresAt: Date?, usable: Bool) {
+    public init(id: String, refills: [String], givesBack: Bool = false, left: Int = 1, expiresAt: Date?, usable: Bool, usableAfter: Date? = nil) {
         self.id = id
         self.refills = refills
         self.givesBack = givesBack
         self.left = left
         self.expiresAt = expiresAt
         self.usable = usable
+        self.usableAfter = usableAfter
     }
 }
 

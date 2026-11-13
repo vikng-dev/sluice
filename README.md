@@ -6,7 +6,7 @@ Claude Code and Codex talk to Sluice on localhost; Sluice decides which of your 
 **Status: early.** Claude Code and Codex are relayed across pools of accounts. The menu bar panel shows
 each profile's pools, one per provider. Each account is two lines: who it is (its address, whether a
 client is itself signed in as it, whether it is answering now, its plan), and under that its week as a
-bar with the share used and the time until it resets. Where another of its limits is fuller than its week and near its end, such as its five hours or one model's own share of the week, the bar is that one's, named; a click on the account lists every limit it has, and under them the resets it holds, each a chip saying what it refills and how long until it lapses; a click on a chip uses it, which asks first and cannot be taken back. A pool's header says how much of the pool is used. The bolt on the panel's last line has Sluice use resets for you: when every account of the pool refuses a request, the reset that refills what an account has spent and nothing more is used and the request is answered by that account, and a reset within six hours of lapsing is used where it refills something that is used. Claude tells of resets to Claude Code alone, so Sluice asks for them under the name and version Claude Code itself last came through with, and until it has come through none are shown. A click on any share reads them all as left, and on any clock reads them all as the time itself. The panel has a second view, chosen on its last line: the last week of use. Each profile is one chart with a line for every account's week; under it, for each pool, how much of it goes per hour and whether at that rate it lasts or when it runs dry, and what each account has given for a point of its week. Under the profiles, the tokens of each hour and where they went by folder and by model. A pool's star puts it in the menu bar as its provider's mark and its share, a profile's pools together after a short bar in the profile's color, in place of the glyph while the clients are routed. It also says when the clients
+bar with the share used and the time until it resets. Where another of its limits is fuller than its week and near its end, such as its five hours or one model's own share of the week, the bar is that one's, named; a click on the account lists every limit it has, and under them the resets it holds, each a chip saying what it refills and how long until it lapses; a click on a chip uses it, which asks first and cannot be taken back. A pool's header says how much of the pool is used. The bolt on the panel's last line has Sluice use resets for you, as [How an account is picked](#how-an-account-is-picked) says. Claude tells of resets to Claude Code alone, so Sluice asks for them under the name and version Claude Code itself last came through with, and until it has come through none are shown. A click on any share reads them all as left, and on any clock reads them all as the time itself. The panel has a second view, chosen on its last line: the last week of use. Each profile is one chart with a line for every account's week; under it, for each pool, how much of it goes per hour and whether at that rate it lasts or when it runs dry, and what each account has given for a point of its week. Under the profiles, the tokens of each hour and where they went by folder and by model. A pool's star puts it in the menu bar as its provider's mark and its share, a profile's pools together after a short bar in the profile's color, in place of the glyph while the clients are routed. It also says when the clients
 are not going through Sluice. `sluice status` prints the same accounts. What can be done to a thing shows when the pointer is on it: a profile's **+** adds an
 account to it, at the provider you pick, or work that belongs to it (folders, or a repository owner), and an account's **⋯** removes it. An account is
 moved by its handle: it lifts off the panel and drops onto another profile. A profile's name and its color dot are changed where they are: click the name to type another, click the dot to pick a color. Beside the name is a count of the folders and repository owners whose work the profile claims, and the default profile has everything else. Click the count to lay the claims out, each let go by the × it shows under the pointer. After the last profile, **New profile** is typed in place: what you type is what it is shown as, and its name is made from it. An account dropped on it gets a profile of its own, named from its address unless you type another, and made when you press Return. A profile's **+** also removes it. The **⋯** on the same line holds the version, **Stop routing** and **Quit**. An owner is asked for in a dialog; while it is typed, the ones offered are those of the repositories the clients have worked in on this Mac, and then the accounts GitHub's public search finds for the letters typed, which are all that is sent to it.
@@ -117,13 +117,24 @@ by the right profile's accounts. A harness can also name one account outright:
 
 Within a profile's pool:
 
-- **Soonest reset first.** A request goes to the unspent account whose longest window resets
-  soonest; an account with no usage yet goes last, so an idle window is not started early.
+- **Soonest lost first.** A request goes to the unspent account whose remaining allowance is lost
+  soonest: at its longest window's reset, or sooner where a reset it holds lapses first, since that
+  reset gives back what is used before then. An account with no usage yet goes last, so an idle
+  window is not started early.
+- **A model's own share.** A request for a model that has its own share of the week passes over an
+  account that has spent that share; the account still answers for other models.
 - **Stay warm.** A conversation stays on the account that last served it for as long as its prompt
   cache lives there (an hour for Claude Code, assumed half an hour for Codex). After that it is
   placed afresh.
 - **Keep going.** When an account refuses because an allowance is spent, the request is resent on
   the next account before the client sees anything. A plain rate limit is passed through.
+- **Resets, with the bolt on.** A reset is used when it gives the most back. When every account of
+  the pool has refused a request, one that refills everything an account has spent is used and the
+  request is answered by that account: the one that refills the fewest limits, so that a wider one
+  is kept, unless a wider one lapses before those limits come back. A reset that refills a week is
+  not spent to skip a five-hour wait. With no request waiting, a reset is used when its account has
+  spent a limit and the reset lapses before that limit comes back, and in its last six hours on
+  whatever it refills that is used at all.
 
 Sluice signs in to each account itself and keeps the tokens in its own Keychain item. What it
 observed (windows, warm conversations) is kept in `~/Library/Application Support/Sluice`, so a

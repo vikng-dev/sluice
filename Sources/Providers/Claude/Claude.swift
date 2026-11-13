@@ -159,6 +159,10 @@ public struct Claude: Provider {
         if let tokens = usage["output_tokens"] as? Int { spend.output = tokens }
     }
 
+    public func model(of request: HTTPRequest) -> String? {
+        JSONScan.topLevelValue(of: "model", in: request.body).flatMap { try? JSONDecoder().decode(String.self, from: request.body.subdata(in: $0)) }
+    }
+
     public func reading(status: Int, headers: [String: String]) -> Reading {
         func field(_ window: String, _ name: String) -> String? { headers["anthropic-ratelimit-unified-\(window)-\(name)"] }
         let windows = ["5h", "7d"].compactMap { name -> Window? in
@@ -255,11 +259,16 @@ public struct Claude: Provider {
         let time = ISO8601DateFormatter()
         let names = ["five_hour": "5h", "seven_day": "7d", "seven_day_overage_included": "fable"]
         let next = held["next_grant_id"] as? String
+        // After a reset is used the account's others wait out a cooldown, which the answer times as a whole.
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let cooldown = (held["cooldown_until"] as? String).flatMap(precise.date)
         return (held["grants"] as? [[String: Any]] ?? []).compactMap { grant -> Reset? in
             guard let id = grant["id"] as? String, let left = grant["resets_left"] as? Int, left > 0 else { return nil }
             return Reset(
                 id: id, refills: (grant["clears"] as? [String] ?? []).map { names[$0] ?? $0 }, givesBack: grant["gives_back_weekly"] as? Bool == true, left: left,
-                expiresAt: (grant["ends_at"] as? String).flatMap(time.date), usable: grant["usable_now"] as? Bool == true && grant["paused"] as? Bool != true
+                expiresAt: (grant["ends_at"] as? String).flatMap(time.date), usable: grant["usable_now"] as? Bool == true && grant["paused"] as? Bool != true,
+                usableAfter: grant["unavailable_reason"] as? String == "cooldown" ? cooldown : nil
             )
         }
         .sorted { ($0.id == next ? 0 : 1) < ($1.id == next ? 0 : 1) }

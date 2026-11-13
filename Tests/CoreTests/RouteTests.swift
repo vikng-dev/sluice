@@ -53,6 +53,14 @@ import Testing
         #expect(prepared(body) == expected)
     }
 
+    @Test func theModelARequestAsksForIsItsOwnAndNotOneNamedInsideIt() {
+        // A tool call in the conversation may carry a model of its own.
+        let body = #"{"messages":[{"content":[{"type":"tool_use","input":{"model":"opus"}}]}],"model":"claude-fable-5-2","stream":true}"#
+        let request = HTTPRequest(method: "POST", target: "/v1/messages", headers: [], body: Data(body.utf8))
+        #expect(Claude().model(of: request) == "claude-fable-5-2")
+        #expect(Claude().model(of: HTTPRequest(method: "GET", target: "/v1/models", headers: [], body: Data())) == nil)
+    }
+
     @Test func aBodyWithoutMetadataIsLeftAlone() {
         let body = #"{"messages":[{"content":"account_uuid\":\"OLD\""}]}"#
         #expect(prepared(body) == body)
