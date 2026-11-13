@@ -16,7 +16,7 @@ struct Panel: View {
     let signIn: (_ provider: String, _ profile: String) -> Void
     let move: (AccountStatus, _ profile: String) -> Void
     let remove: (AccountStatus) -> Void
-    let rename: (_ profile: String) -> Void
+    let rename: (_ profile: String, _ label: String) -> Void
     let tint: (_ profile: String, Tint?) -> Void
     let quit: () -> Void
 
@@ -88,8 +88,9 @@ struct Panel: View {
             ForEach(sections, id: \.name) { section in
                 VStack(alignment: .leading, spacing: 10) {
                     ProfileCaption(
-                        label: config.shown(section.name), tint: config.profiles[section.name]?.color, empty: section.pools.isEmpty, titles: titles,
-                        signIn: { signIn($0, section.name) }, rename: { rename(section.name) }, setTint: { tint(section.name, $0) }
+                        name: section.name, label: config.profiles[section.name]?.label, tint: config.profiles[section.name]?.color,
+                        empty: section.pools.isEmpty, titles: titles,
+                        signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) }
                     )
                     ForEach(section.pools) { PoolView(pool: $0, now: now, carried: carried?.account.id, actions: actions) }
                 }
@@ -173,48 +174,73 @@ private struct RowActions {
     let putBack: () -> Void
 }
 
-/// A profile's name, and on it the way to give the profile another account: the provider is picked there.
-/// What can be done to a thing shows when the pointer is on it; an empty profile shows it always.
+/// A profile's name and color, each changed where it is: a click on the name types a new one, a click on
+/// the dot offers the colors. The + that gives the profile another account shows when the pointer is on
+/// the row, and always on an empty profile.
 private struct ProfileCaption: View {
-    let label: String
+    let name: String
+    let label: String?
     let tint: Tint?
     let empty: Bool
     let titles: [String: String]
     let signIn: (_ provider: String) -> Void
-    let rename: () -> Void
+    let rename: (_ label: String) -> Void
     let setTint: (Tint?) -> Void
     @State private var hovered = false
+    @State private var picking = false
+    /// The label being typed; nil when the name is only shown.
+    @State private var draft: String?
+    @FocusState private var typing: Bool
+
+    private func dot(_ tint: Tint?, size: Double) -> some View {
+        Circle().fill(tint?.color ?? Color.secondary.opacity(0.4)).frame(width: size, height: size)
+    }
+
+    /// An unchanged label is not written, so leaving the field writes nothing.
+    private func keep() {
+        guard let typed = draft else { return }
+        draft = nil
+        if typed != label ?? "" { rename(typed) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Circle().fill(tint?.color ?? Color.secondary.opacity(0.4)).frame(width: 7, height: 7)
-                Text(label.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
-                Spacer()
-                Group {
-                    Menu {
-                        Button("Rename…", action: rename)
-                        Picker("Color", selection: Binding(get: { tint }, set: { setTint($0) })) {
-                            Text("None").tag(Tint?.none)
-                            ForEach(Tint.allCases, id: \.self) { tint in
-                                Label { Text(tint.rawValue.capitalized) } icon: { Image(nsImage: tint.swatch) }.tag(Tint?.some(tint))
-                            }
+                Button { picking.toggle() } label: { dot(tint, size: 7).frame(width: 11, height: 11).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).help("Change its color")
+                if picking {
+                    ForEach([nil] + Tint.allCases.map(Optional.some), id: \.self) { option in
+                        Button {
+                            setTint(option)
+                            picking = false
+                        } label: {
+                            dot(option, size: 11).overlay { if option == tint { Circle().strokeBorder(.primary.opacity(0.6), lineWidth: 1.5) } }
                         }
-                    } label: {
-                        Image(systemName: "ellipsis")
+                        .buttonStyle(.plain).help(option?.rawValue.capitalized ?? "No color")
                     }
-                    .bare()
-                    .help("Rename or color this profile")
-                    Menu {
-                        ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
-                            Button("Sign in a \(title) account") { signIn(provider) }
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .bare()
-                    .help("Add an account to this profile")
+                } else if draft != nil {
+                    TextField(name, text: Binding(get: { draft ?? "" }, set: { draft = $0 }))
+                        .textFieldStyle(.plain).font(.caption.weight(.semibold)).focused($typing)
+                        .onAppear { typing = true }
+                        .onSubmit(keep)
+                        .onExitCommand { draft = nil }
+                        .onChange(of: typing) { _, typing in if !typing { keep() } }
+                } else {
+                    Text((label ?? name).uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).kerning(0.6)
+                        .contentShape(Rectangle())
+                        .onTapGesture { draft = label ?? "" }
+                        .help("Click to change what this profile is shown as")
                 }
+                Spacer()
+                Menu {
+                    ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
+                        Button("Sign in a \(title) account") { signIn(provider) }
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .bare()
+                .help("Add an account to this profile")
                 .opacity(hovered || empty ? 1 : 0)
             }
             if empty { Text("No accounts").font(.callout).foregroundStyle(.secondary) }
@@ -225,27 +251,16 @@ private struct ProfileCaption: View {
 }
 
 extension Tint {
-    var nsColor: NSColor {
+    var color: Color {
         switch self {
-        case .red: .systemRed
-        case .orange: .systemOrange
-        case .yellow: .systemYellow
-        case .green: .systemGreen
-        case .teal: .systemTeal
-        case .blue: .systemBlue
-        case .purple: .systemPurple
-        case .pink: .systemPink
-        }
-    }
-
-    var color: Color { Color(nsColor: nsColor) }
-
-    /// The color as a picture, since a menu draws a symbol in its own color.
-    var swatch: NSImage {
-        NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
-            nsColor.setFill()
-            NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1)).fill()
-            return true
+        case .red: .red
+        case .orange: .orange
+        case .yellow: .yellow
+        case .green: .green
+        case .teal: .teal
+        case .blue: .blue
+        case .purple: .purple
+        case .pink: .pink
         }
     }
 }

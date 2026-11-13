@@ -110,21 +110,8 @@ private let program = Bundle.main.executableURL!
         change { try $0.color(profile, tint) }
     }
 
-    /// Asks what the profile is to be shown as.
-    func rename(_ profile: String) {
-        let field = NSTextField(string: config.profiles[profile]?.label ?? "")
-        field.placeholderString = profile
-        field.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
-        let alert = NSAlert()
-        alert.messageText = "What should profile \(profile) be shown as?"
-        alert.informativeText = "Its folders and the sluice command keep calling it \(profile). Leave this empty to show that."
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        change { try $0.label(profile, as: field.stringValue) }
+    func rename(_ profile: String, to label: String) {
+        change { try $0.label(profile, as: label) }
     }
 
     /// Asks first: signing in again needs the browser and the person.
