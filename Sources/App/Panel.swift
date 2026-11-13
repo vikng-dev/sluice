@@ -243,7 +243,9 @@ private struct ProfileCaption: View {
             Spacer()
             Menu {
                 ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
-                    Button("Sign in a \(title) account") { signIn(provider) }
+                    Button { signIn(provider) } label: {
+                        Label { Text("Sign in a \(title) account") } icon: { providerMark(provider).map(Image.init(nsImage:)) }
+                    }
                 }
             } label: {
                 Image(systemName: "plus")

@@ -37,6 +37,8 @@ func gateGlyph(open: Bool) -> NSImage {
     if let known = marks[provider] { return known }
     guard let url = Bundle.main.url(forResource: provider, withExtension: "svg", subdirectory: "providers"), let mark = NSImage(contentsOf: url) else { return nil }
     mark.isTemplate = true
+    // A menu draws an image at its own size.
+    mark.size = NSSize(width: 14, height: 14)
     marks[provider] = mark
     return mark
 }
