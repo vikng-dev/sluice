@@ -13,6 +13,7 @@ private struct Fake: Provider {
     func home(of profile: String) -> (variable: String, folder: URL)? { nil }
     func signedIn(in profile: String) throws -> String? { nil }
     func folders(in profile: String) throws -> [String] { [] }
+    func count(_ event: Data, into spend: inout Spend) {}
     func route(_ on: Bool, profiles: [String]) {}
     func isRouted(profiles: [String]) -> Bool { false }
     func usage(of account: Account) async throws -> Usage { Usage(plan: nil, windows: []) }

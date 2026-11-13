@@ -186,7 +186,11 @@ public final class Relay: Sendable {
                 if let conversation, !reading.refused {
                     await accounts.served(conversation.id, by: account.id, cacheLifetime: conversation.cacheLifetime)
                 }
-                return try await writer.send(response.statusCode, headers: headers, body: body)
+                let accounts = accounts
+                let counted = Metered(base: body, count: provider.count) { spend in
+                    Task { await accounts.spent(spend, by: account.id, for: profile) }
+                }
+                return try await writer.send(response.statusCode, headers: headers, body: counted)
             }
         }
     }

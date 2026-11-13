@@ -18,6 +18,7 @@ struct Panel: View {
     let remove: (AccountStatus) -> Void
     let rename: (_ profile: String, _ label: String) -> Void
     let tint: (_ profile: String, Tint?) -> Void
+    let star: (_ profile: String, Bool) -> Void
     /// Makes a profile, and when it is made for an account, with that account in it.
     let addProfile: (_ shownAs: String, _ founder: AccountStatus?) -> Void
     let removeProfile: (_ profile: String) -> Void
@@ -110,7 +111,7 @@ struct Panel: View {
                     ProfileCaption(
                         name: section.name, profile: config.profiles[section.name],
                         takesTheRest: section.name == Config.defaultProfile && profiles.count > 1, empty: section.pools.isEmpty, titles: titles,
-                        signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) },
+                        signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) }, star: { star(section.name, $0) },
                         claimFolders: { claimFolders(section.name) }, claimOwner: { claimOwner(section.name) },
                         remove: section.name == Config.defaultProfile ? nil : { removeProfile(section.name) }, unclaim: { unclaim(section.name, $0) }
                     )
@@ -229,6 +230,7 @@ private struct ProfileCaption: View {
     let signIn: (_ provider: String) -> Void
     let rename: (_ label: String) -> Void
     let setTint: (Tint?) -> Void
+    let star: (Bool) -> Void
     let claimFolders: () -> Void
     let claimOwner: () -> Void
     /// Nil for the default profile, which always exists.
@@ -306,6 +308,11 @@ private struct ProfileCaption: View {
                     .buttonStyle(.plain).disabled(claims.isEmpty).help("The work that belongs to this profile")
                 }
                 Spacer()
+                let starred = profile?.starred == true
+                Button { star(!starred) } label: { Image(systemName: starred ? "star.fill" : "star").font(.caption) }
+                    .buttonStyle(.plain).foregroundStyle(starred ? AnyShapeStyle(.yellow) : AnyShapeStyle(.secondary))
+                    .help(starred ? "Shown in the menu bar. Click to take it out" : "Show how much of its pools is used in the menu bar")
+                    .opacity(starred || hovered ? 1 : 0)
                 Menu {
                     ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
                         Button { signIn(provider) } label: {
@@ -536,11 +543,19 @@ private struct Pool: Identifiable {
     var id: String { provider }
 }
 
-private extension AccountStatus {
+extension AccountStatus {
     var id: String { provider + ":" + label }
     /// The window that resets last, read as how much of the account is left; an earlier one as its pace.
     var budget: SluiceCore.Window? { windows.last }
     var weight: Double { Double(plan?.multiple ?? 1) }
+}
+
+extension [AccountStatus] {
+    /// How much of a pool of these is used: each account's budget, by the size of its plan.
+    var used: Double {
+        let total = map(\.weight).reduce(0, +)
+        return total > 0 ? map { $0.weight * Swift.min($0.budget?.used ?? 0, 1) }.reduce(0, +) / total : 0
+    }
 }
 
 private struct PoolView: View {
@@ -555,11 +570,6 @@ private struct PoolView: View {
         pool.accounts.compactMap(\.budget).filter { $0.used > 0 }.min { $0.resetsAt < $1.resetsAt }
     }
 
-    /// How much of the pool is used: each account's budget, by the size of its plan.
-    private var used: Double {
-        let total = pool.accounts.map(\.weight).reduce(0, +)
-        return total > 0 ? pool.accounts.map { $0.weight * min($0.budget?.used ?? 0, 1) }.reduce(0, +) / total : 0
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -570,7 +580,7 @@ private struct PoolView: View {
                 }
                 Text(pool.title).font(.callout.weight(.semibold))
                 Spacer()
-                Share(used: used, worded: true)
+                Share(used: pool.accounts.used, worded: true)
                 if let nextReset {
                     HStack(spacing: 3) {
                         Image(systemName: "arrow.clockwise").font(.caption2).foregroundStyle(.tertiary)

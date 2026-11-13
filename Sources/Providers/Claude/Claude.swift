@@ -143,6 +143,19 @@ public struct Claude: Provider {
         return (session, hour ? 3600 : 300)
     }
 
+    /// A stream's first event has the answer's model and what was read, nested under `message`; a later
+    /// one, and an answer in one piece, say what they count at the top. Each number is the total so far.
+    public func count(_ event: Data, into spend: inout Spend) {
+        guard let all = try? JSONSerialization.jsonObject(with: event) as? [String: Any] else { return }
+        let message = all["message"] as? [String: Any] ?? all
+        if let model = message["model"] as? String { spend.model = model }
+        guard let usage = message["usage"] as? [String: Any] else { return }
+        if let tokens = usage["input_tokens"] as? Int { spend.input = tokens }
+        if let tokens = usage["cache_read_input_tokens"] as? Int { spend.cacheRead = tokens }
+        if let tokens = usage["cache_creation_input_tokens"] as? Int { spend.cacheWrite = tokens }
+        if let tokens = usage["output_tokens"] as? Int { spend.output = tokens }
+    }
+
     public func reading(status: Int, headers: [String: String]) -> Reading {
         func field(_ window: String, _ name: String) -> String? { headers["anthropic-ratelimit-unified-\(window)-\(name)"] }
         let windows = ["5h", "7d"].compactMap { name -> Window? in

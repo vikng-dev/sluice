@@ -41,6 +41,7 @@ public struct Storage: Sendable {
     var loadMemory: @Sendable () throws -> Memory
     var storeMemory: @Sendable (Memory) throws -> Void
     var appendSample: @Sendable (Sample) throws -> Void = { _ in }
+    var appendServed: @Sendable (Served) throws -> Void = { _ in }
 
     /// Accounts in one Keychain item, so a save is atomic; the config in `~/.config/sluice`;
     /// what was observed, and the history of it, in Application Support.
@@ -53,7 +54,8 @@ public struct Storage: Sendable {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let configFile = home.appending(path: ".config/sluice/config.json")
         let memoryFile = home.appending(path: "Library/Application Support/Sluice/memory.json")
-        let historyFile = home.appending(path: "Library/Application Support/Sluice/history.jsonl")
+        let readingsFile = home.appending(path: "Library/Application Support/Sluice/readings.jsonl")
+        let requestsFile = home.appending(path: "Library/Application Support/Sluice/requests.jsonl")
         return Storage(
             loadAccounts: {
                 var item: CFTypeRef?
@@ -81,7 +83,8 @@ public struct Storage: Sendable {
                 try FileManager.default.createDirectory(at: memoryFile.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try JSONEncoder().encode(memory).write(to: memoryFile, options: .atomic)
             },
-            appendSample: { try append($0, to: historyFile) }
+            appendSample: { try append($0, to: readingsFile) },
+            appendServed: { try append($0, to: requestsFile) }
         )
     }()
 }
@@ -108,6 +111,8 @@ public struct Profile: Codable, Sendable, Equatable {
     /// What the user calls it, where its name in the config is not what they want to read.
     public internal(set) var label: String?
     public internal(set) var color: Tint?
+    /// Whether how much of its pools is used is shown in the menu bar.
+    public internal(set) var starred = false
     /// The accounts that serve its relayed requests.
     public internal(set) var accounts: [String] = []
     /// Folders (`~` allowed) whose work belongs to this profile.
@@ -121,6 +126,7 @@ public struct Profile: Codable, Sendable, Equatable {
         let keys = try decoder.container(keyedBy: CodingKeys.self)
         label = try keys.decodeIfPresent(String.self, forKey: .label)
         color = try keys.decodeIfPresent(Tint.self, forKey: .color)
+        starred = try keys.decodeIfPresent(Bool.self, forKey: .starred) ?? false
         accounts = try keys.decodeIfPresent([String].self, forKey: .accounts) ?? []
         folders = try keys.decodeIfPresent([String].self, forKey: .folders) ?? []
         owners = try keys.decodeIfPresent([String].self, forKey: .owners) ?? []
@@ -131,12 +137,13 @@ public struct Profile: Codable, Sendable, Equatable {
         var keys = encoder.container(keyedBy: CodingKeys.self)
         try keys.encodeIfPresent(label, forKey: .label)
         try keys.encodeIfPresent(color, forKey: .color)
+        if starred { try keys.encode(true, forKey: .starred) }
         if !accounts.isEmpty { try keys.encode(accounts, forKey: .accounts) }
         if !folders.isEmpty { try keys.encode(folders, forKey: .folders) }
         if !owners.isEmpty { try keys.encode(owners, forKey: .owners) }
     }
 
-    private enum CodingKeys: CodingKey { case label, color, accounts, folders, owners }
+    private enum CodingKeys: CodingKey { case label, color, starred, accounts, folders, owners }
 }
 
 /// `config.json`, written by hand or by the `sluice` command: the profiles. Work no profile claims, and
@@ -309,6 +316,16 @@ actor Accounts {
         do {
             try storage.appendSample(Sample(at: now, provider: account.provider, account: account.label, windows: windows))
             sampled[id] = windows
+        } catch {
+            FileHandle.standardError.write(Data("sluice: could not add to the history: \(error)\n".utf8))
+        }
+    }
+
+    /// An answer that cost something is a line of history. One that cannot be written is reported and lost.
+    func spent(_ spend: Spend, by id: String, for profile: String) {
+        guard spend != Spend(), let account = accounts.first(where: { $0.id == id }) else { return }
+        do {
+            try storage.appendServed(Served(at: Date(), provider: account.provider, account: account.label, profile: profile, spend: spend))
         } catch {
             FileHandle.standardError.write(Data("sluice: could not add to the history: \(error)\n".utf8))
         }

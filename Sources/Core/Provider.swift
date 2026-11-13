@@ -38,6 +38,9 @@ public protocol Provider: Sendable {
     func conversation(of request: HTTPRequest) -> (id: String, cacheLifetime: TimeInterval)?
     /// What a response's status and headers (names lowercased) say about the account that answered.
     func reading(status: Int, headers: [String: String]) -> Reading
+    /// Reads into `spend` what one event of an answer says it cost: the JSON of a stream's event, or of an
+    /// answer in one piece. Asked only of events that have a `usage` key.
+    func count(_ event: Data, into spend: inout Spend)
     /// What the provider says about the account when asked, which keeps an account that no request
     /// has gone through lately from showing what it last was.
     func usage(of account: Account) async throws -> Usage

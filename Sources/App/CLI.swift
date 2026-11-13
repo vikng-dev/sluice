@@ -48,6 +48,8 @@ private struct ProfileReport: Encodable {
     var name: String
     var label: String?
     var color: Tint?
+    /// Whether how much of its pools is used is shown in the menu bar.
+    var starred: Bool
     /// By client: the account it is itself signed in as in the profile.
     var signedIn: [String: String]
     var accounts: [String]
@@ -85,6 +87,7 @@ sluice \(Sluice.version)
   sluice profile remove <name>                   its accounts go back to the default profile
   sluice profile rename <name> [label]           what it is shown as; with no label, its name again
   sluice profile color <name> <color>            \(Tint.allCases.map(\.rawValue).joined(separator: ", ")), or none
+  sluice profile star <name> | unstar <name>     show how much of its pools is used in the menu bar, or stop
   sluice profile claim <name> --folder <path>    work in that folder belongs to the profile
   sluice profile claim <name> --owner <owner>    so do repositories whose origin has that owner
   sluice profile unclaim <name> --folder <path> | --owner <owner>
@@ -154,14 +157,14 @@ func command(_ arguments: [String]) async {
             reports = try config.names.map { name in
                 let profile = config.profiles[name], identities = try identities(in: name)
                 let signedIn = Dictionary(uniqueKeysWithValues: identities.compactMap { identity in identity.account.map { (identity.client, $0) } })
-                return (ProfileReport(name: name, label: profile?.label, color: profile?.color, signedIn: signedIn, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? []), identities)
+                return (ProfileReport(name: name, label: profile?.label, color: profile?.color, starred: profile?.starred ?? false, signedIn: signedIn, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? []), identities)
             }
         } catch {
             fail("\(error)")
         }
         if json { return printJSON(reports.map(\.report)) }
         for (report, identities) in reports {
-            let look = [report.label, report.color?.rawValue].compactMap { $0 }.joined(separator: ", ")
+            let look = [report.label, report.color?.rawValue, report.starred ? "starred" : nil].compactMap { $0 }.joined(separator: ", ")
             print(([report.name + (look.isEmpty ? "" : " (\(look))")] + identities.map(said)).joined(separator: "  "))
             for (title, items) in [("accounts", report.accounts), ("folders", report.folders), ("owners", report.owners)] where !items.isEmpty {
                 print("  \(title): \(items.joined(separator: ", "))")
@@ -189,6 +192,10 @@ func command(_ arguments: [String]) async {
         let color = Tint(rawValue: words[3])
         _ = change { try $0.color(words[2], color) }
         print("Profile \(words[2]) is \(color?.rawValue ?? "no color").")
+    case ("profile", let verb) where verb == "star" || verb == "unstar":
+        guard words.count == 3 else { fail("usage: sluice profile \(verb!) <name>") }
+        _ = change { try $0.star(words[2], verb == "star") }
+        print("Profile \(words[2]) is \(verb == "star" ? "" : "no longer ")shown in the menu bar.")
     case ("profile", "remove"):
         guard words.count == 3 else { fail("usage: sluice profile remove <name>") }
         _ = change { try $0.remove(profile: words[2]) }

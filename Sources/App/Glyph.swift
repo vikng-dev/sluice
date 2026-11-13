@@ -31,6 +31,34 @@ func gateGlyph(open: Bool) -> NSImage {
     return image
 }
 
+/// The starred profiles in the menu bar: each pool's provider mark and its share, a profile's pools
+/// close together and the profiles apart.
+@MainActor func counterGlyph(_ profiles: [[(provider: String, text: String)]]) -> NSImage {
+    let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+    let (side, gap, between, apart) = (12.0, 2.0, 6.0, 12.0)
+    /// What to draw and where, worked out here so that the drawing itself touches no state.
+    var marks: [(image: NSImage, at: NSRect)] = [], texts: [(text: NSAttributedString, at: NSPoint)] = [], x = 0.0
+    for (index, pools) in profiles.enumerated() {
+        if index > 0 { x += apart - between }
+        for pool in pools {
+            if let mark = providerMark(pool.provider) {
+                marks.append((mark, NSRect(x: x, y: 3, width: side, height: side)))
+                x += side + gap
+            }
+            let text = NSAttributedString(string: pool.text, attributes: [.font: font, .foregroundColor: NSColor.black])
+            texts.append((text, NSPoint(x: x, y: (18 - text.size().height) / 2)))
+            x += text.size().width.rounded(.up) + between
+        }
+    }
+    let image = NSImage(size: NSSize(width: max(x - between, 1), height: 18))
+    image.lockFocus()
+    for mark in marks { mark.image.draw(in: mark.at) }
+    for text in texts { text.text.draw(at: text.at) }
+    image.unlockFocus()
+    image.isTemplate = true
+    return image
+}
+
 /// A provider's mark. The drawings are in Assets/providers, named by provider; a provider without one is
 /// shown by name.
 @MainActor func providerMark(_ provider: String) -> NSImage? { mark("providers/\(provider)") }

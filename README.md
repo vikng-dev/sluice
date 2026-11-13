@@ -6,7 +6,7 @@ Claude Code and Codex talk to Sluice on localhost; Sluice decides which of your 
 **Status: early.** Claude Code and Codex are relayed across pools of accounts. The menu bar panel shows
 each profile's pools, one per provider: a bar with a part for every account, as wide as its plan is
 large and as full as its week is used, and under it each account's plan, the share of its week used,
-the time until that resets, which one a client is itself signed in as, and which is answering now. A pool's header says how much of the pool is used and when it next gets allowance back. A click on any share reads them all as left, and on any clock reads them all as the time itself. It also says when the clients
+the time until that resets, which one a client is itself signed in as, and which is answering now. A pool's header says how much of the pool is used and when it next gets allowance back. A click on any share reads them all as left, and on any clock reads them all as the time itself. A profile's star puts its pools in the menu bar, each as its provider's mark and its share, in place of the glyph while the clients are routed. It also says when the clients
 are not going through Sluice. `sluice status` prints the same accounts. What can be done to a thing shows when the pointer is on it: a profile's **+** adds an
 account to it, at the provider you pick, or work that belongs to it (folders, or a repository owner), and an account's **⋯** removes it. An account is
 moved by its handle: it lifts off the panel and drops onto another profile. A profile's name and its color dot are changed where they are: click the name to type another, click the dot to pick a color. Beside the name is a count of the folders and repository owners whose work the profile claims, and the default profile has everything else. Click the count to lay the claims out, each let go by the × it shows under the pointer. After the last profile, **New profile** is typed in place: what you type is what it is shown as, and its name is made from it. An account dropped on it gets a profile of its own, named from its address unless you type another, and made when you press Return. A profile's **+** also removes it. The **⋯** on the same line holds the version, **Stop routing** and **Quit**. An owner is asked for in a dialog; while it is typed, the ones offered are those of the repositories the clients have worked in on this Mac, and then the accounts GitHub's public search finds for the letters typed, which are all that is sent to it.
@@ -63,6 +63,7 @@ sluice profile claim work --folder ~/work --owner acme
 sluice account move me@work.example work
 sluice profile rename work "Day job"         # what it is shown as; its name stays `work`
 sluice profile color work purple
+sluice profile star work                     # its pools' shares are shown in the menu bar
 sluice profile list
 ```
 
@@ -125,7 +126,7 @@ Within a profile's pool:
 
 Sluice signs in to each account itself and keeps the tokens in its own Keychain item. What it
 observed (windows, warm conversations) is kept in `~/Library/Application Support/Sluice`, so a
-restart forgets nothing. Each reading that says something new is also a line of `history.jsonl` there: an account, the time, and how full its windows were, which is what usage over time is read from. Each answer updates the account it came through, and every five minutes
+restart forgets nothing. Two histories are kept there too, a line at a time, as numbers and never as what was asked or answered: `readings.jsonl`, an account and how full its windows were whenever that changed, and `requests.jsonl`, each answered request with its account, profile, model and the tokens it cost as the provider counted them. Usage over time is read from these. Each answer updates the account it came through, and every five minutes
 Sluice asks the providers about all of them, so an idle account's numbers are current too. It never spends paid extra usage. What it knows about each provider's wire format is in
 [docs/wire.md](docs/wire.md).
 

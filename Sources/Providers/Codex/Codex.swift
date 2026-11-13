@@ -135,6 +135,20 @@ public struct Codex: Provider {
         request.header("session-id").map { ($0, 1800) }
     }
 
+    /// The stream's last event has the answer whole, with its model and what it cost. The tokens read
+    /// from the cache and written to it are counted among those read, and are taken out of them here.
+    public func count(_ event: Data, into spend: inout Spend) {
+        guard let all = try? JSONSerialization.jsonObject(with: event) as? [String: Any] else { return }
+        let response = all["response"] as? [String: Any] ?? all
+        guard let usage = response["usage"] as? [String: Any] else { return }
+        spend.model = response["model"] as? String ?? spend.model
+        let details = usage["input_tokens_details"] as? [String: Any]
+        spend.cacheRead = details?["cached_tokens"] as? Int ?? 0
+        spend.cacheWrite = details?["cache_write_tokens"] as? Int ?? 0
+        spend.input = max(0, (usage["input_tokens"] as? Int ?? 0) - spend.cacheRead - spend.cacheWrite)
+        spend.output = usage["output_tokens"] as? Int ?? 0
+    }
+
     public func reading(status: Int, headers: [String: String]) -> Reading {
         let windows = ["primary", "secondary"].compactMap { slot -> Window? in
             func field(_ name: String) -> Double? { headers["x-codex-\(slot)-\(name)"].flatMap(Double.init) }

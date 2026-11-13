@@ -40,6 +40,7 @@ sluice profile unclaim <name> --folder <path>
 sluice profile remove <name>                     # its accounts go back to default
 sluice profile rename <name> [label]             # what it is shown as; commands keep using <name>
 sluice profile color <name> <color>              # red orange yellow green teal blue purple pink, or none
+sluice profile star <name> | unstar <name>       # show how much of its pools is used in the menu bar
 sluice account move <account> <profile>
 sluice account remove <provider> <account>       # forgets the sign-in; signing in again needs a browser
 ```

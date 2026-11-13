@@ -66,6 +66,11 @@ public extension Config {
         profiles[profile, default: Profile()].color = color
     }
 
+    mutating func star(_ profile: String, _ starred: Bool) throws {
+        try require(profile)
+        profiles[profile, default: Profile()].starred = starred
+    }
+
     mutating func claim(folder: String, for profile: String, home: String = NSHomeDirectory()) throws {
         try require(profile)
         let folder = Self.written(folder, home: home)

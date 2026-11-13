@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import SluiceCore
 @testable import SluiceProviders
@@ -129,6 +130,51 @@ import Testing
         // A table under a folder's own is not another folder, and neither is any other table.
         let settings = "model = \"x\"\n[projects.\"/w/my app\"]\ntrust_level = \"trusted\"\n[model_providers.sluice]\nname = \"s\"\n[projects.'/w/other']\n"
         #expect(Codex.folders(inSettings: settings) == ["/w/my app", "/w/other"])
+    }
+
+    @Test func whatAnAnswerCostIsReadFromItsStreamHoweverTheStreamIsCutUp() {
+        let stream = [
+            #"event: message_start"#,
+            #"data: {"type":"message_start","message":{"model":"m-1","usage":{"input_tokens":3,"cache_creation_input_tokens":10,"cache_read_input_tokens":24000,"output_tokens":1}}}"#,
+            "",
+            // What an answer says is not what it cost.
+            #"data: {"type":"content_block_delta","delta":{"text":"the word \"usage\": {\"output_tokens\": 9}"}}"#,
+            "",
+            #"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":42}}"#,
+            "",
+        ].joined(separator: "\n")
+        var meter = Meter(count: Claude().count)
+        let bytes = Array(stream.utf8)
+        for start in stride(from: 0, to: bytes.count, by: 7) { meter.read(Data(bytes[start..<min(start + 7, bytes.count)])) }
+        meter.finish()
+        var cost = Spend()
+        (cost.model, cost.input, cost.cacheRead, cost.cacheWrite, cost.output) = ("m-1", 3, 24000, 10, 42)
+        #expect(meter.spend == cost)
+    }
+
+    @Test func anAnswerInOnePieceIsCountedAndCodexsCachedTokensAreNotCountedTwice() {
+        var whole = Meter(count: Claude().count)
+        whole.read(Data(#"{"model":"m-2","usage":{"input_tokens":5,"output_tokens":6}}"#.utf8))
+        whole.finish()
+        #expect(whole.spend.input == 5 && whole.spend.output == 6 && whole.spend.model == "m-2")
+
+        var codex = Meter(count: Codex().count)
+        codex.read(Data(#"data: {"type":"response.created","response":{"model":"g","usage":null}}"#.utf8 + [10]))
+        codex.read(Data(#"data: {"type":"response.completed","response":{"model":"g","usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":60},"output_tokens":7}}}"#.utf8 + [10]))
+        #expect(codex.spend.input == 40 && codex.spend.cacheRead == 60 && codex.spend.output == 7 && codex.spend.model == "g")
+    }
+
+    @Test func anAnswerCutShortIsToldForAsFarAsItGot() async throws {
+        let told = OSAllocatedUnfairLock(initialState: [Spend]())
+        let body = AsyncStream<Data> { stream in
+            stream.yield(Data(#"{"model":"m","usage":{"input_tokens":8}}"#.utf8 + [10]))
+            stream.yield(Data("more".utf8))
+        }
+        do {
+            var reader = Metered(base: body, count: Claude().count) { spend in told.withLock { $0.append(spend) } }.makeAsyncIterator()
+            _ = try await reader.next()
+        }
+        #expect(told.withLock { $0.map(\.input) } == [8])
     }
 
     @Test func theTimeLeftIsReadInItsTwoLargestUnits() {

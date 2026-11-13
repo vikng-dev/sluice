@@ -29,6 +29,7 @@ private let program = Bundle.main.executableURL!
         Task {
             do {
                 sluice = try await startSluice()
+                Task { await watch() }
                 // Only launchd starts a copy that left; one run by hand stays as it is.
                 if isKept { await follow() }
             } catch {
@@ -61,8 +62,9 @@ private let program = Bundle.main.executableURL!
         }
     }
 
-    /// Reading the accounts is local and asks no provider.
-    func watch() async {
+    /// Reading the accounts is local and asks no provider. It goes on while the panel is shut, as the
+    /// menu bar shows the starred profiles.
+    private func watch() async {
         while !Task.isCancelled {
             // `sluice setup` and a new profile change this from outside the app.
             check()
@@ -169,6 +171,20 @@ private let program = Bundle.main.executableURL!
         change { try $0.color(profile, tint) }
     }
 
+    func star(_ profile: String, _ starred: Bool) {
+        change { try $0.star(profile, starred) }
+    }
+
+    /// What the menu bar shows in place of the glyph: each starred profile's pools, by provider, and how
+    /// much of each is used or left. Empty when none is starred.
+    func counters(left: Bool) -> [[(provider: String, text: String)]] {
+        config.names.filter { config.profiles[$0]?.starred == true }.map { profile in
+            Dictionary(grouping: accounts.filter { $0.profile == profile }, by: \.provider).sorted { $0.key < $1.key }.map { provider, pool in
+                (provider, "\(Int(((left ? 1 - pool.used : pool.used) * 100).rounded()))%")
+            }
+        }
+    }
+
     func rename(_ profile: String, to label: String) {
         change { try $0.label(profile, as: label) }
     }
@@ -197,19 +213,21 @@ private let program = Bundle.main.executableURL!
 
 struct SluiceApp: App {
     @State private var running = Running()
+    @AppStorage("readsLeft") private var left = false
     private let titles = Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0.name) })
 
     var body: some Scene {
         MenuBarExtra {
             Panel(
                 problem: running.problem.isEmpty ? running.refusal : running.problem, accounts: running.accounts, config: running.config, identities: running.identities, titles: titles, now: Date(),
-                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, 
+                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, star: running.star,
                 addProfile: running.addProfile, removeProfile: running.removeProfile,
                 claimFolders: running.claimFolders, claimOwner: running.claimOwner, unclaim: { running.unclaim($1, from: $0) }, quit: running.quit
             )
-            .task { await running.watch() }
         } label: {
-            Image(nsImage: gateGlyph(open: running.routed))
+            // The glyph says whether clients are routed; while they are, the starred profiles take its place.
+            let counters = running.counters(left: left).filter { !$0.isEmpty }
+            Image(nsImage: counters.isEmpty || !running.routed ? gateGlyph(open: running.routed) : counterGlyph(counters))
         }
         .menuBarExtraStyle(.window)
     }

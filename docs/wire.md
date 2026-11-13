@@ -48,7 +48,9 @@ ends in the multiple (`default_claude_max_20x`, and `default_claude_max_5x` on a
 **Cache.** Claude Code marks its system blocks `cache_control: {type: ephemeral, ttl: 1h}`. The
 first SSE event, `message_start`, carries `usage.cache_read_input_tokens` and
 `usage.cache_creation_input_tokens` (split into `ephemeral_5m` and `ephemeral_1h`), so the relay
-knows the cache result before any text arrives. A second session on the same account read the
+knows the cache result before any text arrives. A later event, `message_delta`, carries `usage` at
+its top with `output_tokens` as the total so far; `input_tokens` in either leaves out what was read
+from the cache or written to it (a first request showed 2 read new and 23,042 written to the cache). A second session on the same account read the
 whole 24k-token prefix from cache: the cache belongs to the account, not the session.
 
 **Cache across accounts.** Not shared, on the evidence so far. A prompt made unique by a nonce in the
@@ -124,7 +126,10 @@ Unix seconds. `plan_type` names the plan in one lowercase word (`prolite` seen, 
 **A spent account.** Not captured. Sluice treats any `429` as a refusal and tries the next account.
 
 **Cache.** How long a prefix stays cached is assumed to be 30 minutes, unverified. The `response.completed` event's `usage.input_tokens_details` has `cached_tokens` and
-`cache_write_tokens`. Unlike Claude, this arrives at the end of the stream.
+`cache_write_tokens`. Unlike Claude, this arrives at the end of the stream. `usage.input_tokens`
+and `usage.output_tokens` there add up to what Codex itself reports as "tokens used" (13,127 + 5 for
+13,132, checked 2026-11-13); that the cached and written tokens are counted within `input_tokens` is
+assumed from that total, with none cached in the request checked.
 
 **Requests that are not the Codex CLI's (probed 2026-11-13).** The backend serves a plain client,
 with no Codex headers, when the body is in its dialect: `stream: true`, `store: false`,
