@@ -116,7 +116,12 @@ struct Panel: View {
                     )
                     .padding(.horizontal, 10)
                     VStack(alignment: .leading, spacing: 10) {
-                        if section.pools.isEmpty { Text("No accounts").font(.callout).foregroundStyle(.secondary) }
+                        if section.pools.isEmpty {
+                            let profile = config.profiles[section.name]
+                            // A profile that has nothing is removed from where it says so.
+                            let bare = section.name != Config.defaultProfile && profile?.folders.isEmpty != false && profile?.owners.isEmpty != false
+                            NoAccounts(remove: bare ? { removeProfile(section.name) } : nil)
+                        }
                         ForEach(section.pools) { PoolView(pool: $0, now: now, carried: carried?.account.id, actions: actions) }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -333,6 +338,26 @@ private struct ProfileCaption: View {
             picking = false
             open = false
         }
+    }
+}
+
+/// The card of a profile with no accounts. One with no claims either can be removed from here, which
+/// shows when the pointer is on it.
+private struct NoAccounts: View {
+    let remove: (() -> Void)?
+    @State private var hovered = false
+
+    var body: some View {
+        HStack {
+            Text("No accounts").font(.callout).foregroundStyle(.secondary)
+            Spacer()
+            if let remove {
+                Button("Remove profile", action: remove).buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
+                    .opacity(hovered ? 1 : 0)
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
     }
 }
 

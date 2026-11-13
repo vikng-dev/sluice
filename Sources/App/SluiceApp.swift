@@ -115,15 +115,19 @@ private let program = Bundle.main.executableURL!
         if refusal.isEmpty, routed { route(true) }
     }
 
-    /// Asks first: what the profile claimed becomes the default profile's work.
+    /// Asks first when the profile has anything: its accounts and what it claimed become the default
+    /// profile's. One with nothing goes at once.
     func removeProfile(_ profile: String) {
-        let alert = NSAlert()
-        alert.messageText = "Remove \(config.shown(profile))?"
-        alert.informativeText = "Its accounts and the work it claims go to the default profile. Its client folders are left as they are."
-        alert.addButton(withTitle: "Remove").hasDestructiveAction = true
-        alert.addButton(withTitle: "Cancel")
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let claims = config.profiles[profile].map { $0.folders + $0.owners } ?? []
+        if !claims.isEmpty || accounts.contains(where: { $0.profile == profile }) {
+            let alert = NSAlert()
+            alert.messageText = "Remove \(config.shown(profile))?"
+            alert.informativeText = "Its accounts and the work it claims go to the default profile. Its client folders are left as they are."
+            alert.addButton(withTitle: "Remove").hasDestructiveAction = true
+            alert.addButton(withTitle: "Cancel")
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
         change { try $0.remove(profile: profile) }
     }
 
