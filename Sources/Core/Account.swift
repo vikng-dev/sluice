@@ -122,6 +122,26 @@ public enum Local {
     /// Where `sluice setup` puts the commands that stand in for each provider's client.
     public static let shims = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/sluice/bin")
 
+    /// Links each name in the stand-in folder to `program`, which tells them apart by the name it is run under.
+    public static func link(_ names: [String], to program: URL) throws {
+        try FileManager.default.createDirectory(at: shims, withIntermediateDirectories: true)
+        try unlink(names)
+        for name in names { try FileManager.default.createSymbolicLink(at: shims.appending(path: name), withDestinationURL: program) }
+    }
+
+    public static func unlink(_ names: [String]) throws {
+        for name in names where isLinked(name) { try FileManager.default.removeItem(at: shims.appending(path: name)) }
+    }
+
+    public static func isLinked(_ name: String) -> Bool {
+        (try? FileManager.default.destinationOfSymbolicLink(atPath: shims.appending(path: name).path)) != nil
+    }
+
+    /// The line that puts the stand-ins ahead of the real clients in a shell.
+    public static var pathLine: String {
+        "export PATH=\"\(shims.path.replacingOccurrences(of: NSHomeDirectory(), with: "$HOME")):$PATH\""
+    }
+
     /// The address a client working in `directory` should use for `provider`.
     public static func address(provider: String, directory: String) throws -> String {
         let base = "http://localhost:\(Sluice.port)/\(provider)"

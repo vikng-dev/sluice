@@ -77,3 +77,22 @@ import Testing
         #expect(try config("{}").pin(for: "/anywhere", home: "/home/me") == nil)
     }
 }
+
+@Suite struct LocalCallerTests {
+    func request(_ headers: [(String, String)]) -> HTTPRequest {
+        HTTPRequest(method: "POST", target: "/claude/v1/messages", headers: headers.map { (name: $0.0, value: $0.1) }, body: Data())
+    }
+
+    @Test func aLocalProgramAndASignInNavigationPass() {
+        #expect(request([("Host", "localhost:7483")]).isLocalCaller)
+        #expect(request([("Host", "127.0.0.1:7483"), ("Sec-Fetch-Mode", "navigate"), ("Sec-Fetch-Site", "cross-site")]).isLocalCaller)
+    }
+
+    @Test func aWebPageIsRefused() {
+        #expect(!request([("Host", "localhost:7483"), ("Origin", "https://evil.example")]).isLocalCaller)
+        #expect(!request([("Host", "localhost:7483"), ("Sec-Fetch-Mode", "no-cors")]).isLocalCaller)
+        // A DNS name rebound to this machine still names itself in Host.
+        #expect(!request([("Host", "evil.example:7483")]).isLocalCaller)
+        #expect(!request([]).isLocalCaller)
+    }
+}

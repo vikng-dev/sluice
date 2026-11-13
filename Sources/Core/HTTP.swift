@@ -11,6 +11,14 @@ public struct HTTPRequest: Sendable {
         headers.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.value
     }
 
+    /// Whether a program on this machine sent this, not a web page. A page can reach a local port, so:
+    /// the host must be a loopback name (a rebound DNS name is not), a browser's `Origin` is refused,
+    /// and of a browser's own requests only a navigation passes, which is how a sign-in comes and goes.
+    var isLocalCaller: Bool {
+        let host = header("Host")?.split(separator: ":").first.map(String.init)
+        return ["localhost", "127.0.0.1"].contains(host) && header("Origin") == nil && [nil, "navigate"].contains(header("Sec-Fetch-Mode"))
+    }
+
     public mutating func setHeader(_ name: String, _ value: String) {
         headers.removeAll { $0.name.caseInsensitiveCompare(name) == .orderedSame }
         headers.append((name, value))
@@ -18,7 +26,7 @@ public struct HTTPRequest: Sendable {
 }
 
 public enum HTTPError: Error, Equatable {
-    case malformed, headTooLarge, lengthRequired, bodyTooLarge
+    case malformed, headTooLarge, lengthRequired, bodyTooLarge, notLocal
 
     var status: Int {
         switch self {
@@ -26,6 +34,7 @@ public enum HTTPError: Error, Equatable {
         case .headTooLarge: 431
         case .lengthRequired: 411
         case .bodyTooLarge: 413
+        case .notLocal: 403
         }
     }
 }

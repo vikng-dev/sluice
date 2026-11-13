@@ -73,27 +73,28 @@ func command(_ arguments: [String]) async {
             fail("not running (\(error.localizedDescription)). Start the app or run: sluice serve")
         }
     case "setup":
-        // The command and the stand-ins are links to this program, which tells them apart by the name it was run under.
-        guard let me = Bundle.main.executableURL?.resolvingSymlinksInPath() else { fail("could not find this program's own path") }
+        let clients = providers.map(\.client)
         do {
-            try FileManager.default.createDirectory(at: Local.shims, withIntermediateDirectories: true)
-            for name in ["sluice"] + providers.map(\.client) {
-                let link = Local.shims.appending(path: name)
-                try? FileManager.default.removeItem(at: link)
-                try FileManager.default.createSymbolicLink(at: link, withDestinationURL: me)
-                print("\(link.path) → \(me.path)")
+            if arguments.dropFirst().first == "--undo" {
+                try Local.unlink(clients)
+                print("Removed the stand-ins: \(clients.joined(separator: " and ")) run directly again.")
+                break
             }
+            guard let me = Bundle.main.executableURL?.resolvingSymlinksInPath() else { fail("could not find this program's own path") }
+            try Local.link(["sluice"] + clients, to: me)
         } catch {
             fail("\(error)")
         }
-        let onPath = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").first.map { URL(fileURLWithPath: String($0)).standardizedFileURL.path } == Local.shims.standardizedFileURL.path
-        print(onPath ? "Done: \(providers.map(\.client).joined(separator: " and ")) now go through Sluice whenever it is running." : """
+        let first = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").first.map { URL(fileURLWithPath: String($0)).standardizedFileURL.path }
+        print("Linked sluice, \(clients.joined(separator: " and ")) in \(Local.shims.path).")
+        print(first == Local.shims.standardizedFileURL.path ? "They go through Sluice whenever it is running." : """
 
-        Put that folder first on your PATH, at the end of your shell's startup file:
+        Put that folder first on your PATH, as the last line of your shell's startup file:
 
-          export PATH="\(Local.shims.path.replacingOccurrences(of: NSHomeDirectory(), with: "$HOME")):$PATH"
+          \(Local.pathLine)
 
-        Then new shells run \(providers.map(\.client).joined(separator: " and ")) through Sluice whenever it is running.
+        New shells then run \(clients.joined(separator: " and ")) through Sluice whenever it is running.
+        Undo with: sluice setup --undo
         """)
     case "address":
         guard let provider = arguments.dropFirst().first else { fail("usage: sluice address <provider>") }
@@ -105,7 +106,7 @@ func command(_ arguments: [String]) async {
           sluice serve              run the relay in the foreground
           sluice login [provider]   sign an account in (default: claude)
           sluice status             accounts, their windows, and warm conversations
-          sluice setup              make claude and codex go through Sluice when it is running
+          sluice setup [--undo]     make claude and codex go through Sluice when it is running
           sluice address <provider> the address a client in this folder would use
         """)
     }

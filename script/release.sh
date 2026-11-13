@@ -1,7 +1,8 @@
 #!/bin/bash
 # Releases the version in Sources/Core/Version.swift: build, sign, notarize, tag, GitHub release.
 # Needs SIGN_IDENTITY (a "Developer ID Application: …" name) and NOTARY_PROFILE (a notarytool
-# keychain profile), from the environment or a git-ignored .release.env.
+# keychain profile), from the environment or a git-ignored .release.env. With TAP (a checkout of a
+# Homebrew tap), the cask there follows the release.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [[ -f .release.env ]] && source .release.env
@@ -29,3 +30,10 @@ spctl --assess --type execute dist/Sluice.app
 git tag -m "Sluice $tag" "$tag"
 git push -q origin "$tag"
 gh release create "$tag" "$zip" --title "Sluice $tag" --generate-notes "$@"
+
+if [[ -n ${TAP:-} ]]; then
+  sha=$(shasum -a 256 "$zip" | cut -d' ' -f1)
+  sed -i '' -E "s/^  version \".*\"/  version \"$version\"/; s/^  sha256 \".*\"/  sha256 \"$sha\"/" "$TAP/Casks/sluice.rb"
+  git -C "$TAP" commit -q -m "sluice $version" -- Casks/sluice.rb
+  git -C "$TAP" push -q
+fi

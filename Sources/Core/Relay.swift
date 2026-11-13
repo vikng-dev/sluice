@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// A local address, read as a route. The grammar:
 /// `/login/<provider>`, `/callback?code=…&state=…`, `/status`, and
@@ -153,7 +154,10 @@ public final class Relay: Sendable {
         }
     }
 
+    /// One line per relayed request, in the system log: `log stream --predicate 'subsystem == "dev.vikng.sluice"'`.
     private func log(_ line: String) {
-        FileHandle.standardError.write(Data("\(line)\n".utf8))
+        Self.logger.info("\(line, privacy: .public)")
     }
+
+    private static let logger = Logger(subsystem: "dev.vikng.sluice", category: "relay")
 }

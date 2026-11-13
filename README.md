@@ -3,22 +3,27 @@
 A macOS menu bar app that pools your AI coding subscriptions behind one local address.
 Claude Code and Codex talk to Sluice on localhost; Sluice decides which of your accounts answers.
 
-**Status: early.** Claude Code and Codex are relayed across pools of accounts, from the terminal.
-The menu bar view is not built yet.
+**Status: early.** Claude Code and Codex are relayed across pools of accounts. The menu shows the
+relay's state and switches the routing on and off; usage is read with `sluice status`.
 
 ## Use it
 
-Open Sluice.app once; it relays from then on and starts with the Mac. The app is also the
-command-line tool. Run this once, and `sluice` is on your PATH with the rest:
+```sh
+brew install --cask vikng-dev/tap/sluice
+```
+
+Open Sluice once; it relays from then on and starts with the Mac. The app is also the `sluice`
+command, which Homebrew puts on your PATH. Then turn on **Route claude and codex through Sluice**
+in the menu, or run:
 
 ```sh
-/Applications/Sluice.app/Contents/MacOS/Sluice setup
+sluice setup
 ```
 
 `setup` links `sluice`, and stand-ins for `claude` and `codex`, into `~/.config/sluice/bin` and
 tells you the line that puts that folder first on your PATH. A stand-in points the real client at
 Sluice when Sluice is running, and otherwise just runs it, so nothing breaks when Sluice is off.
-Your own client settings are not edited.
+Your own client settings are not edited, and `sluice setup --undo` (or the same switch) removes them.
 
 ```sh
 sluice login                  # sign a Claude account in through the browser; repeat per account
@@ -61,6 +66,17 @@ observed (windows, warm conversations) is kept in `~/Library/Application Support
 restart forgets nothing. It never spends paid extra usage. What it knows about each provider's wire format is in
 [docs/wire.md](docs/wire.md).
 
+Only programs on this Mac are answered. A web page can reach a local port, so a request that names
+another host, or that a browser sent from a page, is refused. Each relayed request is one line in
+the system log, with the account and the status and nothing of the request itself:
+
+```sh
+log stream --info --predicate 'subsystem == "dev.vikng.sluice"'
+```
+
+To remove Sluice: `sluice setup --undo`, then `brew uninstall --zap sluice`. The signed-in accounts
+stay in the Keychain item `dev.vikng.sluice` until you delete it.
+
 ## Layout
 
 One Swift package, no dependencies.
@@ -91,7 +107,9 @@ script/release.sh
 
 It builds, signs with a Developer ID, notarizes, tags `v<version>` and publishes a GitHub release
 with the zipped app. `SIGN_IDENTITY` and `NOTARY_PROFILE` come from the environment or a
-git-ignored `.release.env`. Extra arguments go to `gh release create` (for example `--prerelease`).
+git-ignored `.release.env`. With `TAP` set to a checkout of a Homebrew tap, its `Casks/sluice.rb`
+is moved to the new version and pushed. Extra arguments go to `gh release create` (for example
+`--prerelease`).
 
 ## License
 

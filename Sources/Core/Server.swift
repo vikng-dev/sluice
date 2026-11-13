@@ -49,6 +49,7 @@ public final class Server: Sendable {
         var buffer = Data()
         do {
             while let request = try await peer.request(&buffer) {
+                guard request.isLocalCaller else { throw HTTPError.notLocal }
                 try await handler(request, ResponseWriter(peer: peer, method: request.method))
             }
         } catch let error as HTTPError {
