@@ -86,24 +86,29 @@ struct Panel: View {
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
             }
             ForEach(sections, id: \.name) { section in
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
                     ProfileCaption(
                         name: section.name, label: config.profiles[section.name]?.label, tint: config.profiles[section.name]?.color,
                         empty: section.pools.isEmpty, titles: titles,
                         signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) }
                     )
-                    ForEach(section.pools) { PoolView(pool: $0, now: now, carried: carried?.account.id, actions: actions) }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                // Each profile is a card. While an account is carried, the profiles it could go to are
-                // outlined, and the one under it is filled.
-                .background(target == section.name ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-                .overlay {
-                    if let carried, carried.account.profile != section.name {
-                        RoundedRectangle(cornerRadius: 10).strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .padding(.horizontal, 10)
+                    VStack(alignment: .leading, spacing: 10) {
+                        if section.pools.isEmpty { Text("No accounts").font(.callout).foregroundStyle(.secondary) }
+                        ForEach(section.pools) { PoolView(pool: $0, now: now, carried: carried?.account.id, actions: actions) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    // A profile's accounts sit on a card under its name. While an account is carried, the
+                    // profiles it could go to are outlined, and the one under it is filled.
+                    .background(target == section.name ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay {
+                        if let carried, carried.account.profile != section.name {
+                            RoundedRectangle(cornerRadius: 10).strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                        }
                     }
                 }
+                .padding(.top, 4)
                 .framed("profile:\(section.name)")
             }
             HStack {
@@ -206,49 +211,46 @@ private struct ProfileCaption: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Button { picking.toggle() } label: { dot(tint, size: 7).frame(width: 11, height: 11).contentShape(Rectangle()) }
-                    .buttonStyle(.plain).help("Change its color")
-                if picking {
-                    ForEach([nil] + Tint.allCases.map(Optional.some), id: \.self) { option in
-                        Button {
-                            setTint(option)
-                            picking = false
-                        } label: {
-                            dot(option, size: 11).overlay { if option == tint { Circle().strokeBorder(.primary.opacity(0.6), lineWidth: 1.5) } }
-                        }
-                        .buttonStyle(.plain).help(option?.rawValue.capitalized ?? "No color")
+        HStack(spacing: 6) {
+            Button { picking.toggle() } label: { dot(tint, size: 7).frame(width: 11, height: 11).contentShape(Rectangle()) }
+                .buttonStyle(.plain).help("Change its color")
+            if picking {
+                ForEach([nil] + Tint.allCases.map(Optional.some), id: \.self) { option in
+                    Button {
+                        setTint(option)
+                        picking = false
+                    } label: {
+                        dot(option, size: 11).overlay { if option == tint { Circle().strokeBorder(.primary.opacity(0.6), lineWidth: 1.5) } }
                     }
-                } else if editing {
-                    TextField(name, text: $draft)
-                        .textFieldStyle(.plain).font(.caption.weight(.semibold)).focused($typing)
-                        .onAppear { typing = true }
-                        .onSubmit(keep)
-                        .onExitCommand { editing = false }
-                        .onChange(of: typing) { _, typing in if !typing { keep() } }
-                } else {
-                    Text(label ?? name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            draft = label ?? ""
-                            editing = true
-                        }
-                        .help("Click to change what this profile is shown as")
+                    .buttonStyle(.plain).help(option?.rawValue.capitalized ?? "No color")
                 }
-                Spacer()
-                Menu {
-                    ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
-                        Button("Sign in a \(title) account") { signIn(provider) }
+            } else if editing {
+                TextField(name, text: $draft)
+                    .textFieldStyle(.plain).font(.caption.weight(.semibold)).focused($typing)
+                    .onAppear { typing = true }
+                    .onSubmit(keep)
+                    .onExitCommand { editing = false }
+                    .onChange(of: typing) { _, typing in if !typing { keep() } }
+            } else {
+                Text(label ?? name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        draft = label ?? ""
+                        editing = true
                     }
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .bare()
-                .help("Add an account to this profile")
-                .opacity(hovered || empty ? 1 : 0)
+                    .help("Click to change what this profile is shown as")
             }
-            if empty { Text("No accounts").font(.callout).foregroundStyle(.secondary) }
+            Spacer()
+            Menu {
+                ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
+                    Button("Sign in a \(title) account") { signIn(provider) }
+                }
+            } label: {
+                Image(systemName: "plus")
+            }
+            .bare()
+            .help("Add an account to this profile")
+            .opacity(hovered || empty ? 1 : 0)
         }
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
