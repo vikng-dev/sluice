@@ -15,8 +15,8 @@ replaces the `Authorization: Bearer` header with the chosen account's token.
 
 **Conversation identity.** `X-Claude-Code-Session-Id` (a UUID) on every request. The same id is in
 the body: `metadata.user_id` is a JSON string holding `device_id`, `account_uuid` and
-`session_id`. `account_uuid` is the client's own login, so it will not match a swapped token.
-Whether that matters is open.
+`session_id`. `account_uuid` is the client's own login, so the relay rewrites it to the serving account's.
+Requests with the credential and that id swapped are served normally.
 
 **Limits, on every response.**
 
@@ -39,9 +39,13 @@ first SSE event, `message_start`, carries `usage.cache_read_input_tokens` and
 knows the cache result before any text arrives. A second session on the same account read the
 whole 24k-token prefix from cache: the cache belongs to the account, not the session.
 
-**Open.** Whether two accounts share a cache: the second account's request differed in content, so
-its miss proves nothing. Replay identical bytes under two tokens to settle it. What a spent
-account's response looks like (status, headers, body) is not captured yet.
+**Cache across accounts.** Not shared, on the evidence so far. A prompt made unique by a nonce in the
+system prompt was written and then fully read (20.8k tokens) on account A. The same client then sent
+it on account B: B read only the part before the nonce, which B had cached itself earlier, and
+wrote the rest. A's first request had likewise read nothing of what B cached minutes before. The
+swapped requests read their own cache normally, so the id rewrite does not disturb caching.
+
+**Open.** What a spent account's response looks like (status, headers, body) is not captured yet.
 
 ## Codex CLI 0.160.0 (captured 2026-11-13)
 

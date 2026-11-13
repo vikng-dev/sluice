@@ -3,7 +3,21 @@
 A macOS menu bar app that pools your AI coding subscriptions behind one local address.
 Claude Code and Codex talk to Sluice on localhost; Sluice decides which of your accounts answers.
 
-**Status: scaffold.** Nothing below is built yet. This is the plan.
+**Status: early.** The relay works for Claude Code with one account at a time: sign-in, token
+renewal, and the swap of credential and account id on each request. Pooling, sticky conversations,
+resend-on-spent, Codex and the menu bar view are not built yet.
+
+## Use it today
+
+```sh
+sluice serve                  # or open Sluice.app
+sluice login                  # sign an account in through the browser
+sluice status                 # list signed-in accounts
+ANTHROPIC_BASE_URL=http://localhost:7483/claude claude
+```
+
+Claude Code stays signed in to any one subscription; Sluice replaces its credential on the way out.
+Add `/pin/<email>` after `/claude` to choose the account.
 
 ## What it will do
 
@@ -34,6 +48,7 @@ One Swift package, no dependencies.
 
 ```sh
 swift build            # debug build
+swift test
 script/bundle.sh       # universal dist/Sluice.app
 ```
 
