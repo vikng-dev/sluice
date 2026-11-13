@@ -41,6 +41,8 @@ struct Panel: View {
     private var profiles: [String] { config.names }
     /// Which of the panel's two views is shown: the accounts, or their use over time.
     @AppStorage("showsUse") private var showsUse = false
+    @Namespace private var views
+    @Environment(\.accessibilityReduceMotion) private var still
     @State private var carried: Carried?
     @State private var armed: String?
     /// The account let go on the place for a new profile, which is now being named for it.
@@ -143,6 +145,7 @@ struct Panel: View {
                     // A profile's accounts sit on a card under its name. While an account is carried, the
                     // profiles it could go to are outlined, and the one under it is filled.
                     .background(target == section.name ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                    .moves(.easeOut(duration: 0.12), with: target == section.name)
                     .overlay {
                         if let carried, carried.account.profile != section.name {
                             RoundedRectangle(cornerRadius: 10).strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
@@ -162,20 +165,26 @@ struct Panel: View {
                         .framed("new")
                 }
                 Button { autoReset(!config.autoResets) } label: {
-                    Image(systemName: config.autoResets ? "bolt.fill" : "bolt").font(.caption).frame(width: 24, height: 16).contentShape(Rectangle())
+                    Image(systemName: config.autoResets ? "bolt.fill" : "bolt").font(.caption).contentTransition(.symbolEffect(.replace))
+                        .frame(width: 24, height: 16).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).foregroundStyle(config.autoResets ? Color.green : .secondary)
+                .moves(.snappy(duration: 0.2), with: config.autoResets)
                 .help(config.autoResets ? "Resets are used for you: when a pool is out, or one is about to lapse. Click to use them only yourself" : "Use resets for me: when a pool is out, or one is about to lapse")
                 HStack(spacing: 2) {
                     ForEach([(false, "rectangle.stack", "Accounts"), (true, "chart.xyaxis.line", "Use over time")], id: \.0) { use, symbol, name in
                         Button { showsUse = use } label: {
                             Image(systemName: symbol).font(.caption).frame(width: 24, height: 16)
-                                .background(Color.primary.opacity(showsUse == use ? 0.12 : 0), in: RoundedRectangle(cornerRadius: 4))
+                                .background {
+                                    // One highlight, which slides to the view chosen.
+                                    if showsUse == use { RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.12)).matchedGeometryEffect(id: "chosen", in: views) }
+                                }
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain).foregroundStyle(showsUse == use ? .primary : .secondary).help(name)
                     }
                 }
+                .moves(.snappy(duration: 0.2), with: showsUse)
                 Menu {
                     Text("Sluice \(Sluice.version)")
                     Divider()
@@ -194,6 +203,8 @@ struct Panel: View {
         .contentShape(Rectangle())
         .onTapGesture { armed = nil }
         .environment(\.armed, $armed)
+        .symbolEffectsRemoved(still)
+        .sensoryFeedback(.alignment, trigger: target)
         .task(id: showsUse) { if showsUse { loadHistory() } }
         .task { refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
@@ -241,6 +252,35 @@ private extension View {
     }
 }
 
+/// Motion in the panel is brief and says that something changed. None of it moves the layout, and a
+/// person who asked the system for less motion gets none.
+private struct Moves<Value: Equatable>: ViewModifier {
+    let animation: Animation
+    let value: Value
+    @Environment(\.accessibilityReduceMotion) private var still
+
+    func body(content: Content) -> some View { content.animation(still ? nil : animation, value: value) }
+}
+
+/// A line that comes into a row fades in where it is. The row's height is not animated: the window
+/// around a menu bar panel resizes in one step, and a height that eased would race it.
+private struct FadesIn: ViewModifier {
+    let on: Bool
+    @State private var shown = false
+    @Environment(\.accessibilityReduceMotion) private var still
+
+    func body(content: Content) -> some View {
+        content.opacity(shown || still || !on ? 1 : 0).onAppear { withAnimation(.easeOut(duration: 0.18)) { shown = true } }
+    }
+}
+
+private extension View {
+    /// Animates with a change of `value`.
+    func moves<Value: Equatable>(_ animation: Animation, with value: Value) -> some View { modifier(Moves(animation: animation, value: value)) }
+
+    func fadesIn(_ on: Bool = true) -> some View { modifier(FadesIn(on: on)) }
+}
+
 /// The one action in the panel that waits for its check or its cross, by a name of its own. Naming
 /// another, a click on nothing, and the panel closing all let it go.
 private struct ArmedKey: EnvironmentKey {
@@ -270,6 +310,7 @@ private struct Confirm: View {
                 .disabled(!ready).opacity(ready ? 1 : 0.4).help(undoable ? "Keep it" : "Do it. This cannot be undone")
         }
         .buttonStyle(.plain)
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
     }
 
     private func mark(_ symbol: String, ink: Color, on fill: Color) -> some View {
@@ -411,12 +452,14 @@ private struct ProfileCaption: View {
                 .bare()
                 .help("Add an account, or work that belongs to this profile")
                 .opacity(armed.wrappedValue == removal ? 0 : hovered || empty ? 1 : 0)
+                .moves(.easeOut(duration: 0.12), with: hovered)
                 .overlay(alignment: .trailing) {
                     if let remove, armed.wrappedValue == removal {
                         Confirm { armed.wrappedValue = nil; remove() } back: { armed.wrappedValue = nil }
                             .help("Its accounts and the work it claims go to the default profile. Its client folders are left as they are")
                     }
                 }
+                .moves(.snappy(duration: 0.18), with: armed.wrappedValue == removal)
             }
             if open, !claims.isEmpty {
                 Flow { ForEach(claims, id: \.self) { claim in ClaimChip(claim: claim) { unclaim(claim) } } }.font(.caption2)
@@ -653,10 +696,11 @@ private struct PoolView: View {
                         .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
                 }
                 Text(pool.title).font(.callout.weight(.semibold))
-                Button { star(!starred) } label: { Image(systemName: starred ? "star.fill" : "star").font(.caption) }
+                Button { star(!starred) } label: { Image(systemName: starred ? "star.fill" : "star").font(.caption).contentTransition(.symbolEffect(.replace)) }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .help(starred ? "Shown in the menu bar. Click to take it out" : "Show how much of this pool is used in the menu bar")
                     .opacity(hovered ? 1 : 0)
+                    .moves(.easeOut(duration: 0.12), with: hovered).moves(.snappy(duration: 0.2), with: starred)
                 Spacer()
                 Share(used: pool.accounts.used, worded: true)
             }
@@ -738,6 +782,7 @@ private struct AccountRow: View {
                 .frame(width: Self.gutter, height: 16, alignment: .leading)
                 .contentShape(Rectangle())
                 .opacity(actions == nil || hovered ? 1 : 0)
+                .moves(.easeOut(duration: 0.12), with: hovered)
                 .gesture(actions.map { actions in
                     DragGesture(minimumDistance: 1, coordinateSpace: .named(Frames.space))
                         .updating($held) { _, held, _ in held = true }
@@ -751,6 +796,12 @@ private struct AccountRow: View {
         }
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
+        // A row that opens says so under the pointer. Drawn behind it and past its edges, it takes no room.
+        .background {
+            RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)).padding(.horizontal, -6).padding(.vertical, -4)
+                .opacity(hovered && opens && actions != nil ? 1 : 0)
+                .moves(.easeOut(duration: 0.12), with: hovered)
+        }
     }
 
     /// A click on who it is or on its bar opens the row, and closes it again.
@@ -772,7 +823,10 @@ private struct AccountRow: View {
                     Image(systemName: "person.crop.circle.fill").font(.caption).foregroundStyle(.secondary)
                         .help("\(client) itself is signed in as this account in this profile. What \(client) does outside Sluice is this account's; its requests are paid by the whole pool.")
                 }
-                if serving { Circle().fill(.green).frame(width: 6, height: 6).help("Answering requests now") }
+                if serving {
+                    Image(systemName: "circle.fill").font(.system(size: 5)).foregroundStyle(.green).symbolEffect(.pulse, options: .repeating)
+                        .frame(width: 6, height: 6).help("Answering requests now")
+                }
                 if let actions {
                     if removing {
                         Confirm { armed.wrappedValue = nil; actions.remove(account) } back: { armed.wrappedValue = nil }
@@ -781,6 +835,7 @@ private struct AccountRow: View {
                         Button { armed.wrappedValue = "remove:\(account.id)" } label: { Image(systemName: "trash").font(.caption) }
                             .buttonStyle(.plain).foregroundStyle(.secondary).help("Remove this account")
                             .opacity(hovered ? 1 : 0)
+                            .moves(.easeOut(duration: 0.12), with: hovered)
                     }
                 }
                 Spacer(minLength: 4)
@@ -793,6 +848,7 @@ private struct AccountRow: View {
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: open)
+            .moves(.snappy(duration: 0.18), with: removing)
             if let problem = account.problem {
                 Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             } else if shown.isEmpty {
@@ -810,6 +866,7 @@ private struct AccountRow: View {
                         Share(used: limit.used).frame(width: Self.share, alignment: .trailing)
                         Clock(window: limit, now: now).frame(width: Self.clock, alignment: .trailing)
                     }
+                    .fadesIn(limit.name != tightest?.name)
                 }
             }
             if opened, !holds.isEmpty {
@@ -837,7 +894,9 @@ private struct AccountRow: View {
                             }
                         }
                     }
+                    .moves(.snappy(duration: 0.18), with: armed.wrappedValue)
                 }
+                .fadesIn()
                 .padding(.top, 2)
             }
         }
@@ -880,8 +939,11 @@ struct Share: View {
     static func warning(_ used: Double) -> Color? { used >= 1 ? .red : used >= 0.85 ? .orange : nil }
 
     var body: some View {
-        Text(Self.text(used, left: left) + (worded ? (left ? " left" : " used") : ""))
+        let text = Self.text(used, left: left) + (worded ? (left ? " left" : " used") : "")
+        Text(text)
             .font(.caption.monospacedDigit())
+            .contentTransition(.numericText())
+            .moves(.smooth(duration: 0.3), with: text)
             .foregroundStyle(Self.warning(used) ?? (worded ? .secondary : .primary))
             .contentShape(Rectangle())
             .onTapGesture { left.toggle() }
@@ -896,8 +958,11 @@ struct Clock: View {
     @AppStorage("readsResetTimes") private var times = false
 
     var body: some View {
-        Text(times ? window.resetText : window.leftText(now: now))
+        let text = times ? window.resetText : window.leftText(now: now)
+        Text(text)
             .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+            .contentTransition(.numericText())
+            .moves(.smooth(duration: 0.3), with: text)
             .contentShape(Rectangle())
             .onTapGesture { times.toggle() }
             .help(times ? "Resets then. Click for the time left" : "Resets in this long. Click for the time")
@@ -916,6 +981,7 @@ private struct Bar: View {
             }
         }
         .frame(height: 4)
+        .moves(.smooth(duration: 0.45), with: used)
     }
 }
 
