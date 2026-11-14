@@ -10,6 +10,7 @@ private struct Fake: Provider {
     let redirect: URL? = nil
     let client = "fake"
     let name = "Fake"
+    var formula: Formula? = nil
     func home(of profile: String) -> (variable: String, folder: URL)? { nil }
     func signedIn(in profile: String) throws -> String? { nil }
     func folders(in profile: String) throws -> [String] { [] }
@@ -172,6 +173,29 @@ private actor Hits {
         let now = try accounts(remembering: #"{"usage":{},"router":{"holds":{}},"plans":{"fake/a":{"name":"Big","multiple":20,"business":false,"price":200}},"scoped":{"fake/a":[{"name":"model","used":0.2,"resetsAt":9000000000}]},"resets":{"fake/a":[{"id":"r","refills":["7d"],"left":1,"usable":true}]}}"#)
         let told = try await now.status().first
         #expect(told?.plan?.multiple == 20 && told?.scoped.map(\.name) == ["model"] && told?.resets.map(\.id) == ["r"])
+    }
+
+    /// A pool weighs its accounts by size, so one sized wrongly misstates how much of the pool is left.
+    @Test func anAccountIsSizedByItsPlanUntilItsWeekHasShownWhatAPointOfItCosts() async throws {
+        let account = Account(provider: "fake", subject: "a", organization: nil, label: "a", accessToken: "", refreshToken: "", expiresAt: .distantFuture)
+        let accounts = try Accounts(
+            storage: Storage(loadAccounts: { [account] }, storeAccounts: { _ in }, config: { Config() }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in }),
+            formulas: ["fake": Formula(output: 2, cacheWrite: 1, cacheRead: 0, models: [:], basic: 100, sizes: [:])]
+        )
+        func week(_ points: Int) -> [Window] { [Window(name: "7d", used: Double(points) / 100, resetsAt: Date(timeIntervalSinceReferenceDate: 9_000_000_000))] }
+        await accounts.record(Usage(plan: Plan(name: "Big", multiple: 3, business: false, price: nil), windows: week(0)), for: account.id)
+        // Three of the basic plan's hundred.
+        #expect(try await accounts.status().first?.size == 300)
+
+        var spend = Spend()
+        spend.output = 50
+        for point in 1...10 {
+            for _ in 0..<4 { await accounts.spent(spend, by: account.id, for: "default", folder: nil, conversation: nil, since: Date()) }
+            await accounts.answered(account.id, reporting: week(point))
+        }
+        // Each point rose on four answers of fifty tokens written out, which weigh two apiece.
+        let seen = try await accounts.status().first
+        #expect(seen?.size == 400 && seen?.spread == 0)
     }
 
     @Test func aSignInStartedForAProfileLandsThereAndOneForNoProfileStaysPut() async throws {

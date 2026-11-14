@@ -225,6 +225,8 @@ struct Memory: Codable {
     var plans: [String: Plan]?
     var scoped: [String: [Window]]?
     var resets: [String: [Reset]]?
+    /// By account: what its week is seen to hold. Nil in a memory from before this was learned.
+    var sizings: [String: Sizing]?
 }
 
 public struct AccountStatus: Codable, Sendable {
@@ -243,11 +245,20 @@ public struct AccountStatus: Codable, Sendable {
     public var lastAnswered: Date?
     /// Why it cannot serve, in the provider's or Sluice's words; nil when nothing is known to be wrong.
     public var problem: String?
+    /// How much its week holds beside the other accounts of its pool. Where its provider's meter has a
+    /// formula, the weighed tokens in a point of the week: as seen, or as its plan is taken to give until
+    /// enough was seen. Otherwise its plan's multiple.
+    public var size: Double
+    /// How far the size seen varies from one rise of the week to the next, as a share of it; nil until
+    /// one is seen. Wide for long, the provider counts otherwise than the formula weighs.
+    public var spread: Double?
 }
 
 /// The accounts, what each provider last said about them, and where conversations are held.
 actor Accounts {
     private let storage: Storage
+    /// By provider, for those whose meter has one.
+    private let formulas: [String: Formula]
     private var accounts: [Account]
     private var refreshing: [String: Task<Account, any Error>] = [:]
     private var memory: Memory
@@ -278,8 +289,14 @@ actor Accounts {
         set { memory.resets = newValue }
     }
 
-    init(storage: Storage) throws {
+    private var sizings: [String: Sizing] {
+        get { memory.sizings ?? [:] }
+        set { memory.sizings = newValue }
+    }
+
+    init(storage: Storage, formulas: [String: Formula] = [:]) throws {
         self.storage = storage
+        self.formulas = formulas
         accounts = try storage.loadAccounts()
         // What was observed is relearned from the next answers, so a memory that cannot be read is said and started afresh.
         do { memory = try storage.loadMemory() } catch {
@@ -291,11 +308,12 @@ actor Accounts {
     func status() throws -> [AccountStatus] {
         let config = try storage.config(), now = Date()
         return accounts.map {
-            let live = live($0.id, now: now)
+            let live = live($0.id, now: now), plan = plans[$0.id], sizing = sizings[$0.id]
             return AccountStatus(
-                provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), plan: plans[$0.id],
+                provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), plan: plan,
                 windows: live.windows, scoped: live.scoped, resets: live.resets,
-                warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: lastAnswered[$0.id], problem: problems[$0.id]
+                warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: lastAnswered[$0.id], problem: problems[$0.id],
+                size: sizing?.size ?? formulas[$0.provider]?.size(of: plan) ?? Double(plan?.multiple ?? 1), spread: sizing?.spread
             )
         }
     }
@@ -307,7 +325,7 @@ actor Accounts {
         try storage.storeAccounts(next)
         accounts = next
         memory.usage[gone.id] = nil
-        (plans[gone.id], problems[gone.id], lastAnswered[gone.id], scoped[gone.id], resets[gone.id], resetsAsked[gone.id], usageAsked[gone.id]) = (nil, nil, nil, nil, nil, nil, nil)
+        (plans[gone.id], problems[gone.id], lastAnswered[gone.id], scoped[gone.id], resets[gone.id], resetsAsked[gone.id], usageAsked[gone.id], sizings[gone.id]) = (nil, nil, nil, nil, nil, nil, nil, nil)
         paused.remove(gone.id)
         remember()
         return true
@@ -461,6 +479,9 @@ actor Accounts {
             memory.usage[id, default: []].append(window)
         }
         if !windows.isEmpty {
+            if let budget = live(id, now: Date()).windows.budget, accounts.contains(where: { $0.id == id && formulas[$0.provider] != nil }) {
+                sizings[id, default: Sizing()].read(budget)
+            }
             remember()
             sample(id)
         }
@@ -483,6 +504,7 @@ actor Accounts {
     /// An answer that cost something is a line of history. One that cannot be written is reported and lost.
     func spent(_ spend: Spend, by id: String, for profile: String, folder: String?, conversation: String?, since asked: Date) {
         guard spend != Spend(), let account = accounts.first(where: { $0.id == id }) else { return }
+        if let formula = formulas[account.provider] { sizings[id]?.answered(weighing: formula.weigh(spend)) }
         let now = Date()
         do {
             try storage.appendServed(Served(

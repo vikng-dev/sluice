@@ -5,6 +5,14 @@ import SluiceCore
 public struct Claude: Provider {
     public let id = "claude"
     public let name = "Claude"
+    /// Fitted on 2026-11-14 (docs/wire.md, "Claude's meter"). Fable beside Opus is measured; Sonnet and
+    /// Haiku are their list prices beside Opus's until they are. A point of the week was measured on a
+    /// seat of five times the usage and on a plan of twenty; the basic plan is taken to hold a fifth of
+    /// the first.
+    public let formula: Formula? = Formula(
+        output: 5, cacheWrite: 1.25, cacheRead: 0.025, models: ["fable": 3.3, "sonnet": 0.5, "haiku": 0.025],
+        basic: 480_000, sizes: [20: 4_830_000]
+    )
     public let client = "claude"
     public let upstream = URL(string: "https://api.anthropic.com")!
     public let redirect: URL? = nil

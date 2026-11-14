@@ -17,7 +17,7 @@ at once, without a restart.
 ## Read
 
 ```sh
-sluice status --json         # every account: provider, label, profile, plan, windows, scoped, resets, problem
+sluice status --json         # every account: provider, label, profile, plan, windows, scoped, resets, size, problem
 sluice profile list --json   # every profile: name, label, color, starred, signedIn, accounts, folders, owners
 ```
 
@@ -26,6 +26,9 @@ sluice profile list --json   # every profile: name, label, color, starred, signe
   its use, each named for the model it limits: one at 1 stops that model alone.
 - `resets` are the resets the account holds: `id`, the limits it `refills`, how many are `left`,
   `expiresAt`, and whether its provider would take it now (`usable`).
+- `size` is how much the account's week holds beside the other accounts of its pool, and a pool's
+  share used is its accounts' weeks weighted by it. `spread` is there once the size was learned
+  from the account's own use, and says how far it varies.
 - `plan.multiple` is the plan's published usage relative to the provider's basic plan, `plan.price`
   its list price in dollars a month, `plan.business` whether it is a seat in an organization.
 - `problem` is set when an account cannot serve, and says why.

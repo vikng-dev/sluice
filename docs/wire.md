@@ -108,6 +108,22 @@ swapped requests read their own cache normally, so the id rewrite does not distu
 `5h-status`, `7d-status` or `7d_oi-status` (a per-model weekly window, a header those notes name
 and no capture here has shown) reads `rejected` is a spent allowance; any other `429` is a rate limit. Confirm against the first real one.
 
+**Claude's meter (fitted 2026-11-14).** Claude reports a share and never what the share is of. Fitted
+with `script/fit.py` to 26 hours of Sluice's own histories: 13,000 requests on Opus 5.5 and Fable 5.2
+through a seat of five times the usage and a plan of twenty, 34 and 23 points of their weeks and 206
+of the seat's five hours. A rise of any of the three is told to within the rounding of a point by
+
+    model × (tokens read new + 5 × written out + 1.25 × written to the cache + 0.025 × read from it)
+
+with Opus as 1 and Fable as 3.3. List prices (Fable twice Opus, a cache read at $0.20 on both) miss by
+two to three times as much, and tokens written out alone by more. Under it a point of the seat's week
+holds 2.40M weighed tokens and of the twenty's 4.83M: twice the seat, not the four times the
+multiples say. The seat's five hours hold a sixth of its week. Not measured, and assumed in the code
+until they are: Sonnet and Haiku (taken at their list price beside Opus's), a token read new (few are
+sent), a cache write kept an hour (weighed as any other), and the plans of other multiples (taken in
+line with the seat). Seen once and not relied on: Fable's own limit is about half the week and its use
+counts in both, and a reset of it gave back 27 points of the week with the 53 of its own.
+
 **How far `claude -p` bends (probed 2026-11-13, all served from the plan through Sluice).** Its
 `system` always opens with two blocks Claude Code writes itself: a billing header
 (`x-anthropic-billing-header: cc_version=…; cc_entrypoint=sdk-…`) and the line "You are a Claude

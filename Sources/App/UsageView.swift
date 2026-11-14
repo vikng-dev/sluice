@@ -93,7 +93,7 @@ private struct ProfileUsage: View {
     /// The pool's share used per hour over the last day.
     private func burn(of pool: [AccountStatus]) -> Double? {
         let day = now.addingTimeInterval(-86400)
-        return Forecast.burn(pool.map { account in (samples(of: account).filter { $0.at >= day }, account.weight) }, from: day, to: now)
+        return Forecast.burn(pool.map { account in (samples(of: account).filter { $0.at >= day }, account.size) }, from: day, to: now)
     }
 
     /// An account's week as points: each reading, and what it reads now.
@@ -140,7 +140,7 @@ private struct ProfileUsage: View {
                         if let burn = burn(of: pool) {
                             Text("\((burn * 100).formatted(.number.precision(.fractionLength(1))))%/h").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                                 .help("How much of the pool was used per hour over the last day")
-                            let members = pool.map { Member(weight: $0.weight, used: $0.budget?.used ?? 0, resetsAt: $0.budget?.resetsAt) }
+                            let members = pool.map { Member(weight: $0.size, used: $0.budget?.used ?? 0, resetsAt: $0.budget?.resetsAt) }
                             if let dry = Forecast.dry(members, burn: burn, now: now) {
                                 HStack(spacing: 3) {
                                     Text("dry").font(.caption).foregroundStyle(dry <= now ? Color.red : .orange)

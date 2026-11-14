@@ -66,7 +66,7 @@ public final class Relay: Sendable {
 
     public init(providers: [any Provider], storage: Storage, port: UInt16) throws {
         self.providers = Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0) })
-        accounts = try Accounts(storage: storage)
+        accounts = try Accounts(storage: storage, formulas: Dictionary(uniqueKeysWithValues: providers.compactMap { provider in provider.formula.map { (provider.id, $0) } }))
         self.storage = storage
         redirectURI = "http://localhost:\(port)/callback"
     }

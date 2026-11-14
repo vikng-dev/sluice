@@ -55,6 +55,9 @@ public protocol Provider: Sendable {
     func resets(of account: Account, as client: String?) async throws -> [Reset]?
     /// Spends a reset now, which cannot be taken back.
     func use(_ reset: Reset, of account: Account, as client: String?) async throws
+    /// How its meter counts tokens; nil while that has not been fitted, and its accounts are then sized
+    /// by their plans alone.
+    var formula: Formula? { get }
 }
 
 /// A reset an account holds: its provider's leave to have some of its limits whole again before their time.

@@ -5,6 +5,8 @@ import SluiceCore
 public struct Codex: Provider {
     public let id = "codex"
     public let name = "ChatGPT"
+    /// Its week had risen five points when Claude's was fitted, too few to fit.
+    public let formula: Formula? = nil
     public let client = "codex"
     public let upstream = URL(string: "https://chatgpt.com/backend-api/codex")!
     /// The Codex CLI's OAuth client accepts only this address.

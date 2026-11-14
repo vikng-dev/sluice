@@ -666,15 +666,14 @@ private struct Pool: Identifiable {
 extension AccountStatus {
     var id: String { provider + ":" + label }
     var budget: SluiceCore.Window? { windows.budget }
-    var weight: Double { Double(plan?.multiple ?? 1) }
 }
 
 extension [AccountStatus] {
-    /// How much of a pool of these is used: each account's budget, by the size of its plan. An account
+    /// How much of a pool of these is used: each account's budget, by its size. An account
     /// that cannot serve has nothing to give, so it counts as used up.
     var used: Double {
-        let total = map(\.weight).reduce(0, +)
-        return total > 0 ? map { $0.weight * ($0.problem == nil ? Swift.min($0.budget?.used ?? 0, 1) : 1) }.reduce(0, +) / total : 0
+        let total = map(\.size).reduce(0, +)
+        return total > 0 ? map { $0.size * ($0.problem == nil ? Swift.min($0.budget?.used ?? 0, 1) : 1) }.reduce(0, +) / total : 0
     }
 }
 

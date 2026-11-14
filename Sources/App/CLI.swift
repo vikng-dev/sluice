@@ -145,7 +145,9 @@ func command(_ arguments: [String]) async {
             for row in rows {
                 let windows = (row.windows + row.scoped).map { "\($0.name) \($0.percentText) → \($0.resetText)" } + (row.resets.isEmpty ? [] : ["\(row.resets.map(\.left).reduce(0, +)) resets"])
                 let plan = row.plan.map { ($0.business ? "business " : "") + $0.tier }
-                print("  " + [row.provider, row.label, plan, row.problem ?? (windows.isEmpty ? "no usage reported" : windows.joined(separator: ", ")), "\(row.warmConversations) warm"].compactMap { $0 }.joined(separator: "  "))
+                // Said only once the week has shown it: how well its provider's formula holds on this account.
+                let size = row.spread.map { "1% of its week is \(Int(row.size).formatted(.number.notation(.compactName))) weighed tokens ±\(Int(($0 * 100).rounded()))%" }
+                print("  " + [row.provider, row.label, plan, row.problem ?? (windows.isEmpty ? "no usage reported" : windows.joined(separator: ", ")), size, "\(row.warmConversations) warm"].compactMap { $0 }.joined(separator: "  "))
             }
         }
         if rows.isEmpty { print("No accounts. Run: sluice login") }
