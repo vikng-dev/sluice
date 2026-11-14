@@ -110,6 +110,44 @@ struct Panel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // The panel's first line, which stays where it is whatever is under it: the two views, then what the app
+            // does by itself and its own menu.
+            HStack(alignment: .top, spacing: 8) {
+                HStack(spacing: 2) {
+                    ForEach([(false, "rectangle.stack", "Accounts"), (true, "chart.xyaxis.line", "Use over time")], id: \.0) { use, symbol, name in
+                        Button { showsUse = use } label: {
+                            Image(systemName: symbol).font(.caption).frame(width: 24, height: 16)
+                                .background {
+                                    // One highlight, which slides to the view chosen.
+                                    if showsUse == use { RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.12)).matchedGeometryEffect(id: "chosen", in: views) }
+                                }
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).foregroundStyle(showsUse == use ? .primary : .secondary).help(name)
+                    }
+                }
+                .moves(.snappy(duration: 0.2), with: showsUse)
+                if showsUse { Text("Last 7 days").font(.caption.weight(.semibold)).foregroundStyle(.tertiary).frame(height: 16) }
+                Spacer()
+                Button { autoReset(!config.autoResets) } label: {
+                    Image(systemName: config.autoResets ? "bolt.fill" : "bolt").font(.caption).contentTransition(.symbolEffect(.replace))
+                        .frame(width: 24, height: 16).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(config.autoResets ? Color.green : .secondary)
+                .moves(.snappy(duration: 0.2), with: config.autoResets)
+                .help(config.autoResets ? "Resets are used for you: when a pool is out, or one is about to lapse. Click to use them only yourself" : "Use resets for me: when a pool is out, or one is about to lapse")
+                Menu {
+                    Text("Sluice \(Sluice.version)")
+                    Divider()
+                    if routed { Button("Stop routing") { route(false) } }
+                    Button("Quit Sluice", action: quit)
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .bare().frame(height: 16)
+                .help("Stop routing sends clients started from now on to their own providers; quitting sends them all")
+            }
+            .padding(.horizontal, 10)
             if !problem.isEmpty { Text(problem).font(.caption).foregroundStyle(.red) }
             if !routed {
                 HStack {
@@ -155,48 +193,11 @@ struct Panel: View {
                 .padding(.top, 4)
                 .framed("profile:\(section.name)")
             }
-            // The panel's last line: what the view shown can start, then the two views and the app's own menu.
-            HStack(alignment: .top) {
-                if showsUse {
-                    Text("Last 7 days").font(.caption.weight(.semibold)).foregroundStyle(.tertiary).frame(height: 16)
-                    Spacer()
-                } else {
-                    NewProfile(founder: $founder, carrying: carried != nil, targeted: overNew) { addProfile($0, founder) }
-                        .framed("new")
-                }
-                Button { autoReset(!config.autoResets) } label: {
-                    Image(systemName: config.autoResets ? "bolt.fill" : "bolt").font(.caption).contentTransition(.symbolEffect(.replace))
-                        .frame(width: 24, height: 16).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain).foregroundStyle(config.autoResets ? Color.green : .secondary)
-                .moves(.snappy(duration: 0.2), with: config.autoResets)
-                .help(config.autoResets ? "Resets are used for you: when a pool is out, or one is about to lapse. Click to use them only yourself" : "Use resets for me: when a pool is out, or one is about to lapse")
-                HStack(spacing: 2) {
-                    ForEach([(false, "rectangle.stack", "Accounts"), (true, "chart.xyaxis.line", "Use over time")], id: \.0) { use, symbol, name in
-                        Button { showsUse = use } label: {
-                            Image(systemName: symbol).font(.caption).frame(width: 24, height: 16)
-                                .background {
-                                    // One highlight, which slides to the view chosen.
-                                    if showsUse == use { RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.12)).matchedGeometryEffect(id: "chosen", in: views) }
-                                }
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain).foregroundStyle(showsUse == use ? .primary : .secondary).help(name)
-                    }
-                }
-                .moves(.snappy(duration: 0.2), with: showsUse)
-                Menu {
-                    Text("Sluice \(Sluice.version)")
-                    Divider()
-                    if routed { Button("Stop routing") { route(false) } }
-                    Button("Quit Sluice", action: quit)
-                } label: {
-                    Image(systemName: "ellipsis")
-                }
-                .bare().frame(height: 16)
-                .help("Stop routing sends clients started from now on to their own providers; quitting sends them all")
+            if !showsUse {
+                NewProfile(founder: $founder, carrying: carried != nil, targeted: overNew) { addProfile($0, founder) }
+                    .framed("new")
+                    .padding(.horizontal, 10).padding(.top, 4)
             }
-            .padding(.horizontal, 10).padding(.top, 4)
         }
         .padding(10)
         .frame(width: 392)
