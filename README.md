@@ -32,7 +32,9 @@ That does two things, and `sluice setup --undo` reverses both:
   Claude Code folder, `config.toml` in every profile's Codex folder) and touches nothing else in them.
 - It links stand-ins for `claude` and `codex` into `~/.config/sluice/bin` and puts that folder first on your
   PATH with one marked line in your shell's startup file. The stand-in opens the profile the
-  current folder belongs to, then runs the real client.
+  current folder belongs to, then runs the real client. A launch that names a profile's folder itself, in
+  the client's own variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), opens that profile; a folder that is no
+  profile's is passed over.
 
 **Stop routing** in the panel's menu, and quitting, turn only the address off: the clients go back to
 their providers, and work still opens in its own profile.

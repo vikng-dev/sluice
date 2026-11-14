@@ -285,6 +285,17 @@ public enum StandIns {
         String(decoding: try file.read() ?? Data(), as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     }
 
+    /// The folder a client is to open, as its own variable names it; nil for its usual one. It is the
+    /// folder of `profile`, which the current folder belongs to, unless the variable already names a
+    /// profile's folder: the user named that profile for this launch. A folder that is no profile's, as
+    /// a shell from an older setup may still name, is passed over.
+    public static func home(named: String?, in profile: String, of profiles: [String], folder: (String) -> URL) -> String? {
+        func path(_ profile: String) -> String { folder(profile).standardizedFileURL.path }
+        let asked = named.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+        let opened = profiles.first { path($0) == asked } ?? profile
+        return opened == Config.defaultProfile ? nil : path(opened)
+    }
+
     public static func install(_ commands: [String], program: URL) throws {
         try remove(commands)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

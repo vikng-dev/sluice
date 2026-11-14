@@ -381,4 +381,17 @@ import Testing
         #expect(StandIns.real("tool", path: "\(real)") == real + "/tool")
         #expect(StandIns.real("tool", path: "\(wrapper):\(own)") == nil)
     }
+
+    /// A shell from an older setup still names a folder no profile has, and the client opened there
+    /// keeps its sessions where the other profiles' sessions cannot see them.
+    @Test func aFolderThatIsNoProfilesIsPassedOverAndOneThatIsAProfilesIsOpened() {
+        func open(_ named: String?, in profile: String) -> String? {
+            StandIns.home(named: named, in: profile, of: ["default", "work"]) { URL(fileURLWithPath: $0 == "default" ? "/home/.tool" : "/home/.tool-\($0)") }
+        }
+        #expect(open("/home/.tool-old", in: "default") == nil)
+        #expect(open("/home/.tool-old", in: "work") == "/home/.tool-work")
+        #expect(open("/home/.tool-work/", in: "default") == "/home/.tool-work")
+        #expect(open("/home/.tool", in: "work") == nil)
+        #expect(open(nil, in: "work") == "/home/.tool-work")
+    }
 }

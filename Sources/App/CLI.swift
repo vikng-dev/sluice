@@ -8,14 +8,19 @@ func fail(_ message: String) -> Never {
 }
 
 /// Run under a client's name (through a link made by `sluice setup`), this is that client's stand-in:
-/// it opens the profile the current folder belongs to. A profile the user named for this launch wins.
+/// it opens the profile `StandIns.home` picks.
 func standIn(for provider: any Provider, _ arguments: [String]) -> Never {
     guard let real = StandIns.real(provider.client, path: ProcessInfo.processInfo.environment["PATH"] ?? "") else {
         fail("no \(provider.client) on PATH besides this stand-in")
     }
     do {
-        let profile = try Storage.live.config().profile(for: FileManager.default.currentDirectoryPath)
-        if profile != Config.defaultProfile, let home = provider.home(of: profile) { setenv(home.variable, home.folder.path, 0) }
+        let config = try Storage.live.config()
+        if let usual = provider.home(of: Config.defaultProfile) {
+            let folder = StandIns.home(
+                named: ProcessInfo.processInfo.environment[usual.variable], in: config.profile(for: FileManager.default.currentDirectoryPath), of: config.names
+            ) { provider.home(of: $0)!.folder }
+            if let folder { setenv(usual.variable, folder, 1) } else { unsetenv(usual.variable) }
+        }
     } catch {
         fail("\(error)")
     }
