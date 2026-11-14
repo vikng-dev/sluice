@@ -783,6 +783,10 @@ private struct AccountRow: View {
                 .frame(width: Self.gutter, height: 16, alignment: .leading)
                 .contentShape(Rectangle())
                 .opacity(actions == nil || hovered ? 1 : 0)
+                // Where the handle is not showing, an account that is answering says so.
+                .overlay(alignment: .leading) {
+                    if serving && actions != nil { Playing().opacity(hovered ? 0 : 1) }
+                }
                 .moves(.easeOut(duration: 0.12), with: hovered)
                 .gesture(actions.map { actions in
                     DragGesture(minimumDistance: 1, coordinateSpace: .named(Frames.space))
@@ -823,10 +827,6 @@ private struct AccountRow: View {
                 if let client {
                     Image(systemName: "person.crop.circle.fill").font(.caption).foregroundStyle(.secondary)
                         .help("\(client) itself is signed in as this account in this profile. What \(client) does outside Sluice is this account's; its requests are paid by the whole pool.")
-                }
-                if serving {
-                    Image(systemName: "circle.fill").font(.system(size: 5)).foregroundStyle(.green).symbolEffect(.pulse, options: .repeating)
-                        .frame(width: 6, height: 6).help("Answering requests now")
                 }
                 if let actions {
                     if removing {
@@ -967,6 +967,23 @@ struct Clock: View {
             .contentShape(Rectangle())
             .onTapGesture { times.toggle() }
             .help(times ? "Resets then. Click for the time left" : "Resets in this long. Click for the time")
+    }
+}
+
+/// Three bars rising and falling, as beside what is playing: the account is answering requests now.
+private struct Playing: View {
+    @State private var up = false
+    @Environment(\.accessibilityReduceMotion) private var still
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 1.5) {
+            ForEach(Array([0.5, 0.34, 0.44].enumerated()), id: \.offset) { bar, beat in
+                Capsule().fill(.green).frame(width: 2, height: 10)
+                    .scaleEffect(y: still ? [0.5, 0.9, 0.6][bar] : up ? 1 : 0.3, anchor: .bottom)
+                    .moves(.easeInOut(duration: beat).repeatForever(autoreverses: true), with: up)
+            }
+        }
+        .onAppear { up = true }
     }
 }
 
