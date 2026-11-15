@@ -1,5 +1,10 @@
 import Foundation
 
+public extension Data {
+    /// The JSON object this is; nil when it is anything else.
+    var object: [String: Any]? { try? JSONSerialization.jsonObject(with: self) as? [String: Any] }
+}
+
 public enum JSONScan {
     /// The byte range of `key`'s value in a top-level JSON object, found without re-encoding anything.
     /// Nil when the data is not an object or has no such key. Keys with escapes never match.

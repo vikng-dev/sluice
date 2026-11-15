@@ -48,7 +48,7 @@ public struct Claude: Provider {
     }
 
     private static func state(_ data: Data, path: String) throws -> [String: Any] {
-        guard let all = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let all = data.object else {
             throw UserFileError(path: path, reason: "not the JSON object Claude Code's state should be")
         }
         return all
@@ -90,7 +90,7 @@ public struct Claude: Provider {
 
     private static func environment(in settings: Data?, path: String) throws -> (all: [String: Any], env: [String: Any]) {
         guard let settings else { return ([:], [:]) }
-        guard let all = try? JSONSerialization.jsonObject(with: settings) as? [String: Any], let env = all["env"] as? [String: Any]? else {
+        guard let all = settings.object, let env = all["env"] as? [String: Any]? else {
             throw UserFileError(path: path, reason: "not the JSON object Claude Code's settings should be")
         }
         return (all, env ?? [:])
@@ -111,7 +111,7 @@ public struct Claude: Provider {
             "redirect_uri": redirectURI, "code_verifier": verifier,
         ])
         guard let refreshToken = grant.refresh_token else { throw ProviderError.invalidResponse }
-        let (status, body) = try await HTTPCall.send("GET", Self.profile, headers: ["Authorization": "Bearer \(grant.access_token)", "anthropic-beta": Self.oauthBeta])
+        let (status, body) = try await HTTPCall.send("GET", Self.profile, headers: Self.headers(grant.access_token))
         guard status == 200 else { throw ProviderError.refused(status: status, code: nil) }
         guard let profile = try? JSONDecoder().decode(Profile.self, from: body) else { throw ProviderError.invalidResponse }
         return Account(
@@ -153,7 +153,7 @@ public struct Claude: Provider {
     /// A stream's first event has the answer's model and what was read, nested under `message`; a later
     /// one, and an answer in one piece, say what they count at the top. Each number is the total so far.
     public func count(_ event: Data, into spend: inout Spend) {
-        guard let all = try? JSONSerialization.jsonObject(with: event) as? [String: Any] else { return }
+        guard let all = event.object else { return }
         let message = all["message"] as? [String: Any] ?? all
         if let model = message["model"] as? String { spend.model = model }
         guard let usage = message["usage"] as? [String: Any] else { return }
@@ -197,7 +197,7 @@ public struct Claude: Provider {
 
     /// The windows come from one address and the plan from another; both must answer.
     public func usage(of account: Account) async throws -> Usage {
-        let headers = ["Authorization": "Bearer \(account.accessToken)", "anthropic-beta": Self.oauthBeta]
+        let headers = Self.headers(account.accessToken)
         async let usage = HTTPCall.send("GET", Self.usage, headers: headers)
         async let profile = HTTPCall.send("GET", Self.profile, headers: headers)
         for status in try await [usage.0, profile.0] where status != 200 {
@@ -211,7 +211,7 @@ public struct Claude: Provider {
     /// with five times the usage is a Premium one. The basic plans were not captured: `claude_pro` is
     /// OpenUsage's reading (35e88e9), and a basic tier is assumed to name no multiple.
     static func plan(inProfile body: Data) -> Plan? {
-        guard let organization = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["organization"] as? [String: Any],
+        guard let organization = body.object?["organization"] as? [String: Any],
               let kind = organization["organization_type"] as? String else { return nil }
         let named = (organization["rate_limit_tier"] as? String)?.firstMatch(of: /_(\d+)x$/).flatMap { Int($0.1) }
         let multiple = named ?? (["claude_pro", "claude_team"].contains(kind) ? 1 : nil)
@@ -231,7 +231,7 @@ public struct Claude: Provider {
 
     /// The windows in a usage answer. One the account does not have, or has not started, has no reset.
     static func windows(inUsage body: Data) throws -> [Window] {
-        guard let usage = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { throw ProviderError.invalidResponse }
+        guard let usage = body.object else { throw ProviderError.invalidResponse }
         return [("five_hour", "5h"), ("seven_day", "7d")].compactMap { key, name in
             guard let window = usage[key] as? [String: Any], let used = window["utilization"] as? Double,
                   let reset = (window["resets_at"] as? String).flatMap(Date.init(wire:)) else { return nil }
@@ -245,20 +245,21 @@ public struct Claude: Provider {
         agent.firstMatch(of: /^claude-cli\/[0-9.]+/).map { "\($0.0) (external, cli)" }
     }
 
-    private func asClient(_ account: Account, _ client: String) -> [String: String] {
-        ["Authorization": "Bearer \(account.accessToken)", "anthropic-beta": Self.oauthBeta, "User-Agent": client]
+    /// What a call outside the relay is made with, as Claude Code where it names itself.
+    private static func headers(_ token: String, as client: String? = nil) -> [String: String] {
+        ["Authorization": "Bearer \(token)", "anthropic-beta": oauthBeta].merging(client.map { ["User-Agent": $0] } ?? [:]) { $1 }
     }
 
     public func resets(of account: Account, as client: String?) async throws -> [Reset]? {
         guard let client else { return nil }
-        let (status, body) = try await HTTPCall.send("GET", Self.grants, headers: asClient(account, client))
+        let (status, body) = try await HTTPCall.send("GET", Self.grants, headers: Self.headers(account.accessToken, as: client))
         guard status == 200 else { throw ProviderError.answered(status) }
         return try Self.resets(inUsage: body)
     }
 
     /// The resets in a usage answer that was asked for them.
     static func resets(inUsage body: Data) throws -> [Reset] {
-        guard let held = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["cedar_ember"] as? [String: Any] else { throw ProviderError.invalidResponse }
+        guard let held = body.object?["cedar_ember"] as? [String: Any] else { throw ProviderError.invalidResponse }
         guard held["eligible"] as? Bool == true else { return [] }
         let names = ["five_hour": "5h", "seven_day": "7d", "seven_day_overage_included": "fable"]
         // After a reset is used the account's others wait out a cooldown, which the answer times as a whole.
@@ -277,7 +278,7 @@ public struct Claude: Provider {
         guard let client, let organization = account.organization else { throw ResetRefused("Claude Code has not come through Sluice yet, and a reset is used in its name") }
         // A fixed host and an id the provider gave.
         let address = URL(string: "https://api.anthropic.com/api/organizations/\(organization)/reset_rate_limits")!
-        let (status, body) = try await HTTPCall.send("POST", address, headers: asClient(account, client), json: ["program": "cedar_ember", "grant_id": reset.id, "request_id": UUID().uuidString])
+        let (status, body) = try await HTTPCall.send("POST", address, headers: Self.headers(account.accessToken, as: client), json: ["program": "cedar_ember", "grant_id": reset.id, "request_id": UUID().uuidString])
         guard status == 200 else { throw ProviderError.answered(status) }
         if let refusal = try Self.refusal(inClaim: body) { throw refusal }
     }
@@ -285,7 +286,7 @@ public struct Claude: Provider {
     /// Why a claim's answer says the reset was not used; nil when it was. An answer in a word not known
     /// here is an error and not a refusal: whether the reset was spent is then not known.
     static func refusal(inClaim body: Data) throws -> ResetRefused? {
-        guard let answer = try? JSONSerialization.jsonObject(with: body) as? [String: Any], let result = answer["result"] as? String else { throw ProviderError.invalidResponse }
+        guard let answer = body.object, let result = answer["result"] as? String else { throw ProviderError.invalidResponse }
         switch result == "unavailable" ? answer["reason"] as? String ?? result : result {
         case "reset", "already_used": return nil
         case "not_limited": return ResetRefused("nothing of the account is used yet")
@@ -298,7 +299,7 @@ public struct Claude: Provider {
 
     /// A model's own share of the week in a usage answer, named as the answer names the model.
     static func scoped(inUsage body: Data) -> [Window] {
-        let limits = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["limits"] as? [[String: Any]] ?? []
+        let limits = body.object?["limits"] as? [[String: Any]] ?? []
         return limits.compactMap { limit in
             guard limit["kind"] as? String == "weekly_scoped", let used = limit["percent"] as? Double,
                   let model = ((limit["scope"] as? [String: Any])?["model"] as? [String: Any])?["display_name"] as? String,
@@ -310,7 +311,7 @@ public struct Claude: Provider {
     private func grant(_ fields: [String: String]) async throws -> Grant {
         let (status, body) = try await HTTPCall.send("POST", Self.token, json: fields)
         guard status == 200 else {
-            let error = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"]
+            let error = body.object?["error"]
             throw ProviderError.refused(status: status, code: error as? String ?? (error as? [String: Any])?["type"] as? String)
         }
         guard let grant = try? JSONDecoder().decode(Grant.self, from: body) else { throw ProviderError.invalidResponse }

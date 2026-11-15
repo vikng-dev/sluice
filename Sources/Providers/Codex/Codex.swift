@@ -31,7 +31,7 @@ public struct Codex: Provider {
 
     /// A sign-in by API key holds no tokens and is nobody's subscription.
     static func account(inSignIn data: Data, path: String) throws -> String? {
-        guard let all = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let all = data.object else {
             throw UserFileError(path: path, reason: "not the JSON object Codex's sign-in should be")
         }
         return ((all["tokens"] as? [String: Any])?["id_token"] as? String).flatMap(claims)?["email"] as? String
@@ -138,7 +138,7 @@ public struct Codex: Provider {
     /// The stream's last event has the answer whole, with its model and what it cost. The tokens read
     /// from the cache and written to it are counted among those read, and are taken out of them here.
     public func count(_ event: Data, into spend: inout Spend) {
-        guard let all = try? JSONSerialization.jsonObject(with: event) as? [String: Any] else { return }
+        guard let all = event.object else { return }
         let response = all["response"] as? [String: Any] ?? all
         guard let usage = response["usage"] as? [String: Any] else { return }
         spend.model = response["model"] as? String ?? spend.model
@@ -196,8 +196,8 @@ public struct Codex: Provider {
     }
 
     static func resets(inList list: Data, usage: Data) throws -> [Reset] {
-        guard let credits = (try? JSONSerialization.jsonObject(with: list) as? [String: Any])?["credits"] as? [[String: Any]] else { throw ProviderError.invalidResponse }
-        let counts = (try? JSONSerialization.jsonObject(with: usage) as? [String: Any])?["rate_limit_reset_credits"] as? [String: Any]
+        guard let credits = list.object?["credits"] as? [[String: Any]] else { throw ProviderError.invalidResponse }
+        let counts = usage.object?["rate_limit_reset_credits"] as? [String: Any]
         let held = credits.filter { $0["status"] as? String == "available" }
         // With resets held and no word on how many would be taken, none can be said to be usable or not.
         guard let usable = counts?["applicable_available_count"] as? Int ?? (held.isEmpty ? 0 : nil) else { throw ProviderError.invalidResponse }
@@ -216,7 +216,7 @@ public struct Codex: Provider {
 
     /// Why a claim's answer says the reset was not used; nil when it was.
     static func refusal(inClaim body: Data) throws -> ResetRefused? {
-        guard let code = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["code"] as? String else { throw ProviderError.invalidResponse }
+        guard let code = body.object?["code"] as? String else { throw ProviderError.invalidResponse }
         switch code {
         case "reset", "already_redeemed": return nil
         case "nothing_to_reset": return ResetRefused("too little of the account is used yet")
@@ -240,7 +240,7 @@ public struct Codex: Provider {
     /// What a usage answer says: the plan, which when not listed keeps its own word with underscores
     /// read as spaces, and the windows; a slot the plan does not have is null.
     static func usage(in body: Data) throws -> Usage {
-        guard let answer = try? JSONSerialization.jsonObject(with: body) as? [String: Any], let limit = answer["rate_limit"] as? [String: Any] else { throw ProviderError.invalidResponse }
+        guard let answer = body.object, let limit = answer["rate_limit"] as? [String: Any] else { throw ProviderError.invalidResponse }
         let plan = (answer["plan_type"] as? String).map { plans[$0] ?? Plan(name: $0.replacing("_", with: " ").capitalized, multiple: nil, business: false, price: nil) }
         return Usage(plan: plan, windows: ["primary_window", "secondary_window"].compactMap { slot in
             guard let window = limit[slot] as? [String: Any], let used = window["used_percent"] as? Double,
@@ -252,7 +252,7 @@ public struct Codex: Provider {
     private func grant(_ fields: [String: String]) async throws -> Grant {
         let (status, body) = try await HTTPCall.send("POST", Self.token, form: fields)
         guard status == 200 else {
-            let error = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"]
+            let error = body.object?["error"]
             throw ProviderError.refused(status: status, code: error as? String ?? (error as? [String: Any])?["code"] as? String)
         }
         guard let grant = try? JSONDecoder().decode(Grant.self, from: body) else { throw ProviderError.invalidResponse }
@@ -265,7 +265,7 @@ public struct Codex: Provider {
         guard parts.count == 3 else { return nil }
         var payload = parts[1].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
-        return Data(base64Encoded: payload).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        return Data(base64Encoded: payload)?.object
     }
 
     static func expiry(_ jwt: String) -> Date? {
