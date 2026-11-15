@@ -17,12 +17,6 @@ private extension Int {
     var compact: String { formatted(.number.notation(.compactName)) }
 }
 
-private extension View {
-    func card() -> some View {
-        frame(maxWidth: .infinity, alignment: .leading).padding(10).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-    }
-}
-
 /// The last week of use: each profile's accounts over time with how fast each pool is going and how long it
 /// lasts, then when the work was done and where it went.
 struct UsageView: View {
@@ -42,7 +36,7 @@ struct UsageView: View {
                 if !pools.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 6) {
-                            Circle().fill(config.profiles[profile]?.color?.color ?? Color.secondary.opacity(0.4)).frame(width: 7, height: 7).frame(width: 11)
+                            Dot(tint: config.profiles[profile]?.color).frame(width: 11)
                             Text(config.shown(profile)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, 10)
@@ -131,11 +125,7 @@ private struct ProfileUsage: View {
             ForEach(pools, id: \.provider) { provider, pool in
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .firstTextBaseline, spacing: 7) {
-                        if let mark = providerMark(provider) {
-                            Image(nsImage: mark).resizable().frame(width: 13, height: 13).foregroundStyle(.secondary)
-                                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
-                        }
-                        Text(titles[provider] ?? provider).font(.callout.weight(.semibold))
+                        PoolTitle(provider: provider, title: titles[provider] ?? provider)
                         Spacer()
                         if let burn = burn(of: pool) {
                             Text("\((burn * 100).formatted(.number.precision(.fractionLength(1))))%/h").font(.caption.monospacedDigit()).foregroundStyle(.secondary)

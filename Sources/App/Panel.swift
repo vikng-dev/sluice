@@ -178,17 +178,11 @@ struct Panel: View {
                             )
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
                     // A profile's accounts sit on a card under its name. While an account is carried, the
                     // profiles it could go to are outlined, and the one under it is filled.
-                    .background(target == section.name ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                    .card(target == section.name ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06))
                     .moves(.easeOut(duration: 0.12), with: target == section.name)
-                    .overlay {
-                        if let carried, carried.account.profile != section.name {
-                            RoundedRectangle(cornerRadius: 10).strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                        }
-                    }
+                    .outlined(carried.map { $0.account.profile != section.name } ?? false)
                 }
                 .padding(.top, 4)
                 .framed("profile:\(section.name)")
@@ -253,6 +247,40 @@ private extension View {
     }
 }
 
+extension View {
+    /// What a profile's accounts, and each part of the view of use, sit on.
+    func card(_ fill: Color = Color.primary.opacity(0.06)) -> some View {
+        frame(maxWidth: .infinity, alignment: .leading).padding(10).background(fill, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// The outline of a place an account can be let go, while one is carried.
+    func outlined(_ shown: Bool) -> some View {
+        overlay { if shown { RoundedRectangle(cornerRadius: 10).strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) } }
+    }
+}
+
+/// A profile's color as a dot, grey for a profile without one.
+struct Dot: View {
+    let tint: Tint?
+    var size = 7.0
+
+    var body: some View { Circle().fill(tint?.color ?? Color.secondary.opacity(0.4)).frame(width: size, height: size) }
+}
+
+/// A provider's mark and what its subscriptions are sold as, at the head of a pool.
+struct PoolTitle: View {
+    let provider: String
+    let title: String
+
+    var body: some View {
+        if let mark = providerMark(provider) {
+            Image(nsImage: mark).resizable().frame(width: 13, height: 13).foregroundStyle(.secondary)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
+        }
+        Text(title).font(.callout.weight(.semibold))
+    }
+}
+
 /// Motion in the panel is brief and says that something changed. None of it moves the layout, and a
 /// person who asked the system for less motion gets none.
 private struct Moves<Value: Equatable>: ViewModifier {
@@ -297,17 +325,18 @@ private extension EnvironmentValues {
 
 /// The cross and the check an action shows where it is once clicked, in place of a dialog. The check does
 /// it and the cross backs out. The check is red where what it does cannot be undone. The cross comes
-/// first, so that a second click where the first one landed backs out.
+/// first, so that a second click where the first one landed backs out. Either lets the action go.
 private struct Confirm: View {
     var undoable = false
     var ready = true
     let act: () -> Void
-    let back: () -> Void
+    var back: () -> Void = {}
+    @Environment(\.armed) private var armed
 
     var body: some View {
         HStack(spacing: 4) {
-            Button(action: back) { mark("xmark", ink: .secondary, on: Color.primary.opacity(0.12)) }.help("Leave it")
-            Button(action: act) { mark("checkmark", ink: .white, on: undoable ? Color.accentColor : .red) }
+            Button { armed.wrappedValue = nil; back() } label: { mark("xmark", ink: .secondary, on: Color.primary.opacity(0.12)) }.help("Leave it")
+            Button { armed.wrappedValue = nil; act() } label: { mark("checkmark", ink: .white, on: undoable ? Color.accentColor : .red) }
                 .disabled(!ready).opacity(ready ? 1 : 0.4).help(undoable ? "Keep it" : "Do it. This cannot be undone")
         }
         .buttonStyle(.plain)
@@ -383,10 +412,6 @@ private struct ProfileCaption: View {
         if claims.isEmpty, name != Config.defaultProfile { Text("no work yet") }
     }
 
-    private func dot(_ tint: Tint?, size: Double) -> some View {
-        Circle().fill(tint?.color ?? Color.secondary.opacity(0.4)).frame(width: size, height: size)
-    }
-
     /// An unchanged label is not written, so leaving the field writes nothing.
     private func keep() {
         guard editing else { return }
@@ -397,7 +422,7 @@ private struct ProfileCaption: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Button { picking.toggle() } label: { dot(profile?.color, size: 7).frame(width: 11, height: 11).contentShape(Rectangle()) }
+                Button { picking.toggle() } label: { Dot(tint: profile?.color).frame(width: 11, height: 11).contentShape(Rectangle()) }
                     .buttonStyle(.plain).help("Change its color")
                 if picking {
                     ForEach([nil] + Tint.allCases.map(Optional.some), id: \.self) { option in
@@ -405,7 +430,7 @@ private struct ProfileCaption: View {
                             setTint(option)
                             picking = false
                         } label: {
-                            dot(option, size: 11).overlay { if option == profile?.color { Circle().strokeBorder(.primary.opacity(0.6), lineWidth: 1.5) } }
+                            Dot(tint: option, size: 11).overlay { if option == profile?.color { Circle().strokeBorder(.primary.opacity(0.6), lineWidth: 1.5) } }
                         }
                         .buttonStyle(.plain).help(option?.rawValue.capitalized ?? "No color")
                     }
@@ -456,7 +481,7 @@ private struct ProfileCaption: View {
                 .moves(.easeOut(duration: 0.12), with: hovered)
                 .overlay(alignment: .trailing) {
                     if let remove, armed.wrappedValue == removal {
-                        Confirm { armed.wrappedValue = nil; remove() } back: { armed.wrappedValue = nil }
+                        Confirm(act: remove)
                             .help("Its accounts and the work it claims go to the default profile. Its client folders are left as they are")
                     }
                 }
@@ -534,9 +559,7 @@ private struct NewProfile: View {
         // While an account is carried this is a place to let it go, as large as it is easy to hit.
         .padding(carrying ? 10 : 0)
         .background(Color.accentColor.opacity(targeted ? 0.18 : 0), in: RoundedRectangle(cornerRadius: 10))
-        .overlay {
-            if carrying { RoundedRectangle(cornerRadius: 10).strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
-        }
+        .outlined(carrying)
         .padding(.leading, carrying ? -10 : 0)
         .contentShape(Rectangle())
         .onTapGesture { if !editing { type("") } }
@@ -691,11 +714,7 @@ private struct PoolView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
-                if let mark = providerMark(pool.provider) {
-                    Image(nsImage: mark).resizable().frame(width: 13, height: 13).foregroundStyle(.secondary)
-                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
-                }
-                Text(pool.title).font(.callout.weight(.semibold))
+                PoolTitle(provider: pool.provider, title: pool.title)
                 Button { star(!starred) } label: { Image(systemName: starred ? "star.fill" : "star").font(.caption).contentTransition(.symbolEffect(.replace)) }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .help(starred ? "Shown in the menu bar. Click to take it out" : "Show how much of this pool is used in the menu bar")
@@ -829,7 +848,7 @@ private struct AccountRow: View {
                 }
                 if let actions {
                     if removing {
-                        Confirm { armed.wrappedValue = nil; actions.remove(account) } back: { armed.wrappedValue = nil }
+                        Confirm { actions.remove(account) }
                             .help("Sluice forgets this sign-in and stops using the account. Signing it in again needs the browser")
                     } else {
                         Button { armed.wrappedValue = "remove:\(account.id)" } label: { Image(systemName: "trash").font(.caption) }
@@ -889,7 +908,7 @@ private struct AccountRow: View {
                                 .buttonStyle(.plain).disabled(!reset.usable || actions == nil)
                                 .help(reset.usable ? "Use it: what it refills is whole again at once. It lapses in the time shown" : "Its provider would not take it now")
                                 if armed.wrappedValue == using {
-                                    Confirm(ready: reset.usable) { armed.wrappedValue = nil; actions?.useReset(reset, account) } back: { armed.wrappedValue = nil }
+                                    Confirm(ready: reset.usable) { actions?.useReset(reset, account) }
                                 }
                             }
                         }
