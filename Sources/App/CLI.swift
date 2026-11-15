@@ -103,7 +103,7 @@ sluice \(Sluice.version)
   sluice statusline items [<item> ...]           what that line says, in order: \(StatusLine.Item.allCases.map(\.rawValue).joined(separator: ", ")).
                                                  With no item, says what it is
 
-  sluice setup [--undo]                          make Claude Code and Codex talk to Sluice and open the right profile
+  sluice setup [--undo]                          make your coding agents talk to Sluice and open the right profile
   sluice serve                                   run the relay in the foreground
 
 Nothing asks a question. Results are on standard output, messages on standard error, and a failure
@@ -195,10 +195,10 @@ func command(_ arguments: [String]) async throws {
     case ("setup", nil):
         if arguments.contains("--undo") {
             try stopRouting(all: true)
-            print("Claude Code and Codex talk to their providers directly again, and open one profile everywhere.")
+            print("Your coding agents talk to their providers directly again, and open one profile everywhere.")
         } else {
             try setUp(program: program())
-            print("Claude Code and Codex now talk to Sluice. In a new shell, claude and codex open the profile their folder belongs to. Undo with: sluice setup --undo")
+            print("Your coding agents now talk to Sluice. In a new shell, \(providers.map(\.client).joined(separator: " and ")) open the profile their folder belongs to. Undo with: sluice setup --undo")
         }
     case ("profile", "list"):
         let config = try Storage.live.config()

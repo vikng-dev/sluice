@@ -55,17 +55,21 @@ struct ProfileCaption: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Button { picking.toggle() } label: { Dot(tint: profile?.color).frame(width: 11, height: 11).contentShape(Rectangle()) }
-                    .buttonStyle(.plain).help("Change its color")
+                Button { withAnimation(.snappy(duration: 0.22)) { picking.toggle() } } label: {
+                    Dot(tint: profile?.color, size: 11)
+                        .overlay { Circle().strokeBorder(.primary.opacity(picking ? 0.55 : 0), lineWidth: 1.5).padding(-3) }
+                        .frame(width: 11, height: 11).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).help("Change its color")
                 if picking {
-                    ForEach([nil] + Tint.allCases.map(Optional.some), id: \.self) { option in
-                        Button {
+                    // The colour it has is the dot itself, so it is not offered again.
+                    let others = ([nil] + Tint.allCases.map(Optional.some)).filter { $0 != profile?.color }
+                    ForEach(Array(others.enumerated()), id: \.element) { index, option in
+                        Swatch(tint: option) {
                             running.tint(name, option)
-                            picking = false
-                        } label: {
-                            Dot(tint: option, size: 11).overlay { if option == profile?.color { Circle().strokeBorder(.primary.opacity(0.6), lineWidth: 1.5) } }
+                            withAnimation(.snappy(duration: 0.22)) { picking = false }
                         }
-                        .buttonStyle(.plain).help(option?.rawValue.capitalized ?? "No color")
+                        .transition(.scale(scale: 0.2).combined(with: .opacity).animation(.snappy(duration: 0.24).delay(Double(index) * 0.02)))
                     }
                 } else if editing {
                     TextField(name, text: $draft)
@@ -253,5 +257,20 @@ private struct Tight: LabelStyle {
 struct OwnerMark: View {
     var body: some View {
         if let mark = githubMark() { Image(nsImage: mark).resizable().frame(width: 10, height: 10) } else { Image(systemName: "at") }
+    }
+}
+
+/// A colour to pick, which grows a little under the pointer.
+private struct Swatch: View {
+    let tint: Tint?
+    let pick: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: pick) { Dot(tint: tint, size: 11).scaleEffect(hovered ? 1.35 : 1).frame(width: 13, height: 13).contentShape(Rectangle()) }
+            .buttonStyle(.plain)
+            .onHover { hovered = $0 }
+            .animation(.snappy(duration: 0.14), value: hovered)
+            .help(tint?.rawValue.capitalized ?? "No color")
     }
 }

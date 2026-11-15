@@ -78,7 +78,7 @@ struct Dot: View {
     let tint: Tint?
     var size = 7.0
 
-    var body: some View { Circle().fill(tint?.color ?? Color.secondary.opacity(0.4)).frame(width: size, height: size) }
+    var body: some View { Circle().fill(tint?.color ?? Color.secondary.opacity(0.4)).frame(width: size, height: size).animation(.snappy(duration: 0.25), value: tint) }
 }
 
 /// A provider's mark and what its subscriptions are sold as, at the head of a pool.
@@ -207,14 +207,14 @@ struct Flow: Layout {
 extension Tint {
     var color: Color {
         switch self {
-        case .red: .red
-        case .orange: .orange
-        case .yellow: .yellow
-        case .green: .green
-        case .teal: .teal
-        case .blue: .blue
-        case .purple: .purple
-        case .pink: .pink
+        case .pink: Color(red: 0.95, green: 0.60, blue: 0.85)
+        case .purple: Color(red: 0.69, green: 0.58, blue: 1.00)
+        case .indigo: Color(red: 0.45, green: 0.54, blue: 1.00)
+        case .blue: Color(red: 0.24, green: 0.64, blue: 0.98)
+        case .aqua: Color(red: 0.38, green: 0.82, blue: 0.95)
+        case .teal: Color(red: 0.21, green: 0.86, blue: 0.84)
+        case .sand: Color(red: 0.86, green: 0.79, blue: 0.62)
+        case .slate: Color(red: 0.62, green: 0.69, blue: 0.81)
         }
     }
 }

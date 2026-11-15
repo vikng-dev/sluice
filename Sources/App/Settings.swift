@@ -12,7 +12,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             LineCard(now: now).card()
             VStack(alignment: .leading, spacing: 10) {
-                Setting(symbol: "arrow.triangle.branch", title: "Route the clients", says: "Claude Code and Codex go through Sluice", on: running.routed, turn: running.route)
+                Setting(symbol: "arrow.triangle.branch", title: "Route the clients", says: "Your coding agents go through Sluice", on: running.routed, turn: running.route)
                 Setting(symbol: autoResets ? "bolt.fill" : "bolt", title: "Use resets for me", says: "when a pool is out, or one is about to lapse", on: autoResets, turn: running.autoReset)
             }
             .card()

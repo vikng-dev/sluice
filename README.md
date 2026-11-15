@@ -1,7 +1,8 @@
 # Sluice
 
 A macOS menu bar app that pools your AI coding subscriptions behind one local address.
-Claude Code and Codex talk to Sluice on localhost; Sluice decides which of your accounts answers.
+Your coding agents talk to Sluice on localhost; Sluice decides which of your accounts answers.
+Claude Code and Codex so far.
 
 **Status: early.**
 

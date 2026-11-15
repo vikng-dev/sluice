@@ -102,7 +102,7 @@ struct Panel: View {
             // The settings say it themselves, where it is turned on.
             if !running.routed, shown != .settings {
                 HStack {
-                    Text("Claude Code and Codex are not going through Sluice.").font(.callout).fixedSize(horizontal: false, vertical: true)
+                    Text("Your coding agents are not going through Sluice.").font(.callout).fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     Button("Turn on") { running.route(true) }.controlSize(.small)
                 }

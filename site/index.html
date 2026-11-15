@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sluice</title>
-<meta name="description" content="Many accounts, one pool. A macOS menu bar app that pools your Claude and ChatGPT subscriptions for Claude Code and Codex, automatically.">
+<meta name="description" content="Many accounts, one pool. A macOS menu bar app that pools your AI coding subscriptions behind one local address, automatically.">
 <meta property="og:title" content="Sluice">
 <meta property="og:description" content="Many accounts. One pool. Automatic.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -56,7 +56,7 @@ h1 span.l { display: block; white-space: nowrap; }
 .src .pm { font-size: 20px; color: var(--cream); }
 .sub { max-width: 100%; margin: clamp(14px, 2vw, 24px) 0 22px; font-size: clamp(17px, 1.6vw, 20px); font-weight: 500; color: var(--fg); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 .sub .pm { font-size: 18px; }
-.sub i { font-style: normal; opacity: .6; }
+.sub .with { display: inline-flex; gap: 8px; opacity: .75; margin-left: 2px; }
 .install { display: inline-flex; align-items: center; gap: 10px; max-width: 100%; background: rgba(8, 15, 32, .72); border: 1px solid rgba(255, 255, 255, .14); border-radius: 12px; padding: 10px 10px 10px 16px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 .install code { font-family: var(--mono); font-size: 13.5px; white-space: nowrap; overflow-x: auto; min-width: 0; }
 .install button { background: var(--cream); color: #0a1326; border: 0; border-radius: 8px; width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer; flex: none; transition: transform .12s; }
@@ -173,7 +173,7 @@ footer a:hover { color: var(--fg); }
           <span class="sources" id="sources" aria-hidden="true"></span>
           <span class="l" id="l2">One pool.</span>
         </h1>
-        <p class="sub">Automatic, for <span class="pm claude"></span>Claude Code <i>and</i> <span class="pm codex"></span>Codex.</p>
+        <p class="sub">Automatic, for your coding agents. <span class="with" title="Claude Code and Codex so far"><span class="pm claude" role="img" aria-label="Claude Code"></span><span class="pm codex" role="img" aria-label="Codex"></span></span></p>
         <div class="install"><code id="cmd">brew install --cask vikng-dev/tap/sluice</code><button id="copy" type="button" aria-label="Copy the install command"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 2.5h-6a2 2 0 0 0-2 2v6"/></svg></button></div>
       </div>
 
@@ -208,7 +208,7 @@ footer a:hover { color: var(--fg); }
       <div class="render folders" aria-hidden="true">
         <div class="fold"><svg width="34" height="28" viewBox="0 0 24 20"><path fill="#7389ff" d="M1 4a2 2 0 0 1 2-2h5l2 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2Z"/></svg>~/work</div>
         <div class="fold"><svg width="34" height="28" viewBox="0 0 24 20"><path fill="#35dcd6" d="M1 4a2 2 0 0 1 2-2h5l2 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2Z"/></svg>~/home</div>
-        <div class="fold"><svg width="34" height="28" viewBox="0 0 24 20"><path fill="#ffab3d" d="M1 4a2 2 0 0 1 2-2h5l2 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2Z"/></svg>acme/*</div>
+        <div class="fold"><svg width="34" height="28" viewBox="0 0 24 20"><path fill="#f29ad8" d="M1 4a2 2 0 0 1 2-2h5l2 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2Z"/></svg>acme/*</div>
       </div>
     </div>
     <div class="tile">

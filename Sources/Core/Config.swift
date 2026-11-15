@@ -1,8 +1,10 @@
 import Foundation
 
 /// The colors a profile can be told apart by.
+/// A profile's colour, one of a soft scale. None of them is a colour that means something elsewhere:
+/// red, orange and green are kept for how a limit stands.
 public enum Tint: String, Codable, Sendable, CaseIterable {
-    case red, orange, yellow, green, teal, blue, purple, pink
+    case pink, purple, indigo, blue, aqua, teal, sand, slate
 }
 
 /// One separate setup: the accounts whose usage it pools, and the work that belongs to it.
@@ -24,7 +26,8 @@ public struct Profile: Codable, Sendable, Equatable {
     public init(from decoder: any Decoder) throws {
         let keys = try decoder.container(keyedBy: CodingKeys.self)
         label = try keys.decodeIfPresent(String.self, forKey: .label)
-        color = try keys.decodeIfPresent(Tint.self, forKey: .color)
+        // A colour the scale no longer has, as a config from an older Sluice may name, is no colour.
+        color = try keys.decodeIfPresent(String.self, forKey: .color).flatMap(Tint.init)
         starred = try keys.decodeIfPresent([String].self, forKey: .starred) ?? []
         accounts = try keys.decodeIfPresent([String].self, forKey: .accounts) ?? []
         folders = try keys.decodeIfPresent([String].self, forKey: .folders) ?? []

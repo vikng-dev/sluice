@@ -45,7 +45,7 @@ sluice profile claim <name> --folder <path>      # or --owner <owner>; both may 
 sluice profile unclaim <name> --folder <path>
 sluice profile remove <name>                     # its accounts go back to default
 sluice profile rename <name> [label]             # what it is shown as; commands keep using <name>
-sluice profile color <name> <color>              # red orange yellow green teal blue purple pink, or none
+sluice profile color <name> <color>              # pink purple indigo blue aqua teal sand slate, or none
 sluice profile star <name> <provider>            # show how much of that pool is used in the menu bar
 sluice profile unstar <name> <provider>
 sluice resets [auto | manual]                    # whether a pool uses the resets it holds by itself, when it is out

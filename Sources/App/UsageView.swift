@@ -71,7 +71,8 @@ private struct PoolUsage: View {
     let days: [Date]
     let now: Date
 
-    private static let tints: [Color] = [.blue, .orange, .green, .purple, .pink, .teal]
+    /// The accounts of a pool, each its own colour of the scale the profiles are picked from.
+    private static let tints: [Color] = [Tint.blue, .teal, .purple, .aqua, .pink, .sand].map(\.color)
     private static let height = 56.0
 
     var body: some View {

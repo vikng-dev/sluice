@@ -23,14 +23,14 @@ private extension Tint {
     /// Its colour among a terminal's 256.
     var terminal: Int {
         switch self {
-        case .red: 196
-        case .orange: 208
-        case .yellow: 220
-        case .green: 41
-        case .teal: 37
-        case .blue: 33
-        case .purple: 135
-        case .pink: 205
+        case .pink: 212
+        case .purple: 141
+        case .indigo: 105
+        case .blue: 75
+        case .aqua: 81
+        case .teal: 44
+        case .sand: 180
+        case .slate: 110
         }
     }
 }

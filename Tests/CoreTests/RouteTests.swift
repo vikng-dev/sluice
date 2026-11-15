@@ -206,6 +206,8 @@ import Testing
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         #expect(String(decoding: try encoder.encode(config), as: UTF8.self) == written)
+        // A colour an older Sluice offered and this one does not is no colour, and the config is still read.
+        #expect(try self.config(#"{"profiles":{"a":{"color":"orange","label":"A"}}}"#).profiles["a"] == { var p = Profile(); p.label = "A"; return p }())
         try config.add(profile: "b")
         #expect(throws: ConfigError.self) { try config.add(profile: "b") }
         #expect(throws: ConfigError.self) { try config.add(profile: "Not Plain") }
