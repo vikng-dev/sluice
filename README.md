@@ -3,13 +3,48 @@
 A macOS menu bar app that pools your AI coding subscriptions behind one local address.
 Claude Code and Codex talk to Sluice on localhost; Sluice decides which of your accounts answers.
 
-**Status: early.** Claude Code and Codex are relayed across pools of accounts. The menu bar panel shows
-each profile's pools, one per provider. Each account is two lines: who it is (its address, whether a
-client is itself signed in as it, its plan), and under that its week as a
-bar with the share used and the time until it resets. Left of an account that answered within the last minute, three green bars rise and fall. Where another of its limits is fuller than its week and near its end, such as its five hours or one model's own share of the week, the bar is that one's, named; a click on the account lists every limit it has, and under them the resets it holds, each a chip saying what it refills and how long until it lapses; a click on a chip and then on the red check beside it uses it, which cannot be taken back. A pool's header says how much of the pool is used, each account's week counted by its size: what a point of it is seen to hold, learned from what the account answered with between one rise of its week and the next, and until ten rises were seen what its plan is taken to hold. The tokens are weighed as the provider's meter is found to weigh them, a formula that is fitted with `script/fit.py`, shipped, and only checked by the app (`sluice status` says how far each account's size varies); a provider without one has its accounts sized by their plans' multiples. The bolt on the panel's first line has Sluice use resets for you, as [How an account is picked](#how-an-account-is-picked) says. Claude tells of resets to Claude Code alone, so Sluice asks for them under the name and version Claude Code itself last came through with, and until it has come through none are shown. A click on any share reads them all as left, and on any clock reads them all as the time itself. The panel has a second view, chosen on its first line: the last week of use. Each profile is one chart with a line for every account's week; under it, for each pool, how much of it goes per hour and whether at that rate it lasts or when it runs dry, and what each account has given for a point of its week. Under the profiles, the tokens of each hour and where they went by folder and by model. A pool's star puts it in the menu bar as its provider's mark and its share, a profile's pools together after a short bar in the profile's color, in place of the glyph while the clients are routed. It also says when the clients
-are not going through Sluice. `sluice status` prints the same accounts. What can be done to a thing shows when the pointer is on it: a profile's **+** adds an
-account to it, at the provider you pick, or work that belongs to it (folders, or a repository owner). An account is
-moved by its handle: it lifts off the panel and drops onto another profile. A profile's name and its color dot are changed where they are: click the name to type another, click the dot to pick a color. Beside the name is a count of the folders and repository owners whose work the profile claims, and the default profile has everything else. Click the count to lay the claims out, each let go by the × it shows under the pointer. After the last profile, **New profile** is typed in place: what you type is what it is shown as, and its name is made from it. An account dropped on it gets a profile of its own, named from its address unless you type another, and made by the check after the name. A profile's **+** also removes it, and an account is removed by the bin it shows under the pointer; each waits for a red check where it is, beside a cross that leaves it. The **⋯** on the panel's first line holds the version, **Stop routing** and **Quit**. An owner is asked for in a dialog; while it is typed, the ones offered are those of the repositories the clients have worked in on this Mac, and then the accounts GitHub's public search finds for the letters typed, which are all that is sent to it.
+**Status: early.** Claude Code and Codex are relayed across pools of accounts.
+
+## The panel
+
+Each profile's accounts sit on a card under its name, a pool per provider.
+
+- **An account** is two lines: who it is (its address, whether a client is itself signed in as it,
+  its plan), and its week as a bar with the share used and the time until it resets. Where another
+  of its limits is fuller than its week and near its end, such as its five hours or one model's own
+  share of the week, the bar is that one's, named. Left of an account that answered within the last
+  minute, three green bars rise and fall.
+- **A click on an account** lists every limit it has, and under them the resets it holds. Each is a
+  chip saying what it refills and how long until it lapses; a click on a chip and then on the red
+  check beside it uses it, which cannot be taken back.
+- **A pool's header** says how much of the pool is used, as [How a pool is counted](#how-a-pool-is-counted)
+  says. Its star puts the pool in the menu bar as its provider's mark and its share, a profile's pools
+  together after a short bar in the profile's color, in place of the glyph while the clients are routed.
+- **A click on any share** reads them all as left, and on any clock reads them all as the time itself.
+- **What can be done to a thing shows when the pointer is on it.** A profile's **+** adds an account
+  to it, at the provider you pick, or work that belongs to it (folders, or a repository owner), and
+  removes the profile. An account is removed by its bin. Removing waits for a red check where it is,
+  beside a cross that leaves it.
+- **An account is moved by its handle**: it lifts off the panel and drops onto another profile, or
+  onto **New profile** to get a profile of its own, named from its address unless you type another.
+- **A profile's name and color dot** are changed where they are: click the name to type another,
+  click the dot to pick a color. Beside the name is a count of the folders and repository owners
+  whose work the profile claims; click it to lay them out, each let go by the × it shows under the
+  pointer. The default profile has everything else.
+- **New profile**, after the last profile, is typed in place: what you type is what it is shown as,
+  its name is made from it, and the check after it makes it.
+- **A repository owner** is asked for in a dialog. While it is typed, the ones offered are those of
+  the repositories the clients have worked in on this Mac, and then the accounts GitHub's public
+  search finds for the letters typed, which are all that is sent to it.
+- **The first line** holds the two views, the bolt and **⋯**. The bolt has Sluice use resets for
+  you, as [How an account is picked](#how-an-account-is-picked) says. **⋯** holds the version,
+  **Stop routing** and **Quit**.
+- **The second view** is the last week of use. Each profile is one chart with a line for every
+  account's week; under it, for each pool, how much of it goes per hour and whether at that rate it
+  lasts or when it runs dry. Under the profiles, the tokens of each hour and where they went by
+  folder and by model.
+
+The panel also says when the clients are not going through Sluice. `sluice status` prints the same accounts.
 
 ## Use it
 
@@ -142,10 +177,34 @@ Within a profile's pool:
   how it stands. Where a use's outcome is not known, or it did not bring the account back, no more
   are used on that account by Sluice until you use one there yourself or Sluice restarts.
 
-Sluice signs in to each account itself and keeps the tokens in its own Keychain item. What it
-observed (each account's plan, limits and resets, and the warm conversations) is kept in `~/Library/Application Support/Sluice`, so a
-restart forgets nothing. Two histories are kept there too, a line at a time, as numbers and never as what was asked or answered: `readings.jsonl`, an account and how full its windows and any model's own share of the week were whenever that changed, and `requests.jsonl`, each answered request with its account, profile, folder, conversation, model, how long it took and the tokens it cost as the provider counted them. Usage over time is read from these. Each answer updates the account it came through, and every five minutes
-Sluice asks the providers about all of them, so an idle account's numbers are current too. Opening the panel asks again for usage told more than a minute ago and for resets asked for more than ten minutes ago. It never spends paid extra usage. What it knows about each provider's wire format is in
+Claude tells of resets to Claude Code alone, so Sluice asks for them under the name and version
+Claude Code itself last came through with, and until it has come through none are shown.
+
+## How a pool is counted
+
+A pool's share is each account's week, counted by the account's size: what a point of its week is
+seen to hold, learned from what the account answered with between one rise of its week and the next.
+Until ten rises were seen, it is what the account's plan is taken to hold. The tokens are weighed as
+the provider's meter is found to weigh them, a formula that is fitted with `script/fit.py`, shipped,
+and only checked by the app: `sluice status` says how far each account's size varies. A provider
+without a formula has its accounts sized by their plans' multiples.
+
+## What is kept
+
+- **Sign-ins.** Sluice signs in to each account itself and keeps the tokens in its own Keychain item.
+- **What it observed** (each account's plan, limits, resets and size, and the warm conversations) is
+  in `~/Library/Application Support/Sluice`, so a restart forgets nothing.
+- **Two histories** are there too, a line at a time, as numbers and never as what was asked or
+  answered. `readings.jsonl` has an account and how full its windows and any model's own share of
+  the week were, whenever that changed. `requests.jsonl` has each answered request with its account,
+  profile, folder, conversation, model, how long it took and the tokens it cost as the provider
+  counted them. Usage over time is read from these.
+- **Usage stays current.** Each answer updates the account it came through, and every five minutes
+  Sluice asks the providers about all of them, so an idle account's numbers are current too. Opening
+  the panel asks again for usage told more than a minute ago and for resets asked for more than ten
+  minutes ago.
+
+Sluice never spends paid extra usage. What it knows about each provider's wire format is in
 [docs/wire.md](docs/wire.md).
 
 Only programs on this Mac are answered. A web page can reach a local port, so a request that names
@@ -156,8 +215,9 @@ the system log, with the account and the status and nothing of the request itsel
 log stream --info --predicate 'subsystem == "dev.vikng.sluice"'
 ```
 
-To remove Sluice: `brew uninstall --zap sluice`; a running copy sees its app gone and quits within a minute, as from the menu. The signed-in accounts
-stay in the Keychain item `dev.vikng.sluice` until you delete it.
+To remove Sluice: `brew uninstall --zap sluice`. A running copy sees its app gone and quits within a
+minute, as from the menu. The signed-in accounts stay in the Keychain item `dev.vikng.sluice` until
+you delete it.
 
 ## Layout
 
@@ -168,6 +228,9 @@ One Swift package, no dependencies.
 | `Sources/Core` | Accounts, Keychain storage, relay, router, the provider contract. No UI. |
 | `Sources/Providers` | One folder per provider (Claude, Codex), each answering the contract. |
 | `Sources/App` | The one program: the menu bar app and the `sluice` command. |
+| `Tests` | What a caller can observe of Core and the providers. |
+| `script` | Building the app, releasing it, and fitting a provider's meter to the histories. |
+| `docs` | What is known of each provider's wire format. |
 | `skills` | A skill that teaches an agent to run the `sluice` command. |
 | `Assets` | The app icon: its drawing, and the built `.icns`. The menu bar glyph is drawn in code from the same shapes. Each provider's mark, named by provider, and GitHub's. |
 
