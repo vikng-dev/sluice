@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import os
 
@@ -339,6 +340,39 @@ public final class Relay: Sendable {
         } catch {
             try await writer.send(502, text: "sluice: sign-in failed: \(error)")
         }
+    }
+}
+
+/// Sign-ins in flight: the PKCE verifier each browser round trip must come back to.
+actor SignIns {
+    private var pending: [String: (provider: String, profile: String?, verifier: String)] = [:]
+    /// Listeners on providers' fixed redirect ports, by port, open while a sign-in there is in flight.
+    private var listeners: [Int: Server] = [:]
+
+    func listen(on port: Int, _ start: () async throws -> Server) async throws {
+        if listeners[port] == nil { listeners[port] = try await start() }
+    }
+
+    func close(port: Int) {
+        listeners.removeValue(forKey: port)?.stop()
+    }
+
+    /// `profile` is where the account is to land; nil leaves it where it is, or in the default when new.
+    func begin(provider: String, profile: String?) -> (state: String, challenge: String) {
+        let verifier = Data((0..<32).map { _ in UInt8.random(in: .min ... .max) }).base64URL
+        let state = UUID().uuidString
+        pending[state] = (provider, profile, verifier)
+        return (state, Data(SHA256.hash(data: Data(verifier.utf8))).base64URL)
+    }
+
+    func finish(state: String) -> (provider: String, profile: String?, verifier: String)? {
+        pending.removeValue(forKey: state)
+    }
+}
+
+private extension Data {
+    var base64URL: String {
+        base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
 }
 

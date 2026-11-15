@@ -44,35 +44,6 @@ public struct Served: Codable, Sendable, Equatable {
     public var spend: Spend
 }
 
-extension Window {
-    var settled: Window { Window(name: name, used: used, resetsAt: resetsAt.settled) }
-}
-
-/// Adds a line to a history file, which is made on the first.
-func append(_ entry: some Encodable, to file: URL) throws {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    encoder.dateEncodingStrategy = .iso8601
-    let line = try encoder.encode(entry) + Data("\n".utf8)
-    if !FileManager.default.fileExists(atPath: file.path) {
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        return try line.write(to: file)
-    }
-    let handle = try FileHandle(forWritingTo: file)
-    defer { try? handle.close() }
-    try handle.seekToEnd()
-    try handle.write(contentsOf: line)
-}
-
-/// A history file's lines, oldest first; none when there is no file yet. A line that cannot be read is
-/// left out: the last may be half written, and an older build wrote less.
-func lines<Entry: Decodable>(of file: URL) throws -> [Entry] {
-    guard FileManager.default.fileExists(atPath: file.path) else { return [] }
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    return try Data(contentsOf: file).split(separator: UInt8(ascii: "\n")).compactMap { try? decoder.decode(Entry.self, from: $0) }
-}
-
 /// Reads what an answer cost out of its body as it passes, an event at a time: a stream says it in
 /// events, each a line, and an answer in one piece is one event. It keeps the count and nothing else.
 struct Meter {
