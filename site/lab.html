@@ -369,9 +369,10 @@ uniform vec3 th, tilt, sx, fl; uniform vec4 pts[20], sip[2], thr[2];
 uniform sampler2D tex, hf, wf;
 vec3 navy = vec3(.039, .075, .149), violet = vec3(.36, .44, .93), blue = vec3(.10, .52, .86), teal = vec3(.16, .74, .72), cream = vec3(1., .957, .871);
 float wave(float x, float k, float t) { return sin(x * .0052 * k + t * .8 + k * 1.7) * 9. + sin(x * .0121 * k - t * 1.15 + k) * 4.5 + sin(x * .031 + t * 1.9 + k * 3.) * 1.6; }
-float cell(float i, float row) { vec4 c = texture2D(hf, vec2((clamp(i, 0., 255.) + .5) / 256., (row + .5) / 3.)); return ((c.r * 255. * 256. + c.g * 255.) / 65535. * 2. - 1.) * 64.; }
+float cell(float i, float row) { vec4 c = texture2D(hf, vec2((clamp(i, 0., 255.) + .5) / 256., (row + .5) / 6.)); return ((c.r * 255. * 256. + c.g * 255.) / 65535. * 2. - 1.) * 64.; }
 float field(float x, float row) { float u = x / R.x * 256. - .5, i = floor(u), f = fract(u); f = f * f * (3. - 2. * f); return mix(cell(i, row), cell(i + 1., row), f); }
 float smax(float a, float b, float k) { float h = max(k - abs(a - b), 0.) / k; return max(a, b) + h * h * k * .25; }
+float bend(float yy, float row) { float u = clamp((yy - top) / (320. * D), 0., 1.) * 255., i = floor(u); return mix(cell(i, row), cell(i + 1., row), u - i); }
 vec3 tintOf(float k) { return k < .5 ? violet : k < 1.5 ? blue : teal; }
 void main() {
   vec2 q = gl_FragCoord.xy; float x = q.x, y = R.y - q.y, xd = x / D, amp = .45, e = 1.5 * D;
@@ -414,7 +415,7 @@ void main() {
   for (int i = 0; i < 3; i++) {
     float c = i == 0 ? sx.x : i == 1 ? sx.y : sx.z, f = i == 0 ? fl.x : i == 1 ? fl.y : fl.z;
     vec3 tint = tintOf(float(i));
-    float wd = (1.5 + 8. * f) * D, d = abs(mix(x, xw, smoothstep(top, top + 50. * D, y)) - c + sin(y / D * .05 + T * 2. + float(i)) * 1.2 * D * f);
+    float wd = (1.5 + 8. * f) * D, d = abs(x - c - bend(y, 3. + float(i)) * D + sin(y / D * .05 + T * 2. + float(i)) * 1.2 * D * f);
     float run = .7 + .3 * sin(y / D * .11 - T * 9. + float(i) * 2.);
     float into = smoothstep(s1 - 4. * D, s1 + (16. + 22. * f) * D, yw);
     wd *= 1. + .9 * into;
@@ -466,8 +467,8 @@ void main() {
 }`;
 const COLS = 256, GW = 96, GH = 64;
 // a layer's own weight: the surface is quick, the ones under it slower and thicker
-const BODY = [{ k: .006, spread: .24, damp: .988 }, { k: .003, spread: .2, damp: .984 }, { k: .0016, spread: .16, damp: .978 }];
-const hgt = [0, 1, 2].map(() => new Float32Array(COLS)), vel = [0, 1, 2].map(() => new Float32Array(COLS)), packed = new Uint8Array(COLS * 3 * 4);
+const BODY = [{ k: .006, spread: .24, damp: .975 }, { k: .003, spread: .2, damp: .984 }, { k: .0016, spread: .16, damp: .978 }];
+const hgt = [0, 1, 2].map(() => new Float32Array(COLS)), vel = [0, 1, 2].map(() => new Float32Array(COLS)), packed = new Uint8Array(COLS * 6 * 4), drift = [0, 1, 2].map(() => new Float32Array(COLS)), driftT = new Float32Array(COLS), plink = [0, 0, 0];
 const wx = new Float32Array(GW * GH), wy = new Float32Array(GW * GH), wt = new Float32Array(GW * GH), wpk = new Uint8Array(GW * GH * 4);
 const parts = [], ptsData = new Float32Array(80), sipData = new Float32Array(8), thrData = new Float32Array(8);
 const sips = [{ t: -1e9, tint: 0 }, { t: -1e9, tint: 0 }], threads = [{ from: 0, until: 0, tint: 0 }, { from: 0, until: 0, tint: 0 }];
@@ -492,7 +493,7 @@ function setup() {
 }
 function choose(m) {
   mode = m; V = VARIANTS[m];
-  hgt.forEach(h => h.fill(0)); vel.forEach(v => v.fill(0)); parts.length = 0; wx.fill(0); wy.fill(0); stirred = false; warp();
+  hgt.forEach(h => h.fill(0)); drift.forEach(d => d.fill(0)); vel.forEach(v => v.fill(0)); parts.length = 0; wx.fill(0); wy.fill(0); stirred = false; warp();
   lean.fill(0); leanV.fill(0); leanTo = 0; sips.forEach(s => s.t = -1e9); threads.forEach(t => t.until = 0);
   document.querySelectorAll('#lab button').forEach((b, i) => b.setAttribute('aria-pressed', i === m));
   $('#labsays').textContent = V.says;
@@ -581,7 +582,14 @@ function step(dt, now) {
   [48, 17, 7].forEach((k, l) => { leanV[l] += (k * (leanTo - lean[l]) - [5, 3.6, 3][l] * leanV[l]) * dt; lean[l] += leanV[l] * dt; });
   feeds.forEach((a, i) => {
     const left = 1 - Math.min(a.used, 1), x = geo.sx[i];
-    if (flow[i] > .05) strike(0, x, (Math.sin(now / 1000 * 13 + i * 2) * (V.hum ?? .1) + (Math.random() - .5) * .08) * (.4 + flow[i]) + (now < gush[i] ? .2 : 0), 1.5);
+    // where it lands it only frets the surface: small knocks at no fixed beat, so that nothing builds
+    if (flow[i] > .05) { strike(0, x, (Math.random() - .5) * .16 * (.4 + flow[i]) + (now < gush[i] ? .05 : 0), 1.2);
+      if (now > plink[i]) { plink[i] = now + 180 + Math.random() * 520; strike(0, x + (Math.random() - .5) * 8, (Math.random() - .35) * .55 * (.4 + flow[i]), 1); } }
+    // what knocked the stream aside falls with it, fading, and is felt where it lands
+    const dr = drift[i], by = 330 * dt / (320 / COLS), keep = Math.exp(-dt * 2.2);
+    for (let n = 0; n < COLS; n++) { const from = n - by, a = Math.floor(from), f = from - a; driftT[n] = from < 0 ? 0 : (dr[a] * (1 - f) + dr[Math.min(COLS - 1, a + 1)] * f) * keep; }
+    dr.set(driftT);
+    const foot = dr[Math.max(0, Math.min(COLS - 1, Math.round((level(0, x) - geo.top) / 320 * COLS)))]; if (Math.abs(foot) > 1) strike(0, x + foot, foot * .012, 1.5);
     if (V.supply === 'drops' && (left > 0 || now < gush[i]) && now - lastDrop[i] > (now < gush[i] ? 70 : 520 + 1300 * (1 - left)) + Math.random() * 90) { lastDrop[i] = now; parts.push({ kind: i + 1, x: x + (Math.random() - .5) * 4, y: geo.top, vy: 40, r: 5.5 }); }
   });
   threads.forEach((t, k) => { if (now < t.until && geo.cons[k]) strike(0, geo.cons[k].x, .16, 2); });
@@ -605,9 +613,9 @@ function step(dt, now) {
   }
   if (parts.length > 40) parts.splice(0, parts.length - 40);
   if (stirred) settle(dt);
-  for (let l = 0; l < 3; l++) for (let i = 0; i < COLS; i++) { const v = Math.max(0, Math.min(65535, Math.round((Math.max(-1, Math.min(1, hgt[l][i] / 64)) + 1) / 2 * 65535))), n = (l * COLS + i) * 4; packed[n] = v >> 8; packed[n + 1] = v & 255; packed[n + 3] = 255; }
+  for (let l = 0; l < 6; l++) for (let i = 0; i < COLS; i++) { const v = Math.max(0, Math.min(65535, Math.round((Math.max(-1, Math.min(1, (l < 3 ? hgt[l] : drift[l - 3])[i] / 64)) + 1) / 2 * 65535))), n = (l * COLS + i) * 4; packed[n] = v >> 8; packed[n + 1] = v & 255; packed[n + 3] = 255; }
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, fieldTex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, 3, 0, gl.RGBA, gl.UNSIGNED_BYTE, packed);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, 6, 0, gl.RGBA, gl.UNSIGNED_BYTE, packed);
 }
 function push(x, y) {
   if (ptr) {
@@ -618,6 +626,14 @@ function push(x, y) {
       if (gain && (crossed || near)) for (let k = -9; k <= 9; k++) { const j = i + k; if (j < 0 || j >= COLS) continue; const fall = Math.exp(-k * k / 18);
         vel[l][j] += (Math.max(-9, Math.min(9, dy)) * (crossed ? .3 : .09) - Math.min(Math.abs(dx), 30) * (near ? .02 : 0)) * gain * fall; }
     }
+    // a stream the pointer goes through or by is knocked the way the pointer was going, there and then
+    geo.sx.forEach((sx, k) => {
+      if (flow[k] < .05 || y < geo.top || y > level(0, sx) || !dx) return;
+      const n = (y - geo.top) / 320 * COLS, at = sx + drift[k][Math.max(0, Math.min(COLS - 1, Math.round(n)))], crossed = (ptr.x - at) * (x - at) <= 0, near = Math.abs(x - at) < 16;
+      if (!crossed && !near) return;
+      const by = Math.max(-16, Math.min(16, dx)) * (crossed ? 1.1 : .35);
+      for (let j = Math.max(0, Math.floor(n - 30)); j <= Math.min(COLS - 1, Math.ceil(n + 30)); j++) drift[k][j] = Math.max(-60, Math.min(60, drift[k][j] + by * Math.exp(-(j - n) * (j - n) / 160)));
+    });
     const under = y > level(0, x) + 4;
     if (V.smear && y > level(0, x) - 90 && y < geo.WH) smear(x, y, dx, dy);
     if (V.bubbles && under && y < geo.bed) { trail += Math.hypot(dx, dy); if (trail > 34) { trail = 0; parts.push({ kind: 5, x, y, r: 2.5 + Math.random() * 4, seed: Math.random() * 6 }); } }
