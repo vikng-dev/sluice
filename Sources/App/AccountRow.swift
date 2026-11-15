@@ -295,8 +295,8 @@ private struct Playing: View {
     @Environment(\.accessibilityReduceMotion) private var still
 
     var body: some View {
-        // In points of a bar's ten: one request strikes it to a little over half, and four to the top.
-        let aim = level == 0 ? Meter.Aim(low: 2, high: 3.5, pace: 0.85) : Meter.Aim(low: 3, high: min(4 + 1.5 * Double(level), 10), pace: 0.7 + 0.15 * Double(min(level, 4)))
+        // In points of a bar's ten: one request strikes it to most of its height, and three to the top.
+        let aim = level == 0 ? Meter.Aim(low: 2, high: 3.5, pace: 0.85) : Meter.Aim(low: 3, high: min(7 + Double(level), 10), pace: 0.7 + 0.15 * Double(min(level, 4)))
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: still)) { frame in
             let heights = still ? [0.5, 0.9, 0.6].map { aim.low + (aim.high - aim.low) * $0 } : meter.heights(toward: aim, at: frame.date)
             HStack(alignment: .bottom, spacing: 2) {
