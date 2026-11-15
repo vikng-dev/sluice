@@ -295,7 +295,7 @@ actor Accounts {
         accounts = try storage.loadAccounts()
         // What was observed is relearned from the next answers, so a memory that cannot be read is said and started afresh.
         do { memory = try storage.loadMemory() } catch {
-            FileHandle.standardError.write(Data("sluice: starting without what was observed: \(error)\n".utf8))
+            log("starting without what was observed: \(error)", kept: true)
             memory = Memory()
         }
     }
@@ -482,7 +482,7 @@ actor Accounts {
         }
     }
 
-    /// A reading that says something new is a line of history. One that cannot be written is reported and
+    /// A reading that says something new is a line of history. One that cannot be written is logged and
     /// tried again at the next reading.
     private func sample(_ id: String, now: Date = Date()) {
         guard let account = accounts.first(where: { $0.id == id }) else { return }
@@ -492,11 +492,11 @@ actor Accounts {
             try storage.appendSample(Sample(at: now, provider: account.provider, account: account.label, windows: windows, scoped: parts.isEmpty ? nil : parts))
             sampled[id] = windows + parts
         } catch {
-            FileHandle.standardError.write(Data("sluice: could not add to the history: \(error)\n".utf8))
+            log("could not add to the history: \(error)", kept: true)
         }
     }
 
-    /// An answer that cost something is a line of history. One that cannot be written is reported and lost.
+    /// An answer that cost something is a line of history. One that cannot be written is logged and lost.
     func spent(_ spend: Spend, by id: String, for profile: String, folder: String?, conversation: String?, since asked: Date) {
         guard spend != Spend(), let account = accounts.first(where: { $0.id == id }) else { return }
         if let formula = formulas[account.provider] { sizings[id]?.answered(weighing: formula.weigh(spend)) }
@@ -507,7 +507,7 @@ actor Accounts {
                 seconds: (now.timeIntervalSince(asked) * 10).rounded() / 10, spend: spend
             ))
         } catch {
-            FileHandle.standardError.write(Data("sluice: could not add to the history: \(error)\n".utf8))
+            log("could not add to the history: \(error)", kept: true)
         }
     }
 
@@ -516,10 +516,10 @@ actor Accounts {
         remember()
     }
 
-    /// Memory is relearned from the next responses, so a failed write costs only that and is reported, not fatal.
+    /// Memory is relearned from the next responses, so a failed write costs only that and is logged, not fatal.
     private func remember() {
         do { try storage.storeMemory(memory) } catch {
-            FileHandle.standardError.write(Data("sluice: could not save what was observed: \(error)\n".utf8))
+            log("could not save what was observed: \(error)", kept: true)
         }
     }
 

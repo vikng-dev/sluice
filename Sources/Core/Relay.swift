@@ -245,7 +245,7 @@ public final class Relay: Sendable {
                 return try await writer.send(500, text: "sluice: \(error)")
             }
             // Work whose folder is not known is taken for the default profile's.
-            if request.callerFolder == nil { Self.logger.notice("a \(id, privacy: .public) request came from a program whose folder could not be read") }
+            if request.callerFolder == nil { log("a \(id) request came from a program whose folder could not be read", kept: true) }
             guard !candidates.isEmpty else {
                 let wanted = pin.map { "the \(provider.name) account \($0)" } ?? "a \(provider.name) account"
                 return try await writer.send(403, text: "sluice: profile \(profile) does not have \(wanted), and work is only paid by its own profile's accounts. See: sluice status")
@@ -340,11 +340,12 @@ public final class Relay: Sendable {
             try await writer.send(502, text: "sluice: sign-in failed: \(error)")
         }
     }
-
-    /// One line per relayed request, in the system log: `log stream --predicate 'subsystem == "dev.vikng.sluice"'`.
-    private func log(_ line: String) {
-        Self.logger.info("\(line, privacy: .public)")
-    }
-
-    private static let logger = Logger(subsystem: Sluice.id, category: "relay")
 }
+
+/// A line in the system log: `log stream --info --predicate 'subsystem == "dev.vikng.sluice"'`. One per
+/// relayed request passes through it; what went wrong is kept there.
+func log(_ line: String, kept: Bool = false) {
+    logger.log(level: kept ? .default : .info, "\(line, privacy: .public)")
+}
+
+private let logger = Logger(subsystem: Sluice.id, category: "relay")
