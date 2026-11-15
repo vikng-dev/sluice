@@ -287,7 +287,7 @@ extension Reset {
 }
 
 /// A level meter of three bars. While the account is at work on requests they rise and fall, higher and
-/// faster the more there are; for a minute after, they barely stir. Made anew for each level, so that it
+/// faster the more there are; for a minute after, they keep on low. Made anew for each level, so that it
 /// moves as that level does from the start.
 private struct Playing: View {
     let level: Int
@@ -296,7 +296,7 @@ private struct Playing: View {
 
     var body: some View {
         // In points of a bar's ten: one request fills a little over half of it, and four fill it.
-        let (low, high, pace) = level == 0 ? (2.0, 3.0, 0.3) : (3.0, min(4 + 1.5 * Double(level), 10), 0.7 + 0.15 * Double(min(level, 4)))
+        let (low, high, pace) = level == 0 ? (2.0, 3.5, 0.85) : (3.0, min(4 + 1.5 * Double(level), 10), 0.7 + 0.15 * Double(min(level, 4)))
         HStack(alignment: .bottom, spacing: 2) {
             ForEach(Array([0.5, 0.34, 0.44].enumerated()), id: \.offset) { bar, beat in
                 // Its height is its own, not a taller bar's squeezed, so that its ends stay round at any height.
