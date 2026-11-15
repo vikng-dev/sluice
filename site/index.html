@@ -154,12 +154,16 @@ footer a:hover { color: var(--fg); }
   .scale { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .float, .swap i, .swap .pm, .caret { animation: none; } .swap .a i { width: 100%; background: var(--warn); } .swap .b i { width: 40%; } .track i, .sw::after, .tile { transition: none; } }
+/* the water lies under the whole page; without it the section under the hero keeps its own ground and scale */
+#page { position: relative; flex: 1; display: flex; flex-direction: column; background: #0d3c4b; }
+.gl .below { background: none; } .gl .scale { display: none; }
+.below { z-index: 1; } footer { padding-block: 26px 40px; }
 </style>
 </head>
 <body>
 
+<div id="page"><canvas id="water" aria-hidden="true"></canvas>
 <section class="hero" id="hero">
-  <canvas id="water" aria-hidden="true"></canvas>
   <div class="wrap">
     <header>
       <a class="mark" href="/"><img src="icon.svg" alt="">Sluice</a>
@@ -228,6 +232,7 @@ footer a:hover { color: var(--fg); }
   </section>
   <footer><a href="https://github.com/vikng-dev/sluice/tree/main/docs">Docs</a><a href="https://github.com/vikng-dev/sluice">GitHub</a><span>MIT</span></footer>
 </div></div>
+</div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -311,12 +316,12 @@ $('#copy').addEventListener('click', () => {
     .catch(() => { const r = document.createRange(); r.selectNodeContents($('#cmd')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); });
 });
 
-/* the sources over the water: each account as a ring that fills as it is used */
+/* the sources over the water: each account as a ring of what it has left */
 const sources = $('#sources');
 sources.innerHTML = feeds.map((a, i) => '<span class="src" data-i="' + i + '"><svg viewBox="0 0 44 44"><circle class="tr" cx="22" cy="22" r="20"/><circle class="fill" cx="22" cy="22" r="20"/></svg>' + pm(feedMark[i]) + '</span>').join('');
 const flow = [0.15, 0.15, 0.15];
 function rings() {
-  sources.querySelectorAll('.src').forEach((el, i) => { const a = feeds[i]; el.querySelector('.fill').style.strokeDashoffset = 125.7 * (1 - Math.min(a.used, 1)); el.querySelector('.fill').style.stroke = a.used >= 1 ? 'var(--crit)' : a.used >= .85 ? 'var(--warn)' : 'var(--teal)'; el.classList.toggle('live', a.busy > 0); });
+  sources.querySelectorAll('.src').forEach((el, i) => { const a = feeds[i]; el.querySelector('.fill').style.strokeDashoffset = 125.7 * Math.min(a.used, 1); el.querySelector('.fill').style.stroke = a.used >= 1 ? 'var(--crit)' : a.used >= .85 ? 'var(--warn)' : 'var(--teal)'; el.classList.toggle('live', performance.now() < gush[i]); });
 }
 function request() {
   const all = profiles.flatMap(p => p.pools), pool = Math.random() < .6 ? all[0] : all[Math.floor(Math.random() * all.length)];
@@ -325,7 +330,7 @@ function request() {
   setTimeout(() => {
     a.busy--; a.last = Date.now(); a.used = Math.min(1, a.used + (.012 + Math.random() * .03));
     // A spent account comes back at its reset, sooner here than in life.
-    if (a.used >= 1) setTimeout(() => { a.used = .04; a.left = 168; soft(); rings(); }, 14000);
+    if (a.used >= 1) setTimeout(() => { a.used = .04; a.left = 168; soft(); refilled(a); }, 14000);
     soft(); rings();
   }, 1800 + Math.random() * 3800);
 }
@@ -333,7 +338,7 @@ const heights = {};
 let before = performance.now();
 function meters(now) {
   const dt = Math.min(.1, (now - before) / 1000); before = now;
-  feeds.forEach((a, i) => { flow[i] += ((a.busy > 0 ? 1 : a.used >= 1 ? 0 : .12) - flow[i]) * Math.min(1, dt * 3); });
+  supply(dt);
   if (state.view === 'accounts') profiles.forEach(p => p.pools.forEach((pool, pi) => pool.accounts.forEach((a, ai) => {
     const key = p.name + pi + ai, el = view.querySelector('[data-m="' + key + '"]'); if (!el) return;
     const recent = a.busy > 0 || (a.last > 0 && Date.now() - a.last < 12000);
@@ -344,74 +349,177 @@ function meters(now) {
   })));
 }
 
-/* The water. A fragment shader draws three layers, the streams that feed them, and the headline, bent where it is under the surface. */
-const canvas = $('#water'), hero = $('#hero');
-const gl = canvas.getContext('webgl', { antialias: false, alpha: false, premultipliedAlpha: false });
+/* The water. One for the whole page: the air, three layers each of its own weight, the deep, and the bed the footer lies on.
+   The accounts pour in from above for as long as they have anything left, and the pool stands as high as what they have between them. */
+const page = $('#page'), canvas = $('#water'), hero = $('#hero');
+const glOpts = { antialias: false, alpha: true, premultipliedAlpha: false }, gl = canvas.getContext('webgl2', glOpts) || canvas.getContext('webgl', glOpts);
 const VS = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0., 1.); }';
-const FS = `precision highp float;
-uniform vec2 R; uniform float T, S, D, F, top; uniform vec3 sx, fl; uniform sampler2D tex, hf;
+const FS = `precision highp float; precision highp sampler2D;
+uniform vec2 R; uniform float T, D, S, F, top, bed, TH, WH, stirs, lvl;
+uniform vec3 th, sx, fl;
+uniform sampler2D tex, hf, wf, dye;
 vec3 navy = vec3(.039, .075, .149), violet = vec3(.36, .44, .93), blue = vec3(.10, .52, .86), teal = vec3(.16, .74, .72), cream = vec3(1., .957, .871);
 float wave(float x, float k, float t) { return sin(x * .0052 * k + t * .8 + k * 1.7) * 9. + sin(x * .0121 * k - t * 1.15 + k) * 4.5 + sin(x * .031 + t * 1.9 + k * 3.) * 1.6; }
-float cell(float i) { vec4 c = texture2D(hf, vec2((clamp(i, 0., 255.) + .5) / 256., .5)); return ((c.r * 255. * 256. + c.g * 255.) / 65535. * 2. - 1.) * 64.; }
-float field(float x) { float u = x / R.x * 256. - .5, i = floor(u), f = fract(u); f = f * f * (3. - 2. * f); return mix(cell(i), cell(i + 1.), f); }
+float cell(float i, float row) { vec4 c = texture2D(hf, vec2((clamp(i, 0., 255.) + .5) / 256., (row + .5) / 3.)); return ((c.r * 255. * 256. + c.g * 255.) / 65535. * 2. - 1.) * 64.; }
+// how far a stream has been knocked aside, at a height down its fall
+float bend(float yy, float row) { float u = clamp((yy - top) / (320. * D), 0., 1.) * 255., i = floor(u); return mix(cell(i, row), cell(i + 1., row), u - i); }
+vec3 tintOf(float k) { return k < .5 ? violet : k < 1.5 ? blue : teal; }
 void main() {
-  vec2 q = gl_FragCoord.xy; float x = q.x, y = R.y - q.y, xd = x / D;
-  float h = field(x), slope = field(x + 3. * D) - field(x - 3. * D);
-  float s1 = S + (wave(xd, 1., T) * .6 + h) * D;
-  float s2 = S + F * 1.22 + (wave(xd, 1.6, T * .9 + 2.) * .6 + h * .45) * D;
-  float s3 = S + F * 2.25 + (wave(xd, 2.3, T * .8 + 4.) * .6 + h * .2) * D;
-  vec3 air = mix(vec3(.075, .13, .27), navy, clamp(y / max(S, 1.), 0., 1.));
-  // the streams, from the accounts down to the surface
-  vec3 col = air;
+  vec2 q = gl_FragCoord.xy; float x = q.x, y = R.y - q.y, xd = x / D, amp = .45, e = 1.5 * D;
+  // how far the water here has come from where it lay: the layers are drawn where they were, so they go where the water goes
+  vec2 w = vec2(0.);
+  if (stirs > 0. && y < WH) w = texture2D(wf, vec2(x / R.x, y / WH)).rg * D * (1. - smoothstep(WH - 90. * D, WH, y));
+  float xw = x - w.x, yw = y - w.y, xwd = xw / D;
+  float s1 = S + lvl + wave(xwd, 1., T) * amp * D;
+  float s2 = S + lvl + th.x + wave(xwd, 1.6, T * .9 + 2.) * amp * .8 * D;
+  float s3 = S + lvl + th.x + th.y + wave(xwd, 2.3, T * .8 + 4.) * amp * .6 * D;
+  s2 = max(s2, s1 + 5. * D); s3 = max(s3, s2 + 5. * D);
+  float s4 = s3 + th.z + wave(xwd, 3.1, T * .6 + 1.) * amp * .4 * D;
+  float by = bed + (sin(xd * .006 + .5) * 9. + sin(xd * .019 + 2.) * 4.) * D;
+  vec3 col = mix(vec3(.075, .13, .27), navy, clamp(y / max(S, 1.), 0., 1.));
+  float liquid = yw - s1, em = e + min(length(w) * .04, 2.5 * D);
+  float in1 = smoothstep(-e, e, liquid), in2 = smoothstep(s2 - em, s2 + em, yw), in3 = smoothstep(s3 - em, s3 + em, yw), in4 = smoothstep(s4 - F * .5, s4 + F * .9, yw);
+  float dfrac = clamp((y - s4) / max(bed - s4, 1.), 0., 1.), lit = 1. - dfrac;
+  vec3 deep = mix(vec3(.085, .45, .52), vec3(.03, .115, .2), pow(dfrac, .55));
+  vec3 water = mix(mix(mix(violet, blue, in2), teal, in3), deep, in4);
+  water *= 1. + .1 * exp(-max(y - s1, 0.) / (30. * D)) * (1. - in2);
+  // what a stream brought, still its own colour for a while, going where the water goes
+  if (stirs > 0. && y < WH) { vec4 dy = texture2D(dye, vec2(x / R.x, y / WH)); water = mix(water, dy.rgb / max(dy.a, .001), clamp(dy.a, 0., .5)); }
+  water += (sin(xd * .009 + T * .5 + y / D * .004) * .022 + sin(xd * .004 - T * .3) * .018) * lit;
+  // light let down into the deep, less of it the deeper
+  float ray = sin((xd + y / D * .32) * .011 + T * .13) * sin((xd + y / D * .32) * .029 - T * .09);
+  water += max(ray, 0.) * .032 * lit * in3;
+  float foam = exp(-abs(liquid) / (1.8 * D)) * .5 + (exp(-abs(yw - s2) / (1.6 * D)) * .22 + exp(-abs(yw - s3) / (1.6 * D)) * .16) * in1;
+  col = mix(col, water, in1) + foam * vec3(.85, .95, 1.) * .55;
+  // what the accounts pour: a stream as wide as what its account has left, that goes a little way into the water, widening, and is lost in it
   for (int i = 0; i < 3; i++) {
     float c = i == 0 ? sx.x : i == 1 ? sx.y : sx.z, f = i == 0 ? fl.x : i == 1 ? fl.y : fl.z;
-    vec3 tint = i == 0 ? violet : i == 1 ? blue : teal;
-    float w = (2. + 9. * f) * D, d = abs(x - c + sin(y / D * .05 + T * 2. + float(i)) * 1.5 * D);
-    float body = smoothstep(w, w * .35, d) * step(top, y) * step(y, s1 + 4. * D);
-    float run = .62 + .38 * sin(y / D * .11 - T * 10. + float(i) * 2.);
-    col = mix(col, mix(tint, cream, .35) * (.75 + .25 * run), body * (.35 + .65 * f) * run);
-    col += tint * f * .22 * exp(-length(vec2(x - c, y - s1)) / (26. * D));
+    vec3 tint = tintOf(float(i));
+    float wd = (1.5 + 8. * f) * D, d = abs(x - c - bend(y, float(i)) * D + sin(y / D * .05 + T * 2. + float(i)) * 1.2 * D * f);
+    float run = .7 + .3 * sin(y / D * .11 - T * 9. + float(i) * 2.), into = smoothstep(s1 - 4. * D, s1 + (16. + 22. * f) * D, yw);
+    wd *= 1. + .9 * into;
+    col = mix(col, mix(tint, cream, .35) * (.75 + .25 * run), smoothstep(wd, wd * .35, d) * step(top, y) * (1. - into) * step(.02, f) * (.4 + .6 * f));
+    col += tint * f * .2 * exp(-length(vec2(xw - c, yw - s1)) / (26. * D));
   }
-  float e = 1.5 * D;
-  float in1 = smoothstep(s1 - e, s1 + e, y), in2 = smoothstep(s2 - e, s2 + e, y), in3 = smoothstep(s3 - e, s3 + e, y);
-  vec3 water = mix(mix(violet, blue, in2), teal, in3);
-  float deepen = smoothstep(s3 + F * .4, R.y, y);
-  water = mix(water, navy, deepen * .78);
-  float shimmer = sin(xd * .009 + T * .5 + y / D * .004) * .022 + sin(xd * .004 - T * .3) * .018;
-  water += shimmer * (1. - deepen);
-  float fade = 1. - smoothstep(R.y - 160. * D, R.y, y);
-  float foam = fade * exp(-abs(y - s1) / (1.8 * D)) * (.5 + min(abs(slope) * .25, .6)) + exp(-abs(y - s2) / (1.6 * D)) * .22 + exp(-abs(y - s3) / (1.6 * D)) * .16;
-  col = mix(col, water, in1) + foam * vec3(.85, .95, 1.) * .55;
-  // the headline, crisp above the water and in it
-  float a = texture2D(tex, q / R).a;
-  col = mix(col, mix(cream, vec3(.95, .98, 1.), in1), a);
-  // a gauge's scale down the left edge, as on the icon
+  // the bed, in the colour of the air: the pool in section, as on the icon
+  col = mix(col, vec3(.035, .066, .135), smoothstep(by - e, by + e, y));
+  col += exp(-abs(y - by) / (1.4 * D)) * .12 * vec3(.3, .85, .85);
+  if (y < TH) { float a = texture2D(tex, vec2(x / R.x, 1. - y / TH)).a; col = mix(col, mix(cream, vec3(.95, .98, 1.), in1), a); }
+  // a gauge's scale down the left edge, as on the icon, to the bed
   float row = mod(y / D - 20., 44.), wide = step(mod(floor((y / D - 20.) / 44.), 2.), .5);
-  float tick = smoothstep(1.6, .6, abs(row - 22.)) * step(14. * D, x) * step(x, (14. + 10. + 12. * wide) * D) * step(top * .5, y) * step(900. * D, R.x);
-  col = mix(col, cream, tick * .55);
+  float tick = smoothstep(1.6, .6, abs(row - 22.)) * step(14. * D, x) * step(x, (14. + 10. + 12. * wide) * D) * step(top * .5, y) * step(y, by - 8. * D) * step(900. * D, R.x);
+  col = mix(col, cream, tick * (.55 - .25 * dfrac));
   gl_FragColor = vec4(col, 1.);
 }`;
-let prog, U = {}, text = document.createElement('canvas'), geo = { S: 300, F: 80, top: 200, sx: [0, 0, 0] }, dpr = 1;
-const COLS = 256, hgt = new Float32Array(COLS), vel = new Float32Array(COLS), packed = new Uint8Array(COLS * 4);
-let textTex, fieldTex, ptr = null;
+/* How the water moves: a grid fluid, Stam's stable fluids as the WebGL fluid demos do it, small and on the GPU.
+   A field of velocities is pushed by the pointer and by each stream where it lands, kept free of divergence, and carried along by itself.
+   Carried with it is how far the water at each place has come from where it lay, which is what the layers are drawn by; a layer out of its
+   depth is heavier or lighter than what is round it and is pulled back, so stirred layers level again as real ones do. */
+const SW = 256, QUAD = 'attribute vec2 p; varying vec2 uv; void main(){ uv = p * .5 + .5; gl_Position = vec4(p, 0., 1.); }', HEAD = 'precision highp float; precision highp sampler2D; varying vec2 uv; ';
+const PASS = {
+  advect: HEAD + 'uniform sampler2D vel, src; uniform vec2 tv; uniform float dt, keep, add; void main(){ vec2 v = texture2D(vel, uv).xy; vec4 r = texture2D(src, uv - dt * v * tv) * keep; r.xy += add * v * dt; gl_FragColor = r; }',
+  force: HEAD + `uniform sampler2D vel, wf; uniform vec2 size; uniform float dt, G, S, t1, t2, hold; uniform vec4 jet[3], hand;
+    float rho(float y) { return smoothstep(S - 8., S + 8., y) + .22 * smoothstep(S + t1 - 8., S + t1 + 8., y) + .22 * smoothstep(S + t1 + t2 - 8., S + t1 + t2 + 8., y); }
+    void main(){ vec2 pos = uv * size, v = texture2D(vel, uv).xy; float wy = texture2D(wf, uv).y;
+      v.y += dt * G * (rho(pos.y - wy) - rho(pos.y));
+      for (int k = 0; k < 3; k++) { vec2 d = pos - jet[k].xy; v += jet[k].zw * exp(-dot(d, d) / 225.); }
+      // the water round the pointer goes the way the pointer goes, and no faster
+      vec2 hd = pos - hand.xy; v = mix(v, hand.zw, hold * exp(-dot(hd, hd) / (46. * 46.)));
+      gl_FragColor = vec4(clamp(v, -500., 500.), 0., 1.); }`,
+  div: HEAD + `uniform sampler2D vel; uniform vec2 tv; void main(){ vec2 c = texture2D(vel, uv).xy;
+      float l = texture2D(vel, uv - vec2(tv.x, 0.)).x, r = texture2D(vel, uv + vec2(tv.x, 0.)).x, b = texture2D(vel, uv - vec2(0., tv.y)).y, t = texture2D(vel, uv + vec2(0., tv.y)).y;
+      if (uv.x - tv.x < 0.) l = -c.x; if (uv.x + tv.x > 1.) r = -c.x; if (uv.y - tv.y < 0.) b = -c.y; if (uv.y + tv.y > 1.) t = -c.y;
+      gl_FragColor = vec4(.5 * (r - l + t - b), 0., 0., 1.); }`,
+  pres: HEAD + `uniform sampler2D pr, dv; uniform vec2 tv; void main(){
+      float l = texture2D(pr, uv - vec2(tv.x, 0.)).x, r = texture2D(pr, uv + vec2(tv.x, 0.)).x, b = texture2D(pr, uv - vec2(0., tv.y)).x, t = texture2D(pr, uv + vec2(0., tv.y)).x;
+      gl_FragColor = vec4((l + r + b + t - texture2D(dv, uv).x) * .25, 0., 0., 1.); }`,
+  grad: HEAD + `uniform sampler2D pr, vel; uniform vec2 tv; void main(){
+      float l = texture2D(pr, uv - vec2(tv.x, 0.)).x, r = texture2D(pr, uv + vec2(tv.x, 0.)).x, b = texture2D(pr, uv - vec2(0., tv.y)).x, t = texture2D(pr, uv + vec2(0., tv.y)).x;
+      gl_FragColor = vec4(texture2D(vel, uv).xy - vec2(r - l, t - b), 0., 1.); }`,
+  dye: HEAD + `uniform sampler2D vel, src; uniform vec2 tv, size; uniform float dt, keep; uniform vec4 at[3]; uniform vec3 tint[3];
+    void main(){ vec2 v = texture2D(vel, uv).xy, pos = uv * size; vec4 r = texture2D(src, uv - dt * v * tv) * keep;
+      for (int k = 0; k < 3; k++) { vec2 d = pos - at[k].xy; r += vec4(tint[k], 1.) * at[k].z * exp(-dot(d, d) / 169.); }
+      gl_FragColor = r; }`,
+};
+const tagged = (len, n) => Object.assign(new Float32Array(len), { n });
+const TINTS = tagged(9, 3); [[.36, .44, .93], [.10, .52, .86], [.16, .74, .72]].forEach((c, i) => c.forEach((v, j) => { TINTS[i * 3 + j] = v * .7 + [1, .957, .871][j] * .3; }));
+// a stream's sideways drift down its fall, a row a stream
+const COLS = 256, drift = [0, 1, 2].map(() => new Float32Array(COLS)), driftT = new Float32Array(COLS), packed = new Uint8Array(COLS * 3 * 4);
+const gush = [0, 0, 0], thick = [0, 0, 0];
+let U = {}, shown = null, sim = null, text = document.createElement('canvas'), dpr = 1, textTex, driftTex;
+let geo = { W: 1, H: 1, S: 300, F: 80, top: 200, sx: [0, 0, 0], bed: 1e5, TH: 1, WH: 1 };
+let ptr = null, pdx = 0, pdy = 0, lvl = 0, mean0 = null;
 function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
-function setup() {
-  prog = gl.createProgram(); gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
+function program(fs, vs) {
+  const prog = gl.createProgram(); gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+  gl.bindAttribLocation(prog, 0, 'p'); gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
-  gl.useProgram(prog);
-  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-  const p = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(p); gl.vertexAttribPointer(p, 2, gl.FLOAT, false, 0, 0);
-  ['R', 'T', 'S', 'D', 'F', 'top', 'sx', 'fl', 'tex', 'hf'].forEach(n => U[n] = gl.getUniformLocation(prog, n));
-  const made = filter => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; };
-  gl.activeTexture(gl.TEXTURE1); fieldTex = made(gl.NEAREST);
-  gl.activeTexture(gl.TEXTURE0); textTex = made(gl.LINEAR);
+  return prog;
 }
-/* Where the headline, the sources and the surface are, read from the page so the drawing sits on the layout. */
+function texture(filter) {
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function setup() {
+  shown = program(FS, VS); gl.useProgram(shown);
+  ['R', 'T', 'D', 'S', 'F', 'top', 'bed', 'TH', 'WH', 'stirs', 'lvl', 'th', 'sx', 'fl', 'tex', 'hf', 'wf', 'dye'].forEach(n => U[n] = gl.getUniformLocation(shown, n));
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.activeTexture(gl.TEXTURE1); driftTex = texture(gl.NEAREST);
+  gl.activeTexture(gl.TEXTURE0); textTex = texture(gl.LINEAR);
+  // without float targets to work the fluid in, the water is drawn as it lies and is not stirred
+  try { fluid(); } catch (e) { console.warn('fluid', e); sim = null; }
+}
+function target(w, h) {
+  gl.activeTexture(gl.TEXTURE3); const t = texture(gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('no float target');
+  gl.disable(gl.SCISSOR_TEST); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  return { t, f, w, h };
+}
+const pair = (w, h) => ({ a: target(w, h), b: target(w, h), swap() { [this.a, this.b] = [this.b, this.a]; } });
+function fluid() {
+  if (!(window.WebGL2RenderingContext && gl instanceof WebGL2RenderingContext) || !gl.getExtension('EXT_color_buffer_float')) return;
+  const made = { h: 0 };
+  for (const name in PASS) made[name] = { prog: program(PASS[name], QUAD), loc: {} };
+  target(4, 4); sim = made;
+}
+function sized() {
+  if (!sim) return; // in steps, so that a page a few pixels taller does not start the water over
+  const h = Math.max(64, Math.min(512, Math.ceil(SW * geo.WH / geo.W / 16) * 16)); if (sim.h === h) return;
+  sim.h = h; sim.vel = pair(SW, h); sim.pr = pair(SW, h); sim.dv = target(SW, h); sim.w = pair(SW * 2, h * 2); sim.ink = pair(SW, h);
+}
+function run(P, to, set) {
+  gl.useProgram(P.prog); gl.bindFramebuffer(gl.FRAMEBUFFER, to.f); gl.viewport(0, 0, to.w, to.h); let unit = 3;
+  for (const k in set) { const v = set[k], l = P.loc[k] ??= gl.getUniformLocation(P.prog, k);
+    if (v.t) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, v.t); gl.uniform1i(l, unit++); }
+    else if (typeof v === 'number') gl.uniform1f(l, v); else if (v.n) gl['uniform' + v.n + 'fv'](l, v); else gl.uniform2f(l, v[0], v[1]); }
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function simulate(dt) {
+  if (!(dt > 0) || !sim.h) return;
+  const s = sim, tv = [1 / SW, 1 / s.h], cpt = geo.W / SW, size = [geo.W, geo.WH], jet = tagged(12, 4), at = tagged(12, 4), hand = tagged(4, 4), cap = v => Math.max(-260, Math.min(260, v));
+  gl.disable(gl.SCISSOR_TEST);
+  run(s.advect, s.vel.b, { vel: s.vel.a, src: s.vel.a, tv, dt, keep: Math.exp(-dt * 1.1), add: 0 }); s.vel.swap();
+  // the pointer takes the water it is in or just over along with it; a stream pushes down, lightly, where it lands, and leaves its colour
+  const moved = ptr && (pdx || pdy); if (moved) hand.set([ptr.x, ptr.y, cap(pdx / cpt / dt), cap(pdy / cpt / dt)]); pdx = pdy = 0;
+  flow.forEach((f, i) => { const y = geo.S + lvl + 12; at.set([geo.sx[i], y, f * dt * .9, 0], i * 4); if (f > .05) jet.set([geo.sx[i], y, (Math.random() - .5) * 6 * f, (10 + 30 * f) * dt], i * 4); });
+  run(s.force, s.vel.b, { vel: s.vel.a, wf: s.w.a, size, dt, G: 170, S: geo.S + lvl, t1: thick[0], t2: thick[1], jet, hand, hold: moved ? .7 : 0 }); s.vel.swap();
+  run(s.div, s.dv, { vel: s.vel.a, tv });
+  for (let n = 0; n < 18; n++) { run(s.pres, s.pr.b, { pr: s.pr.a, dv: s.dv, tv }); s.pr.swap(); }
+  run(s.grad, s.vel.b, { pr: s.pr.a, vel: s.vel.a, tv }); s.vel.swap();
+  run(s.advect, s.w.b, { vel: s.vel.a, src: s.w.a, tv, dt, keep: Math.exp(-dt * .25), add: cpt }); s.w.swap();
+  run(s.dye, s.ink.b, { vel: s.vel.a, src: s.ink.a, tv, size, dt, keep: Math.exp(-dt * .8), at, tint: TINTS }); s.ink.swap();
+}
 function measure() {
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const h = hero.getBoundingClientRect(), w = Math.round(h.width * dpr), ht = Math.round(h.height * dpr);
-  if (canvas.width !== w || canvas.height !== ht) { canvas.width = text.width = w; canvas.height = text.height = ht; gl.viewport(0, 0, w, ht); }
-  const c = text.getContext('2d'); c.clearRect(0, 0, w, ht); c.fillStyle = '#fff'; c.textBaseline = 'alphabetic';
+  const pr = page.getBoundingClientRect(), h = hero.getBoundingClientRect();
+  dpr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(16e6 / (pr.width * pr.height)));
+  const w = Math.round(pr.width * dpr), ht = Math.round(pr.height * dpr);
+  if (canvas.width !== w || canvas.height !== ht) { canvas.width = w; canvas.height = ht; }
+  text.width = w; text.height = Math.round(h.height * dpr);
+  const c = text.getContext('2d'); c.fillStyle = '#fff'; c.textBaseline = 'alphabetic';
   let size = 80;
   for (const id of ['l1', 'l2']) {
     const el = document.getElementById(id), r = el.getBoundingClientRect(), cs = getComputedStyle(el); size = parseFloat(cs.fontSize);
@@ -421,57 +529,76 @@ function measure() {
   }
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, textTex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, text);
-  const l2 = $('#l2').getBoundingClientRect(), src = [...sources.querySelectorAll('.src')].map(e => e.getBoundingClientRect());
-  $('#scale').style.setProperty('--phase', Math.round(h.height) % 88);
-  geo = { F: size * dpr, S: (l2.top - h.top - size * .2) * dpr, top: (src[0].bottom - h.top - 2) * dpr, sx: src.map(r => (r.left + r.width / 2 - h.left) * dpr) };
+  const l2 = $('#l2').getBoundingClientRect(), src = [...sources.querySelectorAll('.src')].map(e => e.getBoundingClientRect()), foot = $('footer').getBoundingClientRect();
+  geo = { W: pr.width, H: pr.height, F: size, S: l2.top - pr.top - size * .42, top: src[0].bottom - pr.top - 2, sx: src.map(r => r.left + r.width / 2 - pr.left),
+    bed: foot.top - pr.top - 14, TH: h.height, WH: Math.min(pr.height, h.height + 320) };
+  supply(1); sized();
 }
-/* The surface: a row of springs, each pulled level and toward its neighbours, so a push travels and dies away. Heights are CSS pixels, down positive. */
-function ripple(dt) {
-  const steps = Math.max(1, Math.min(4, Math.round(dt * 120)));
-  for (let n = 0; n < steps; n++) {
-    for (let i = 0; i < COLS; i++) { const l = hgt[i > 0 ? i - 1 : i], r = hgt[i < COLS - 1 ? i + 1 : i]; vel[i] += (l + r - 2 * hgt[i]) * .24 - hgt[i] * .006 - hgt[i] * hgt[i] * hgt[i] * .00002; vel[i] = Math.max(-4, Math.min(4, vel[i] * .988)); }
-    for (let i = 0; i < COLS; i++) hgt[i] += vel[i];
-  }
-  const wide = canvas.width / dpr;
-  // each stream stirs the water where it lands, the more the more it carries
-  geo.sx.forEach((x, k) => { const i = Math.round(x / dpr / wide * COLS); if (i > 1 && i < COLS - 2) { const push = (Math.random() - .5) * 1.1 * flow[k]; vel[i] += push; vel[i - 1] += push * .5; vel[i + 1] += push * .5; } });
-  for (let i = 0; i < COLS; i++) { const v = Math.max(0, Math.min(65535, Math.round((Math.max(-1, Math.min(1, hgt[i] / 64)) + 1) / 2 * 65535))); packed[i * 4] = v >> 8; packed[i * 4 + 1] = v & 255; packed[i * 4 + 3] = 255; }
-  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, fieldTex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, packed);
+/* what the accounts give and how the pool stands: a stream as wide as what its account has left, a gush when it refills */
+function supply(dt) {
+  const now = performance.now(), left = feeds.map(a => 1 - Math.min(a.used, 1)), ease = r => Math.min(1, dt * r);
+  left.forEach((l, i) => { flow[i] += ((now < gush[i] ? 1 : l > 0 ? .14 + .5 * l : 0) - flow[i]) * ease(3); });
+  const mean = (left[0] + left[1] + left[2]) / 3; if (mean0 === null) mean0 = mean;
+  lvl += (Math.max(-.3, Math.min(.3, (mean0 - mean) * .9)) * geo.F - lvl) * ease(2);
+  [1.75, 1.0, 1.3].forEach((t, i) => { thick[i] = t * geo.F; });
 }
-/* The pointer pushes the surface where it crosses it, and drags a wake when it moves just under it. */
+function refilled(a) { const i = feeds.indexOf(a); if (i >= 0) gush[i] = performance.now() + 2600; rings(); }
+function step(dt) {
+  // what knocked a stream aside falls with it, fading
+  const by = 330 * dt / (320 / COLS), keep = Math.exp(-dt * 2.2);
+  drift.forEach((dr, l) => {
+    for (let n = 0; n < COLS; n++) { const from = n - by, a = Math.floor(from), f = from - a; driftT[n] = from < 0 ? 0 : (dr[a] * (1 - f) + dr[Math.min(COLS - 1, a + 1)] * f) * keep; }
+    dr.set(driftT);
+    for (let i = 0; i < COLS; i++) { const v = Math.round((Math.max(-1, Math.min(1, dr[i] / 64)) + 1) / 2 * 65535), n = (l * COLS + i) * 4; packed[n] = v >> 8; packed[n + 1] = v & 255; packed[n + 3] = 255; }
+  });
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, driftTex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, 3, 0, gl.RGBA, gl.UNSIGNED_BYTE, packed);
+  if (sim) simulate(dt);
+}
 function push(x, y) {
-  const wide = canvas.width / dpr, surface = geo.S / dpr;
   if (ptr) {
-    const dx = x - ptr.x, dy = y - ptr.y, i = Math.round(x / wide * COLS), at = surface + (hgt[Math.max(0, Math.min(COLS - 1, i))] || 0);
-    const crossed = (ptr.y - at) * (y - at) < 0, near = Math.abs(y - at) < 26;
-    if (crossed || near) for (let k = -9; k <= 9; k++) { const j = i + k; if (j < 0 || j >= COLS) continue; const fall = Math.exp(-k * k / 18);
-      vel[j] += Math.max(-9, Math.min(9, dy)) * (crossed ? .3 : .09) * fall + Math.min(Math.abs(dx), 30) * (near ? -.02 : 0) * fall; }
+    const dx = x - ptr.x, dy = y - ptr.y;
+    // a stream the pointer goes through or by is knocked the way the pointer was going, there and then
+    geo.sx.forEach((sx, k) => {
+      if (flow[k] < .05 || y < geo.top || y > geo.S + lvl || !dx) return;
+      const n = (y - geo.top) / 320 * COLS, at = sx + drift[k][Math.max(0, Math.min(COLS - 1, Math.round(n)))], crossed = (ptr.x - at) * (x - at) <= 0;
+      if (!crossed && Math.abs(x - at) >= 16) return;
+      const by = Math.max(-16, Math.min(16, dx)) * (crossed ? 1.1 : .35);
+      for (let j = Math.max(0, Math.floor(n - 30)); j <= Math.min(COLS - 1, Math.ceil(n + 30)); j++) drift[k][j] = Math.max(-60, Math.min(60, drift[k][j] + by * Math.exp(-(j - n) * (j - n) / 160)));
+    });
+    if (y < geo.WH) { pdx += dx; pdy += dy; }
   }
   ptr = { x, y };
 }
 function draw(t) {
-  gl.uniform2f(U.R, canvas.width, canvas.height); gl.uniform1f(U.T, t); gl.uniform1f(U.S, geo.S); gl.uniform1f(U.D, dpr); gl.uniform1f(U.F, geo.F); gl.uniform1f(U.top, geo.top);
-  gl.uniform3f(U.sx, geo.sx[0], geo.sx[1], geo.sx[2]); gl.uniform3f(U.fl, flow[0], flow[1], flow[2]); gl.uniform1i(U.tex, 0); gl.uniform1i(U.hf, 1);
+  // only the part of the page in sight, and a little round it, is drawn
+  const pr = page.getBoundingClientRect(), a = Math.max(0, -pr.top - 300), b = Math.min(geo.H, -pr.top + innerHeight + 300), d = dpr;
+  if (b <= a) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height); gl.enable(gl.SCISSOR_TEST); gl.useProgram(shown);
+  gl.scissor(0, Math.max(0, Math.floor(canvas.height - b * d)), canvas.width, Math.ceil((b - a) * d));
+  const stirs = sim && sim.h;
+  if (stirs) { gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, sim.w.a.t); gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, sim.ink.a.t); }
+  gl.uniform2f(U.R, canvas.width, canvas.height); gl.uniform1f(U.T, t); gl.uniform1f(U.D, d); gl.uniform1f(U.S, geo.S * d); gl.uniform1f(U.F, geo.F * d); gl.uniform1f(U.top, geo.top * d);
+  gl.uniform1f(U.bed, geo.bed * d); gl.uniform1f(U.TH, geo.TH * d); gl.uniform1f(U.WH, geo.WH * d); gl.uniform1f(U.stirs, stirs ? 1 : 0); gl.uniform1f(U.lvl, lvl * d);
+  gl.uniform3f(U.th, thick[0] * d, thick[1] * d, thick[2] * d); gl.uniform3f(U.sx, geo.sx[0] * d, geo.sx[1] * d, geo.sx[2] * d); gl.uniform3f(U.fl, flow[0], flow[1], flow[2]);
+  gl.uniform1i(U.tex, 0); gl.uniform1i(U.hf, 1); gl.uniform1i(U.wf, 2); gl.uniform1i(U.dye, 5);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
-let glOK = false, seen = true, last = performance.now();
+let glOK = false, last = performance.now();
 try { if (gl) { setup(); glOK = true; document.documentElement.classList.add('gl'); } } catch (e) { console.warn('water', e); }
 if (!glOK) canvas.hidden = true;
-if (!glOK) hero.style.background = 'linear-gradient(#0d1a36 0 46%, #5468e0 46% 62%, #1a82d6 62% 78%, #0a1326 100%)';
 function frame(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now;
   meters(now);
-  if (glOK && seen) { ripple(dt); draw(now / 1000); }
+  if (glOK && !document.hidden) { step(dt); draw(now / 1000); }
   requestAnimationFrame(frame);
 }
-hero.addEventListener('pointermove', e => { const h = hero.getBoundingClientRect(); push(e.clientX - h.left, e.clientY - h.top); });
-hero.addEventListener('pointerleave', () => { ptr = null; });
-new IntersectionObserver(es => { seen = es[0].isIntersecting; }).observe(hero);
+page.addEventListener('pointermove', e => { const r = page.getBoundingClientRect(); push(e.clientX - r.left, e.clientY - r.top); });
+page.addEventListener('pointerleave', () => { ptr = null; });
 render(); rings();
 if (glOK) {
-  measure(); ripple(0); draw(0);
-  new ResizeObserver(() => { measure(); if (still) draw(0); }).observe(hero);
+  measure(); step(0); draw(0);
+  new ResizeObserver(() => { measure(); if (still) draw(0); }).observe(page);
   (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => { measure(); if (still) draw(0); });
 }
 if (!still) { request(); setInterval(request, 2300); requestAnimationFrame(frame); }
