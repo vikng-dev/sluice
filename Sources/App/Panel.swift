@@ -880,10 +880,11 @@ extension SluiceCore.Window {
     /// on a part of the account's use by the name its provider gave.
     var title: String { Self.title(named: name) }
 
-    static func title(named name: String) -> String {
+    /// Short, a window other than the week goes by its provider's name for it: "5h".
+    static func title(named name: String, short: Bool = false) -> String {
         guard let length = length(named: name) else { return name.capitalized }
         let minutes = Int(length / 60)
-        return minutes == 7 * 1440 ? "Week" : minutes % 1440 == 0 ? "\(minutes / 1440)-day" : minutes % 60 == 0 ? "\(minutes / 60)-hour" : "\(minutes)-minute"
+        return minutes == 7 * 1440 ? "Week" : short ? name : minutes % 1440 == 0 ? "\(minutes / 1440)-day" : minutes % 60 == 0 ? "\(minutes / 60)-hour" : "\(minutes)-minute"
     }
 }
 
@@ -893,7 +894,7 @@ extension Reset {
     func kind(for account: AccountStatus) -> String {
         let has = Set((account.windows + account.scoped).map(\.name))
         if !has.isEmpty, has.isSubset(of: refills) { return "Full" }
-        return ListFormatter.localizedString(byJoining: refills.map(SluiceCore.Window.title))
+        return refills.map { SluiceCore.Window.title(named: $0, short: true) }.joined(separator: " + ")
     }
 }
 
