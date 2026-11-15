@@ -33,7 +33,7 @@ script/release.sh
 ```
 
 It builds, signs with a Developer ID, notarizes, tags `v<version>` and publishes a GitHub release
-with the zipped app. `SIGN_IDENTITY` and `NOTARY_PROFILE` come from the environment or a
+with the zipped app, which Homebrew takes, and `Sluice.dmg`, which the site links to. `SIGN_IDENTITY` and `NOTARY_PROFILE` come from the environment or a
 git-ignored `.release.env`. With `TAP` set to a Homebrew tap's GitHub name (`owner/repo`), its
 `Casks/sluice.rb` is moved to the new version and pushed. Extra arguments go to `gh release create` (for example
 `--prerelease`).

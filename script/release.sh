@@ -1,5 +1,6 @@
 #!/bin/bash
-# Releases the version in Sources/Core/Version.swift: build, sign, notarize, tag, GitHub release.
+# Releases the version in Sources/Core/Version.swift: build, sign, notarize, tag, GitHub release
+# (the zip Homebrew takes, and Sluice.dmg for a download by hand).
 # Needs SIGN_IDENTITY (a "Developer ID Application: …" name) and NOTARY_PROFILE (a notarytool
 # keychain profile), from the environment or a git-ignored .release.env. With TAP (a Homebrew tap's
 # GitHub name, owner/repo), the cask there follows the release.
@@ -26,10 +27,12 @@ xcrun stapler staple dist/Sluice.app
 rm "$zip"
 ditto -c -k --keepParent dist/Sluice.app "$zip"
 spctl --assess --type execute dist/Sluice.app
+# the same name at every release, so that a link to the latest one's download holds
+script/dmg.sh dist/Sluice.app dist/Sluice.dmg
 
 git tag -m "Sluice $tag" "$tag"
 git push -q origin "$tag"
-gh release create "$tag" "$zip" --title "Sluice $tag" --generate-notes "$@"
+gh release create "$tag" "$zip" dist/Sluice.dmg --title "Sluice $tag" --generate-notes "$@"
 
 if [[ -n ${TAP:-} ]]; then
   tap=$(mktemp -d)

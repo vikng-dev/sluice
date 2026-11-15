@@ -61,6 +61,8 @@ h1 span.l { display: block; white-space: nowrap; }
 .install code { font-family: var(--mono); font-size: 13.5px; white-space: nowrap; overflow-x: auto; min-width: 0; }
 .install button { background: var(--cream); color: #0a1326; border: 0; border-radius: 8px; width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer; flex: none; transition: transform .12s; }
 .install button:active { transform: scale(.92); }
+.install .dl { color: var(--cream); border: 1px solid rgba(255, 255, 255, .22); border-radius: 8px; width: 32px; height: 32px; display: grid; place-items: center; flex: none; transition: background .15s, transform .12s; }
+.install .dl:hover { background: rgba(255, 255, 255, .1); } .install .dl:active { transform: scale(.92); }
 
 /* the panel, floating */
 .float { animation: bob 7s ease-in-out infinite; }
@@ -178,7 +180,7 @@ footer a:hover { color: var(--fg); }
           <span class="l" id="l2">One pool.</span>
         </h1>
         <p class="sub">Automatic, for your coding agents. <span class="with" title="Claude Code and Codex so far"><span class="pm claude" role="img" aria-label="Claude Code"></span><span class="pm codex" role="img" aria-label="Codex"></span></span></p>
-        <div class="install"><code id="cmd">brew install --cask vikng-dev/tap/sluice</code><button id="copy" type="button" aria-label="Copy the install command"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 2.5h-6a2 2 0 0 0-2 2v6"/></svg></button></div>
+        <div class="install"><code id="cmd">brew install --cask vikng-dev/tap/sluice</code><button id="copy" type="button" aria-label="Copy the install command"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 2.5h-6a2 2 0 0 0-2 2v6"/></svg></button><a class="dl" href="https://github.com/vikng-dev/sluice/releases/latest/download/Sluice.dmg" aria-label="Download Sluice for macOS" title="Download for macOS"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.500v7.500M4.800 7.200 8 10.400l3.200-3.200M2.800 13.300h10.400"/></svg></a></div>
       </div>
 
       <div class="float" id="float">
