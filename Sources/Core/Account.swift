@@ -193,11 +193,6 @@ public struct Config: Codable, Sendable, Equatable {
         return profiles.first { $0.value.owners.contains { $0.lowercased() == owner } }?.key ?? Self.defaultProfile
     }
 
-    /// A client's folder in a profile: its usual one in the default, and beside it `<usual>-<name>` in another.
-    public static func folder(_ usual: String, of profile: String) -> URL {
-        FileManager.default.homeDirectoryForCurrentUser.appending(path: profile == defaultProfile ? usual : "\(usual)-\(profile)")
-    }
-
     /// The profile an account belongs to.
     public func profile(ofAccount label: String) -> String {
         profiles.first { $0.value.accounts.contains(label) }?.key ?? Self.defaultProfile

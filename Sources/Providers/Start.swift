@@ -18,21 +18,20 @@ public func startSluice() async throws -> (server: Server, relay: Relay) {
     return (server, relay)
 }
 
-/// The clients that keep a folder per profile, which is what a stand-in chooses.
-private var standIns: [String] { providers.filter { $0.home(of: Config.defaultProfile) != nil }.map(\.client) }
+private var standIns: [String] { providers.map(\.client) }
 
 private func profiles() throws -> [String] { try Storage.live.config().names }
 
-/// Each client that keeps a folder per profile, and whom it is itself signed in as in `profile`.
+/// Each client, and whom it is itself signed in as in `profile`.
 public func identities(in profile: String) throws -> [Identity] {
-    try providers.filter { $0.home(of: profile) != nil }.map { Identity(provider: $0.id, client: $0.client, account: try $0.signedIn(in: profile)) }
+    try providers.map { Identity(provider: $0.id, client: $0.client, account: try $0.signedIn(in: profile)) }
 }
 
 /// The owners of the repositories the clients have worked in: what an owner claim could be about. A
 /// client's record that cannot be read offers none, and its sign-in line already says why.
 public func knownOwners() -> [String] {
     let folders = (try? profiles())?.flatMap { profile in
-        providers.filter { $0.home(of: profile) != nil }.flatMap { (try? $0.folders(in: profile)) ?? [] }
+        providers.flatMap { (try? $0.folders(in: profile)) ?? [] }
     }
     return Set((folders ?? []).compactMap(Repo.owner)).sorted()
 }

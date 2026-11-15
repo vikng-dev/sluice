@@ -14,13 +14,11 @@ func standIn(for provider: any Provider, _ arguments: [String]) -> Never {
         fail("no \(provider.client) on PATH besides this stand-in")
     }
     do {
-        let config = try Storage.live.config()
-        if let usual = provider.home(of: Config.defaultProfile) {
-            let folder = StandIns.home(
-                named: ProcessInfo.processInfo.environment[usual.variable], in: config.profile(for: FileManager.default.currentDirectoryPath), of: config.names
-            ) { provider.home(of: $0)!.folder }
-            if let folder { setenv(usual.variable, folder, 1) } else { unsetenv(usual.variable) }
-        }
+        let config = try Storage.live.config(), variable = provider.home.variable
+        let folder = StandIns.home(
+            named: ProcessInfo.processInfo.environment[variable], in: config.profile(for: FileManager.default.currentDirectoryPath), of: config.names, folder: provider.folder
+        )
+        if let folder { setenv(variable, folder, 1) } else { unsetenv(variable) }
     } catch {
         fail("\(error)")
     }

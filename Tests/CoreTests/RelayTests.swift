@@ -11,7 +11,7 @@ private struct Fake: Provider {
     let client = "fake"
     let name = "Fake"
     var formula: Formula? = nil
-    func home(of profile: String) -> (variable: String, folder: URL)? { nil }
+    let home = (variable: "FAKE_HOME", folder: ".fake")
     func signedIn(in profile: String) throws -> String? { nil }
     func folders(in profile: String) throws -> [String] { [] }
     func count(_ event: Data, into spend: inout Spend) {}

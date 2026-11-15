@@ -21,12 +21,10 @@ public struct Codex: Provider {
     public init() {}
 
     /// Codex keeps its sessions, memories, tool sign-ins and its own sign-in in one folder, so each profile has its own.
-    public func home(of profile: String) -> (variable: String, folder: URL)? {
-        ("CODEX_HOME", Config.folder(".codex", of: profile))
-    }
+    public let home = (variable: "CODEX_HOME", folder: ".codex")
 
     public func signedIn(in profile: String) throws -> String? {
-        let file = UserFile(home(of: profile)!.folder.appending(path: "auth.json"))
+        let file = UserFile(folder(of: profile).appending(path: "auth.json"))
         guard let data = try file.read() else { return nil }
         return try Self.account(inSignIn: data, path: file.path)
     }
@@ -54,7 +52,7 @@ public struct Codex: Provider {
 
     /// Codex's user config in a profile. A project's own config cannot name a provider.
     private func settings(of profile: String) -> UserFile {
-        UserFile(home(of: profile)!.folder.appending(path: "config.toml"))
+        UserFile(folder(of: profile).appending(path: "config.toml"))
     }
 
     public func route(_ on: Bool, profiles: [String]) throws {

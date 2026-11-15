@@ -9,14 +9,13 @@ public protocol Provider: Sendable {
     var name: String { get }
     /// The command that runs this provider's client, e.g. `claude`.
     var client: String { get }
-    /// Where the client keeps a profile, and the variable that tells it so; nil when it keeps one folder for all.
-    func home(of profile: String) -> (variable: String, folder: URL)?
+    /// The variable that tells the client where it keeps a profile, and its usual folder under home, e.g. `.claude`.
+    var home: (variable: String, folder: String) { get }
     /// The account the client is itself signed in as in a profile, as the client records it; nil when it is
     /// signed out there. What the client does outside the relay is this account's, whichever account serves
-    /// its requests. Asked only of a client that keeps a folder per profile.
+    /// its requests.
     func signedIn(in profile: String) throws -> String?
-    /// The folders the client has worked in in a profile, as the client records them. Asked only of a
-    /// client that keeps a folder per profile.
+    /// The folders the client has worked in in a profile, as the client records them.
     func folders(in profile: String) throws -> [String]
     /// Makes the provider's client talk to `address` in each profile, or to the provider again,
     /// by editing the client's own settings.
@@ -240,6 +239,11 @@ private extension Data {
 public extension Provider {
     /// Where this provider's client reaches Sluice.
     var address: String { "\(Sluice.address)/\(id)" }
+
+    /// Where its client keeps a profile: its usual folder in the default, and beside it `<usual>-<name>` in another.
+    func folder(of profile: String) -> URL {
+        FileManager.default.homeDirectoryForCurrentUser.appending(path: profile == Config.defaultProfile ? home.folder : "\(home.folder)-\(profile)")
+    }
 }
 
 /// A file of the user's that Sluice could not read or may not change.

@@ -29,13 +29,11 @@ public struct Claude: Provider {
 
     public init() {}
 
-    public func home(of profile: String) -> (variable: String, folder: URL)? {
-        ("CLAUDE_CONFIG_DIR", Config.folder(".claude", of: profile))
-    }
+    public let home = (variable: "CLAUDE_CONFIG_DIR", folder: ".claude")
 
     /// Claude Code keeps its state beside its usual folder, and inside any other.
     private func state(of profile: String) -> UserFile {
-        let folder = home(of: profile)!.folder
+        let folder = folder(of: profile)
         return UserFile((profile == Config.defaultProfile ? folder.deletingLastPathComponent() : folder).appending(path: ".claude.json"))
     }
 
@@ -65,7 +63,7 @@ public struct Claude: Provider {
     }
 
     private func settings(of profile: String) -> UserFile {
-        UserFile(home(of: profile)!.folder.appending(path: "settings.json"))
+        UserFile(folder(of: profile).appending(path: "settings.json"))
     }
 
     public func route(_ on: Bool, profiles: [String]) throws {
