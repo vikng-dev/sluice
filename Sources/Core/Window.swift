@@ -25,9 +25,12 @@ extension Date {
 
 public extension Date {
     /// A time to come, as a person reads it: the time when that is today, or the weekday and time.
-    var timeText: String {
-        settled.formatted(Calendar.current.isDateInToday(settled) ? Date.FormatStyle(date: .omitted, time: .shortened) : Date.FormatStyle().weekday(.abbreviated).hour().minute())
+    /// In short, the weekday alone; a time today has nothing shorter than itself.
+    func timeText(short: Bool = false) -> String {
+        let today = Calendar.current.isDateInToday(settled)
+        return settled.formatted(today ? Date.FormatStyle(date: .omitted, time: .shortened) : short ? Date.FormatStyle().weekday(.abbreviated) : Date.FormatStyle().weekday(.abbreviated).hour().minute())
     }
+    var timeText: String { timeText() }
 
     /// How long until it, in its largest units, two unless told one, and without a second that is nought:
     /// "4d 20h", "1d", "3h 5m", "12m"; in one, "4d".

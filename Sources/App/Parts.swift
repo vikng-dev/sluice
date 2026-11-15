@@ -247,20 +247,64 @@ struct Share: View {
     }
 }
 
-/// A time to come, read as the time left or as the time itself. A click on any of them turns them all.
+/// A time to come, read four ways: the time left, that in one unit, the time itself, its day alone.
+/// A click on any of them turns them all to the next, and each reading keeps the room its longest text needs.
 struct Clock: View {
     let at: Date
     let now: Date
-    @AppStorage("readsResetTimes") private var times = false
+    @AppStorage("resetReading") private var reading = Reading.left
+
+    enum Reading: Int, CaseIterable {
+        case left, leftShort, time, day
+
+        func text(_ at: Date, now: Date) -> String {
+            switch self {
+            case .left: at.leftText(now: now)
+            case .leftShort: at.leftText(now: now, units: 1)
+            case .time: at.timeText()
+            case .day: at.timeText(short: true)
+            }
+        }
+
+        var next: Reading { Self.allCases[(rawValue + 1) % Self.allCases.count] }
+
+        var tip: String {
+            switch self {
+            case .left: "Resets in this long"
+            case .leftShort: "Resets in about this long"
+            case .time: "Resets then"
+            case .day: "Resets that day"
+            }
+        }
+
+        /// The longest this reading gets: digits are all one width, so it is the letters and the count of digits that tell.
+        /// The times are tried at a two-digit hour on each day of a week to come, and at one today.
+        @MainActor var width: Double {
+            if let known = Self.widths[self] { return known }
+            let now = Date(), calendar = Calendar.current
+            let late = calendar.date(bySettingHour: 22, minute: 48, second: 0, of: now) ?? now
+            let samples: [String] = switch self {
+            case .left: ["28d 23h", "23h 59m"]
+            case .leftShort: ["28d", "23h", "59m"]
+            case .time, .day: (0...7).map { text(late.addingTimeInterval(Double($0) * 86400), now: now) }
+            }
+            let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize, weight: .regular)
+            let width = (samples.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0).rounded(.up) + 1
+            Self.widths[self] = width
+            return width
+        }
+        @MainActor private static var widths: [Reading: Double] = [:]
+    }
 
     var body: some View {
-        let text = times ? at.timeText : at.leftText(now: now)
+        let text = reading.text(at, now: now)
         Text(text)
-            .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+            .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1).fixedSize()
             .contentTransition(.numericText())
             .moves(.smooth(duration: 0.3), with: text)
+            .frame(width: reading.width, alignment: .trailing)
             .contentShape(Rectangle())
-            .onTapGesture { times.toggle() }
-            .help(times ? "Resets then. Click for the time left" : "Resets in this long. Click for the time")
+            .onTapGesture { withAnimation(.smooth(duration: 0.3)) { reading = reading.next } }
+            .help("\(reading.tip). Click for another reading")
     }
 }

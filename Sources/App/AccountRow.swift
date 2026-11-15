@@ -112,9 +112,8 @@ struct AccountRow: View {
 
     /// The room left of every row, under the provider's mark, where the handle shows.
     static let gutter: Double = 20
-    /// The room for a share and for a clock, so that they line up down the rows.
+    /// The room for a share, so that they line up down the rows; a clock keeps its own.
     static let share: Double = 34
-    static let clock: Double = 52
 
 
     /// Open, the row lists every limit the account has and the resets it holds.
@@ -234,7 +233,7 @@ struct AccountRow: View {
                         .onTapGesture(perform: open)
                         .help(!opens ? "" : opened ? "Click for the one that stops it next" : "Click for every limit it has")
                         Share(used: limit.used).frame(width: Self.share, alignment: .trailing)
-                        Clock(at: limit.resetsAt, now: now).frame(width: Self.clock, alignment: .trailing)
+                        Clock(at: limit.resetsAt, now: now)
                     }
                     .fadesIn(limit.name != tightest?.name)
                 }

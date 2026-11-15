@@ -333,6 +333,11 @@ import Testing
         #expect(left(12 * 60) == "12m")
         #expect((now + 122 * 86400 + 19 * 3600).leftText(now: now, units: 1) == "122d")
         #expect((now + 19 * 3600 + 40 * 60).leftText(now: now, units: 1) == "19h")
+        // in short, a day to come is its weekday alone, and a time today stays the time
+        let noon = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date())!
+        #expect(noon.timeText(short: true) == noon.timeText())
+        #expect((noon + 3 * 86400).timeText().hasPrefix((noon + 3 * 86400).timeText(short: true)))
+        #expect((noon + 3 * 86400).timeText(short: true).count < (noon + 3 * 86400).timeText().count)
         // A reset that has just passed is not time owed.
         #expect(left(-90) == "0m")
     }
