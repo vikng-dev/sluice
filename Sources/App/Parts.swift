@@ -26,12 +26,13 @@ struct Tips: PreferenceKey {
 }
 
 private struct Tipped<Said: View>: ViewModifier {
+    let washed: Bool
     let said: () -> Said
     @State private var at: CGPoint?
 
     func body(content: Content) -> some View {
         content
-            .overlay { if at != nil { RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.1)) } }
+            .overlay { if washed, at != nil { RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.1)) } }
             .contentShape(Rectangle())
             .onContinuousHover(coordinateSpace: .named(Frames.space)) { if case .active(let point) = $0 { at = point } else { at = nil } }
             .preference(key: Tips.self, value: at.map { Tip(at: $0, view: AnyView(VStack(alignment: .leading, spacing: 3) { said() })) })
@@ -39,8 +40,9 @@ private struct Tipped<Said: View>: ViewModifier {
 }
 
 extension View {
-    /// Says more beside the pointer for as long as the pointer is on this view, which is washed meanwhile.
-    func tip<Said: View>(@ViewBuilder _ said: @escaping () -> Said) -> some View { modifier(Tipped(said: said)) }
+    /// Says more beside the pointer for as long as the pointer is on this view, which is washed meanwhile
+    /// unless it has a shape of its own to keep.
+    func tip<Said: View>(washed: Bool = true, @ViewBuilder _ said: @escaping () -> Said) -> some View { modifier(Tipped(washed: washed, said: said)) }
 }
 
 /// What a tip reads: what it is about, then its figure and what the figure is.

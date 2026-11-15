@@ -67,7 +67,10 @@ private struct LineCard: View {
         .background(Color.primary.opacity(said ? 0.12 : 0), in: Capsule())
         .overlay { if !said { Capsule().strokeBorder(Color.primary.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [3, 2])) } }
         .contentShape(Capsule())
-        .help(item.about.says)
+        .tip(washed: false) {
+            Text(item.about.says).font(.caption)
+            Text(said ? "Click to take it off, drag to move it" : "Click to add it").font(.caption2).foregroundStyle(.secondary)
+        }
     }
 
     var body: some View {

@@ -69,13 +69,13 @@ func terminalText(_ line: [[StatusLine.Run]]) -> String {
 extension StatusLine.Item {
     var about: (title: String, says: String) {
         switch self {
-        case .profile: ("Profile", "its name and color")
-        case .bar: ("Bar", "the pool's share as a bar")
-        case .share: ("Share", "how much of the pool is used")
-        case .reset: ("Reset", "until any of it comes back")
-        case .dry: ("Dry", "when it runs out, if it would")
-        case .account: ("Account", "the one that answered last")
-        case .today: ("Today", "today's use against the pace")
+        case .profile: ("Profile", "The profile's name, after a dot in its color")
+        case .bar: ("Bar", "How much of the pool is used, as a bar")
+        case .share: ("Share", "How much of the pool is used, as a number")
+        case .reset: ("Reset", "How long until any of the pool comes back")
+        case .dry: ("Dry", "When the pool runs out at the rate it is going; nothing while it lasts")
+        case .account: ("Account", "The account that answered last")
+        case .today: ("Today", "Today's use, against the pace that uses the pool up in a week")
         }
     }
 }
