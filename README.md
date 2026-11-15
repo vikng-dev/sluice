@@ -39,10 +39,12 @@ Each profile's accounts sit on a card under its name, a pool per provider.
 - **The first line** holds the two views, the bolt and **⋯**. The bolt has Sluice use resets for
   you, as [How an account is picked](#how-an-account-is-picked) says. **⋯** holds the version,
   **Stop routing** and **Quit**.
-- **The second view** is the last week of use. Each profile is one chart with a line for every
-  account's week; under it, for each pool, how much of it goes per hour and whether at that rate it
-  lasts or when it runs dry. Under the profiles, the tokens of each hour and where they went by
-  folder and by model.
+- **The second view** is the last seven days of use. Each pool has a bar for every day: how much of
+  the pool that day used, in the colors of the accounts that gave it, against a dashed line at the
+  pace that uses the pool up in a week. Over the bars is how much went in the last 24 hours, and
+  when the pool runs dry at that rate if it does. Under the profiles, the tokens of each hour and
+  where they went by folder and by model. Whatever the pointer is on says more beside it: a day's
+  share by account, an hour's tokens, a folder's path and share.
 
 The panel also says when the clients are not going through Sluice. `sluice status` prints the same accounts.
 

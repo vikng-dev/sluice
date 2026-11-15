@@ -96,7 +96,14 @@ struct Panel: View {
                     }
                 }
                 .moves(.snappy(duration: 0.2), with: showsUse)
-                if showsUse { Text("Last 7 days").font(.caption.weight(.semibold)).foregroundStyle(.tertiary).frame(height: 16) }
+                if showsUse {
+                    HStack(spacing: 5) {
+                        Text("Last 7 days").fontWeight(.semibold)
+                        Pace().frame(width: 14).padding(.leading, 6)
+                        Text("pace \(Int((Forecast.pace * 100).rounded()))%/day")
+                    }
+                    .font(.caption).foregroundStyle(.tertiary).frame(height: 16)
+                }
                 Spacer()
                 Button { running.autoReset(!autoResets) } label: {
                     Image(systemName: autoResets ? "bolt.fill" : "bolt").font(.caption).contentTransition(.symbolEffect(.replace))
@@ -153,7 +160,7 @@ struct Panel: View {
             }
         }
         .padding(10)
-        .frame(width: 392)
+        .frame(width: Self.width)
         .contentShape(Rectangle())
         .onTapGesture { armed = nil }
         .environment(\.armed, $armed)
@@ -181,7 +188,27 @@ struct Panel: View {
                     .allowsHitTesting(false)
             }
         }
+        // What the view under the pointer says more of, beside the pointer: over it, or under it where
+        // there is no room over, and as far along itself as the pointer is along the panel.
+        .overlayPreferenceValue(Tips.self) { tip in
+            ZStack(alignment: .topLeading) {
+                Color.clear
+                if let tip {
+                    tip.view
+                        .padding(.horizontal, 8).padding(.vertical, 6)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
+                        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.primary.opacity(0.12)))
+                        .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+                        .fixedSize()
+                        .alignmentGuide(.leading) { $0.width * tip.at.x / Self.width - tip.at.x }
+                        .alignmentGuide(.top) { tip.at.y - 12 - $0.height < 0 ? -tip.at.y - 20 : $0.height + 12 - tip.at.y }
+                }
+            }
+            .allowsHitTesting(false)
+        }
     }
+
+    static let width = 392.0
 }
 
 /// An account lifted by its handle, on its way to another profile.

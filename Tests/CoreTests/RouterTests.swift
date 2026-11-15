@@ -318,6 +318,9 @@ import Testing
         // Two points, then three in a new window: five in four hours, on the half of the pool this account is.
         let burn = Forecast.burn([(samples, 1), ([], 1)], from: start, to: start + 4 * 3600)
         #expect(abs((burn ?? 0) - 0.05 / 2 / 4) < 1e-9)
+        // A window refilled before its time counts from where it fell to.
+        let refilled = [sample(0, 0.60, reset), sample(1, 0.10, reset), sample(2, 0.13, reset)]
+        #expect(Forecast.rises(refilled).map(\.at) == [start + 2 * 3600])
         #expect(Forecast.burn([(samples, 1)], from: start, to: start + 600) == nil)
     }
 

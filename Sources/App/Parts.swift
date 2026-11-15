@@ -13,6 +13,64 @@ extension View {
     }
 }
 
+/// What floats beside the pointer, which is at `at` in the panel's space.
+struct Tip {
+    let at: CGPoint
+    let view: AnyView
+}
+
+/// The tip of the view the pointer is on, for the panel to float.
+struct Tips: PreferenceKey {
+    static var defaultValue: Tip? { nil }
+    static func reduce(value: inout Tip?, nextValue: () -> Tip?) { value = nextValue() ?? value }
+}
+
+private struct Tipped<Said: View>: ViewModifier {
+    let said: () -> Said
+    @State private var at: CGPoint?
+
+    func body(content: Content) -> some View {
+        content
+            .overlay { if at != nil { RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.1)) } }
+            .contentShape(Rectangle())
+            .onContinuousHover(coordinateSpace: .named(Frames.space)) { if case .active(let point) = $0 { at = point } else { at = nil } }
+            .preference(key: Tips.self, value: at.map { Tip(at: $0, view: AnyView(VStack(alignment: .leading, spacing: 3) { said() })) })
+    }
+}
+
+extension View {
+    /// Says more beside the pointer for as long as the pointer is on this view, which is washed meanwhile.
+    func tip<Said: View>(@ViewBuilder _ said: @escaping () -> Said) -> some View { modifier(Tipped(said: said)) }
+}
+
+/// What a tip reads: what it is about, then its figure and what the figure is.
+struct Readout: View {
+    let about: String
+    let figure: String
+    let unit: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if !about.isEmpty { Text(about).font(.caption2).foregroundStyle(.secondary) }
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(figure).font(.callout.weight(.semibold).monospacedDigit())
+                Text(unit).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// The pace that uses a pool up in a week, as a line across what it is laid over.
+struct Pace: View {
+    private struct Level: Shape {
+        func path(in rect: CGRect) -> Path {
+            Path { $0.move(to: CGPoint(x: rect.minX, y: rect.midY)); $0.addLine(to: CGPoint(x: rect.maxX, y: rect.midY)) }
+        }
+    }
+
+    var body: some View { Level().stroke(Color.primary.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3, 3])).frame(height: 1) }
+}
+
 /// A profile's color as a dot, grey for a profile without one.
 struct Dot: View {
     let tint: Tint?

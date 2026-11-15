@@ -21,11 +21,14 @@ public enum Forecast {
     /// A budget window is taken to be a week long.
     static let week: TimeInterval = 7 * 86400
 
-    /// How much an account's budget window rose over its samples, in order of time. A fall within one
-    /// window is the provider rounding, not use given back, so only a new high counts; a new window
-    /// counts from nothing.
-    static func rise(_ samples: [Sample]) -> Double {
-        var rise = 0.0, high = 0.0, reset: Date?
+    /// A pool used evenly is used up as its weeks end: this much of it a day.
+    public static let pace = 86400 / week
+
+    /// Each rise of an account's budget window over its samples, in order of time, with when it was read.
+    /// A small fall within one window is the provider rounding, not use given back, so only a new high
+    /// counts; a new window counts from nothing, and one that fell further was refilled and counts from there.
+    public static func rises(_ samples: [Sample]) -> [(at: Date, by: Double)] {
+        var rises: [(at: Date, by: Double)] = [], high = 0.0, reset: Date?
         for (index, sample) in samples.enumerated() {
             guard let budget = sample.windows.budget else { continue }
             if budget.resetsAt != reset {
@@ -33,12 +36,13 @@ public enum Forecast {
                 // What was used before the first sample was not used in this time.
                 high = index == 0 ? budget.used : 0
             }
+            if budget.used < high - 0.02 { high = budget.used }
             if budget.used > high {
-                rise += budget.used - high
+                rises.append((sample.at, budget.used - high))
                 high = budget.used
             }
         }
-        return rise
+        return rises
     }
 
     /// The share of a pool used per hour between `start` and `now`: each account's samples from that
@@ -48,7 +52,7 @@ public enum Forecast {
         guard let first = accounts.compactMap(\.samples.first?.at).min(), total > 0 else { return nil }
         let hours = now.timeIntervalSince(max(first, start)) / 3600
         guard hours >= 0.5 else { return nil }
-        return accounts.map { rise($0.samples) * $0.size }.reduce(0, +) / total / hours
+        return accounts.map { rises($0.samples).map(\.by).reduce(0, +) * $0.size }.reduce(0, +) / total / hours
     }
 
     /// When a pool used at `burn` (its share per hour) has nothing left, or nil when it lasts the week.
