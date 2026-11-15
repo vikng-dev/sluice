@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sluice</title>
+<meta name="description" content="Many accounts, one pool. A macOS menu bar app that pools your Claude and ChatGPT subscriptions for Claude Code and Codex, automatically.">
+<meta property="og:title" content="Sluice">
+<meta property="og:description" content="Many accounts. One pool. Automatic.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* One live thing: the hero's water, drawn by a shader, with the headline standing in it. Everything else is quiet. */
+:root {
+  --navy: #0a1326; --deep: #0d1a36; --fg: #f3f6fc; --muted: #9fb0cf; --line: #213057; --cream: #fff4de;
+  --violet: #7389ff; --blue: #1f9cf0; --teal: #35dcd6; --warn: #ffab3d; --crit: #ff5d5d; --ok: #3ddc84;
+  --panel: rgba(24, 30, 46, .92); --card: #272e42; --pfg: #eef1f7; --pmuted: #9aa3b8; --track: #3a4258;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { background: var(--navy); }
+body { margin: 0; background: var(--navy); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.5; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; }
+:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; border-radius: 6px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
+
+.hero { position: relative; min-height: clamp(700px, 100svh, 920px); display: flex; flex-direction: column; }
+#water { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hero > .wrap { position: relative; z-index: 1; width: 100%; flex: 1; display: flex; flex-direction: column; }
+header { display: flex; align-items: center; justify-content: space-between; padding-block: 20px; }
+.mark { display: flex; align-items: center; gap: 9px; font-family: var(--display); font-weight: 700; font-size: 19px; }
+.mark img { width: 26px; height: 26px; display: block; }
+.gh { display: flex; opacity: .75; transition: opacity .15s; }
+.gh:hover { opacity: 1; }
+.stage > * { min-width: 0; }
+.stage { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 400px); gap: 48px; align-items: center; padding-block: 12px 56px; }
+h1 { margin: 0; font-family: var(--display); font-weight: 700; font-size: clamp(42px, 6vw, 86px); line-height: 1; letter-spacing: 0; display: flex; flex-direction: column; }
+h1 span.l { display: block; white-space: nowrap; }
+/* With the shader running the headline is drawn in the water; these keep its place and stay selectable. */
+.gl h1 span.l { color: transparent; }
+.sources { display: flex; gap: clamp(26px, 5vw, 64px); margin: clamp(18px, 2.4vw, 30px) 0 clamp(64px, 9vw, 120px) clamp(8px, 2vw, 28px); }
+.src { position: relative; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(10, 19, 38, .7); }
+.src svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+.src circle { fill: none; stroke-width: 3; }
+.src .tr { stroke: var(--track); }
+.src .fill { stroke: var(--teal); stroke-linecap: round; stroke-dasharray: 125.7; transition: stroke-dashoffset .5s, stroke .3s; }
+.src.live { box-shadow: 0 0 0 5px rgba(53, 220, 214, .14); }
+.pm { display: inline-block; width: 1em; height: 1em; background: currentColor; -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; flex: none; }
+.pm.claude { --m: url(claude.svg); } .pm.codex { --m: url(codex.svg); }
+.src .pm { font-size: 20px; color: var(--cream); }
+.sub { max-width: 100%; margin: clamp(14px, 2vw, 24px) 0 22px; font-size: clamp(17px, 1.6vw, 20px); font-weight: 500; color: var(--fg); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.sub .pm { font-size: 18px; }
+.sub i { font-style: normal; opacity: .6; }
+.install { display: inline-flex; align-items: center; gap: 10px; max-width: 100%; background: rgba(8, 15, 32, .72); border: 1px solid rgba(255, 255, 255, .14); border-radius: 12px; padding: 10px 10px 10px 16px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.install code { font-family: var(--mono); font-size: 13.5px; white-space: nowrap; overflow-x: auto; min-width: 0; }
+.install button { background: var(--cream); color: #0a1326; border: 0; border-radius: 8px; width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer; flex: none; transition: transform .12s; }
+.install button:active { transform: scale(.92); }
+
+/* the panel, floating */
+.float { animation: bob 7s ease-in-out infinite; }
+@keyframes bob { 0%, 100% { transform: translateY(0) rotate(-.3deg); } 50% { transform: translateY(-9px) rotate(.3deg); } }
+.menubar { display: flex; justify-content: flex-end; align-items: center; gap: 12px; height: 26px; padding: 0 12px; background: rgba(38, 44, 62, .92); border-radius: 9px 9px 0 0; font-size: 12px; color: var(--pfg); font-variant-numeric: tabular-nums; }
+.menubar .counter { display: flex; align-items: center; gap: 5px; font-weight: 600; }
+.menubar .counter b { width: 3px; height: 12px; border-radius: 2px; background: var(--violet); display: block; }
+.panel { position: relative; background: var(--panel); color: var(--pfg); border-radius: 0 0 14px 14px; padding: 10px; font-size: 13px; box-shadow: 0 30px 70px rgba(0, 0, 0, .45); display: flex; flex-direction: column; gap: 8px; min-height: 438px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.views { display: flex; gap: 2px; }
+.views button { background: none; border: 0; color: var(--pmuted); padding: 5px 9px; border-radius: 7px; cursor: pointer; display: flex; }
+.views button[aria-pressed="true"] { background: var(--card); color: var(--pfg); }
+#view { display: flex; flex-direction: column; gap: 8px; }
+.card { background: var(--card); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 9px; }
+.pname { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.pool-h { display: flex; justify-content: space-between; align-items: center; color: var(--pmuted); font-size: 12px; margin-top: 2px; }
+.pool-h span { display: flex; align-items: center; gap: 5px; }
+.pool-h b { color: var(--pfg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.acct { display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 8px; row-gap: 3px; align-items: center; }
+.who { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
+.who span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan { color: var(--pmuted); font-size: 11.5px; flex: none; }
+.use { grid-column: 2; display: grid; grid-template-columns: minmax(0, 1fr) 38px 44px; gap: 8px; align-items: center; font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--pmuted); }
+.track { height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.track i { display: block; height: 100%; border-radius: 3px; background: var(--blue); transition: width .5s, background .3s; }
+.use .pct { text-align: right; color: var(--pfg); }
+.use .left { text-align: right; }
+.meter { display: flex; align-items: flex-end; gap: 2px; height: 11px; grid-row: span 2; align-self: center; }
+.meter i { width: 3px; height: 2px; border-radius: 1px; background: var(--ok); display: block; opacity: 0; }
+.meter.on i { opacity: 1; }
+.days { display: flex; align-items: flex-end; gap: 6px; height: 64px; position: relative; }
+.days .pace { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--pmuted); opacity: .7; }
+.day { flex: 1; display: flex; flex-direction: column-reverse; border-radius: 3px; overflow: hidden; }
+.day i { display: block; }
+.dlabels { display: flex; gap: 6px; font-size: 10.5px; color: var(--pmuted); }
+.dlabels span { flex: 1; text-align: center; }
+.strip { font-family: var(--mono); font-size: 11.5px; background: #10141d; color: #e8ebf2; border-radius: 6px; padding: 8px 10px; white-space: nowrap; overflow: hidden; min-height: 34px; }
+.strip .d { color: #7d8698; } .strip .f { color: var(--blue); } .strip .w { color: var(--warn); } .strip .g { color: #4b5366; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; font-weight: 500; color: var(--pmuted); background: none; border: 1px dashed var(--track); border-radius: 99px; padding: 3px 9px; cursor: pointer; }
+.chip[aria-pressed="true"] { color: var(--pfg); background: var(--track); border-style: solid; border-color: transparent; }
+.set { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sw { width: 30px; height: 18px; border-radius: 99px; border: 0; background: var(--track); position: relative; cursor: pointer; flex: none; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.sw[aria-pressed="true"] { background: var(--blue); }
+.sw[aria-pressed="true"]::after { transform: translateX(12px); }
+.tip { position: absolute; z-index: 5; background: var(--card); color: var(--pfg); border: 1px solid var(--track); border-radius: 8px; padding: 6px 9px; font-size: 12px; pointer-events: none; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); white-space: nowrap; }
+
+/* under the water: three things it does, shown */
+.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding-block: 72px 28px; }
+.tile { border: 1px solid var(--line); border-radius: 18px; padding: 22px; display: flex; flex-direction: column; gap: 18px; background: var(--deep); transition: transform .2s, border-color .2s; }
+.tile:hover { transform: translateY(-3px); border-color: #34487c; }
+.tile h2 { margin: 0; font-family: var(--display); font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+.tile h2 svg { color: var(--teal); flex: none; }
+.render { height: 92px; border-radius: 12px; background: var(--navy); display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 0 16px; font-size: 12px; overflow: hidden; }
+.r-row { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 9px; align-items: center; color: var(--muted); }
+.r-row .track i { width: 0; }
+.swap .a i { animation: fillA 6s linear infinite; } .swap .b i { animation: fillB 6s linear infinite; }
+.swap .a .pm { animation: dimA 6s linear infinite; } .swap .b .pm { animation: dimB 6s linear infinite; }
+@keyframes fillA { 0% { width: 55%; background: var(--blue); } 40% { width: 100%; background: var(--blue); } 45%, 100% { width: 100%; background: var(--warn); } }
+@keyframes fillB { 0%, 45% { width: 12%; } 100% { width: 58%; } }
+@keyframes dimA { 0%, 42% { color: var(--teal); } 47%, 100% { color: var(--muted); } }
+@keyframes dimB { 0%, 42% { color: var(--muted); } 47%, 100% { color: var(--teal); } }
+.folders { flex-direction: row; align-items: center; justify-content: space-around; padding: 0 10px; }
+.fold { display: flex; flex-direction: column; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.fold svg { display: block; }
+.render .strip { background: none; padding: 0; min-height: 0; font-size: 12.5px; }
+.caret { display: inline-block; width: 7px; height: 14px; background: var(--fg); vertical-align: -2px; animation: blink 1.1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.prompt { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+
+.scope { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 34px; padding-block: 36px 30px; color: var(--muted); font-size: 14px; }
+.scope span, .scope a { display: flex; align-items: center; gap: 8px; }
+.scope a { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
+.scope a:hover { color: var(--fg); }
+footer { display: flex; justify-content: center; gap: 22px; color: var(--muted); font-size: 13px; padding-block: 18px 44px; border-top: 1px solid var(--line); }
+footer a:hover { color: var(--fg); }
+
+@media (max-width: 900px) {
+  .stage { grid-template-columns: 1fr; gap: 44px; padding-bottom: 64px; }
+  .float { max-width: 400px; width: 100%; margin: 0 auto; }
+  .three { grid-template-columns: 1fr; padding-top: 48px; }
+}
+@media (prefers-reduced-motion: reduce) { .float, .swap i, .swap .pm, .caret { animation: none; } .swap .a i { width: 100%; background: var(--warn); } .swap .b i { width: 40%; } .track i, .sw::after, .tile { transition: none; } }
+</style>
+</head>
+<body>
+
+<section class="hero" id="hero">
+  <canvas id="water" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <header>
+      <a class="mark" href="/"><img src="icon.svg" alt="">Sluice</a>
+      <a class="gh" href="https://github.com/vikng-dev/sluice" aria-label="Sluice on GitHub"><svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
+    </header>
+
+    <div class="stage">
+      <div>
+        <h1>
+          <span class="l" id="l1">Many accounts.</span>
+          <span class="sources" id="sources" aria-hidden="true"></span>
+          <span class="l" id="l2">One pool.</span>
+        </h1>
+        <p class="sub">Automatic, for <span class="pm claude"></span>Claude Code <i>and</i> <span class="pm codex"></span>Codex.</p>
+        <div class="install"><code id="cmd">brew install --cask vikng-dev/tap/sluice</code><button id="copy" type="button" aria-label="Copy the install command"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 2.5h-6a2 2 0 0 0-2 2v6"/></svg></button></div>
+      </div>
+
+      <div class="float" id="float">
+        <div class="menubar"><span class="counter"><b></b><span id="mb">62%</span></span><svg width="14" height="14" viewBox="132 132 760 760" aria-hidden="true"><clipPath id="gl"><rect x="200" y="200" width="624" height="624" rx="140"/></clipPath><path clip-path="url(#gl)" fill="currentColor" d="M176 520 C288 450 400 590 512 520 C624 450 736 590 848 520 V848 H176 Z"/><rect x="176" y="176" width="672" height="672" rx="170" fill="none" stroke="currentColor" stroke-width="72"/></svg></div>
+        <div class="panel" id="panel">
+          <div class="views" role="group" aria-label="Panel view">
+            <button type="button" data-v="accounts" aria-pressed="true" aria-label="Accounts"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="14" height="3" rx="1.5"/><rect x="1" y="6.5" width="14" height="3" rx="1.5"/><rect x="1" y="11" width="14" height="3" rx="1.5"/></svg></button>
+            <button type="button" data-v="use" aria-pressed="false" aria-label="Use over time"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><rect x="1.5" y="8" width="3" height="6" rx="1"/><rect x="6.5" y="3" width="3" height="11" rx="1"/><rect x="11.5" y="6" width="3" height="8" rx="1"/></svg></button>
+            <button type="button" data-v="settings" aria-pressed="false" aria-label="Settings"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4.5h7M12.5 4.5H14M2 11.5h1.5M7 11.5h7"/><circle cx="10.7" cy="4.5" r="1.8"/><circle cx="5.2" cy="11.5" r="1.8"/></svg></button>
+          </div>
+          <div id="view"></div>
+          <div class="tip" id="tip" hidden></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <section class="three">
+    <div class="tile">
+      <h2><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11l-3-3M20 17H9l3 3"/></svg>Never runs dry</h2>
+      <div class="render swap" aria-hidden="true">
+        <div class="r-row a"><span class="pm claude"></span><div class="track"><i></i></div></div>
+        <div class="r-row b"><span class="pm claude"></span><div class="track"><i></i></div></div>
+      </div>
+    </div>
+    <div class="tile">
+      <h2><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>A pool per project</h2>
+      <div class="render folders" aria-hidden="true">
+        <div class="fold"><svg width="34" height="28" viewBox="0 0 24 20"><path fill="#7389ff" d="M1 4a2 2 0 0 1 2-2h5l2 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2Z"/></svg>~/work</div>
+        <div class="fold"><svg width="34" height="28" viewBox="0 0 24 20"><path fill="#35dcd6" d="M1 4a2 2 0 0 1 2-2h5l2 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2Z"/></svg>~/home</div>
+        <div class="fold"><svg width="34" height="28" viewBox="0 0 24 20"><path fill="#ffab3d" d="M1 4a2 2 0 0 1 2-2h5l2 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2Z"/></svg>acme/*</div>
+      </div>
+    </div>
+    <div class="tile">
+      <h2><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 4 4-4 4M12 17h7"/></svg>In your prompt</h2>
+      <div class="render" aria-hidden="true">
+        <div class="prompt">&gt; <span class="caret"></span></div>
+        <div class="strip" id="strip2"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="scope">
+    <span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Your own accounts</span>
+    <span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m7 10 3 2.5L7 15"/></svg>The providers' own clients</span>
+    <span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3 4 6v6c0 4.5 3.2 7.6 8 9 4.800-1.4 8-4.500 8-9V6Z"/></svg>Stays on your Mac</span>
+    <a href="https://github.com/vikng-dev/sluice/blob/main/docs/terms.md"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.500v.01"/></svg>Not endorsed by Anthropic or OpenAI</a>
+  </section>
+  <footer><a href="https://github.com/vikng-dev/sluice/tree/main/docs">Docs</a><a href="https://github.com/vikng-dev/sluice">GitHub</a><span>MIT</span></footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const pct = x => Math.round(x * 100) + '%';
+const left = h => h >= 24 ? Math.floor(h / 24) + 'd ' + Math.round(h % 24) + 'h' : Math.round(h) + 'h';
+const pm = p => '<span class="pm ' + (p === 'Claude' ? 'claude' : 'codex') + '"></span>';
+
+/* The pools. Invented accounts; requests arrive on their own and go to the unspent account that resets soonest. */
+const profiles = [
+  { name: 'work', color: 'var(--violet)', pools: [
+    { provider: 'Claude', accounts: [
+      { who: 'ada@work.example', plan: 'Max 20×', size: 20, used: .78, left: 28, tint: 'var(--blue)', busy: 0, last: 0 },
+      { who: 'spare@work.example', plan: 'Max 5×', size: 5, used: .22, left: 96, tint: 'var(--teal)', busy: 0, last: 0 } ] },
+    { provider: 'ChatGPT', accounts: [ { who: 'ada@work.example', plan: 'Pro', size: 4, used: .41, left: 70, tint: 'var(--blue)', busy: 0, last: 0 } ] } ] },
+  { name: 'home', color: 'var(--teal)', pools: [
+    { provider: 'Claude', accounts: [ { who: 'me@home.example', plan: 'Pro', size: 1, used: .52, left: 9, tint: 'var(--blue)', busy: 0, last: 0 } ] } ] } ];
+const feeds = [profiles[0].pools[0].accounts[0], profiles[0].pools[0].accounts[1], profiles[0].pools[1].accounts[0]];
+const feedMark = ['Claude', 'Claude', 'ChatGPT'];
+const state = { view: 'accounts', line: ['profile', 'bar', 'share', 'reset'], lineOn: true, routed: true, resets: false };
+const items = ['profile', 'bar', 'share', 'reset', 'dry', 'account', 'today'];
+const about = { profile: 'The profile', bar: 'The pool, as a bar', share: 'How much is used', reset: 'Time until it refills', dry: 'When it runs out', account: 'Who answered last', today: "Today against the week's pace" };
+const share = pool => pool.accounts.reduce((s, a) => s + a.size * Math.min(a.used, 1), 0) / pool.accounts.reduce((s, a) => s + a.size, 0);
+const view = $('#view'), tip = $('#tip'), panel = $('#panel');
+
+function line() {
+  const pool = profiles[0].pools[0], u = share(pool), fill = Math.round(u * 8);
+  const part = { profile: '<span style="color:var(--violet)">●</span> work', bar: '<span class="f">' + '━'.repeat(fill) + '</span><span class="g">' + '━'.repeat(8 - fill) + '</span>', share: pct(u),
+    reset: '<span class="d">1d 4h</span>', dry: '<span class="w">dry</span> <span class="d">2d</span>', account: '<span class="d">' + pool.accounts.slice().sort((a, b) => b.last - a.last)[0].who + '</span>', today: '<span class="d">today</span> 9% <span class="d">of 14%</span>' };
+  const out = [];
+  state.line.forEach((it, i) => { const prev = state.line[i - 1]; if ((it === 'share' && prev === 'bar') || (it === 'bar' && prev === 'share')) out[out.length - 1] += ' ' + part[it]; else out.push(part[it]); });
+  return out.join(' <span class="d">|</span> ');
+}
+function accountsView() {
+  return profiles.map(p => '<div class="card"><div class="pname"><span class="dot" style="background:' + p.color + '"></span>' + p.name + '</div>' + p.pools.map((pool, pi) =>
+    '<div class="pool-h"><span>' + pm(pool.provider) + pool.provider + '</span><b>' + pct(share(pool)) + '</b></div>' + pool.accounts.map((a, ai) =>
+      '<div class="acct"><div class="meter" data-m="' + p.name + pi + ai + '"><i></i><i></i><i></i></div><div class="who"><span>' + a.who + '</span><span class="plan">' + a.plan + '</span></div>' +
+      '<div class="use"><div class="track"><i style="width:' + Math.min(a.used, 1) * 100 + '%;background:' + (a.used >= 1 ? 'var(--crit)' : a.used >= .85 ? 'var(--warn)' : 'var(--blue)') + '"></i></div><span class="pct">' + pct(a.used) + '</span><span class="left">' + left(a.left) + '</span></div></div>').join('')).join('') + '</div>').join('');
+}
+const week = [[.09, .03], [.14, .02], [.17, .05], [.06, 0], [.11, .04], [.19, .03], [.07, .02]], names = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+function useView() {
+  const top = .28, pace = 1 / 7;
+  return '<div class="card"><div class="pool-h"><span><span class="dot" style="background:var(--violet)"></span>work ' + pm('Claude') + '</span><b>12%/day</b></div><div class="days"><div class="pace" style="bottom:' + pace / top * 100 + '%"></div>' +
+    week.map(d => '<div class="day" style="height:' + (d[0] + d[1]) / top * 100 + '%" data-tip="' + pct(d[0] + d[1]) + ' · ' + ((d[0] + d[1]) / pace).toFixed(1) + '× pace"><i style="flex:' + d[0] + ';background:var(--blue)"></i><i style="flex:' + (d[1] || .0001) + ';background:var(--teal)"></i></div>').join('') +
+    '</div><div class="dlabels">' + names.map(n => '<span>' + n + '</span>').join('') + '</div></div>' +
+    '<div class="card">' + [['api', .52, '41M'], ['web', .31, '24M'], ['infra', .17, '13M']].map(f =>
+      '<div style="display:grid;grid-template-columns:44px minmax(0,1fr) 34px;gap:8px;align-items:center;font-size:12px"><span>' + f[0] + '</span><div class="track"><i style="width:' + f[1] / .52 * 100 + '%"></i></div><span style="text-align:right;color:var(--pmuted)">' + f[2] + '</span></div>').join('') + '</div>';
+}
+function settingsView() {
+  const sw = (k, on, label) => '<button type="button" class="sw" data-sw="' + k + '" aria-pressed="' + on + '" aria-label="' + label + '"></button>';
+  return '<div class="card"><div class="set"><b>Status line</b>' + sw('lineOn', state.lineOn, 'Status line') + '</div>' + (state.lineOn ? '<div class="strip" id="strip">' + line() + '</div><div class="chips">' +
+      state.line.concat(items.filter(i => !state.line.includes(i))).map(i => '<button type="button" class="chip" data-chip="' + i + '" aria-pressed="' + state.line.includes(i) + '" data-tip="' + about[i] + '">' + i + '</button>').join('') + '</div>' : '') + '</div>' +
+    '<div class="card"><div class="set"><span>Route the clients</span>' + sw('routed', state.routed, 'Route the clients') + '</div><div class="set"><span>Use resets for me</span>' + sw('resets', state.resets, 'Use resets for me') + '</div></div>';
+}
+function render() {
+  view.innerHTML = state.view === 'accounts' ? accountsView() : state.view === 'use' ? useView() : settingsView();
+  document.querySelectorAll('.views button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === state.view));
+  tip.hidden = true; shared();
+}
+function shared() { $('#mb').textContent = pct(share(profiles[0].pools[0])); $('#strip2').innerHTML = line(); }
+function soft() {
+  if (state.view === 'accounts') view.innerHTML = accountsView(); else if (state.view === 'settings' && $('#strip')) $('#strip').innerHTML = line();
+  shared();
+}
+$('.views').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.view = b.dataset.v; render(); } });
+view.addEventListener('click', e => {
+  const chip = e.target.closest('[data-chip]'), sw = e.target.closest('[data-sw]');
+  if (chip) { const it = chip.dataset.chip; if (state.line.includes(it)) { if (state.line.length === 1) state.lineOn = false; else state.line = state.line.filter(x => x !== it); } else state.line.push(it); render(); }
+  if (sw) { state[sw.dataset.sw] = !state[sw.dataset.sw]; render(); }
+});
+view.addEventListener('pointerover', e => {
+  const el = e.target.closest('[data-tip]'); if (!el) { tip.hidden = true; return; }
+  tip.textContent = el.dataset.tip; tip.hidden = false;
+  const r = el.getBoundingClientRect(), s = panel.getBoundingClientRect();
+  tip.style.left = Math.max(6, Math.min(r.left - s.left, s.width - tip.offsetWidth - 6)) + 'px'; tip.style.top = (r.bottom - s.top + 8) + 'px';
+});
+view.addEventListener('pointerleave', () => { tip.hidden = true; });
+$('#copy').addEventListener('click', () => {
+  const b = $('#copy'), was = b.innerHTML;
+  navigator.clipboard.writeText($('#cmd').textContent).then(() => { b.innerHTML = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8.500 3.500 3.500L13 5"/></svg>'; setTimeout(() => b.innerHTML = was, 1400); })
+    .catch(() => { const r = document.createRange(); r.selectNodeContents($('#cmd')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); });
+});
+
+/* the sources over the water: each account as a ring that fills as it is used */
+const sources = $('#sources');
+sources.innerHTML = feeds.map((a, i) => '<span class="src" data-i="' + i + '"><svg viewBox="0 0 44 44"><circle class="tr" cx="22" cy="22" r="20"/><circle class="fill" cx="22" cy="22" r="20"/></svg>' + pm(feedMark[i]) + '</span>').join('');
+const flow = [0.15, 0.15, 0.15];
+function rings() {
+  sources.querySelectorAll('.src').forEach((el, i) => { const a = feeds[i]; el.querySelector('.fill').style.strokeDashoffset = 125.7 * (1 - Math.min(a.used, 1)); el.querySelector('.fill').style.stroke = a.used >= 1 ? 'var(--crit)' : a.used >= .85 ? 'var(--warn)' : 'var(--teal)'; el.classList.toggle('live', a.busy > 0); });
+}
+function request() {
+  const all = profiles.flatMap(p => p.pools), pool = Math.random() < .6 ? all[0] : all[Math.floor(Math.random() * all.length)];
+  const a = pool.accounts.filter(x => x.used < 1).sort((x, y) => x.left - y.left)[0]; if (!a) return;
+  a.busy++; a.last = Date.now(); rings();
+  setTimeout(() => {
+    a.busy--; a.last = Date.now(); a.used = Math.min(1, a.used + (.012 + Math.random() * .03));
+    // A spent account comes back at its reset, sooner here than in life.
+    if (a.used >= 1) setTimeout(() => { a.used = .04; a.left = 168; soft(); rings(); }, 14000);
+    soft(); rings();
+  }, 1800 + Math.random() * 3800);
+}
+const heights = {};
+let before = performance.now();
+function meters(now) {
+  const dt = Math.min(.1, (now - before) / 1000); before = now;
+  feeds.forEach((a, i) => { flow[i] += ((a.busy > 0 ? 1 : a.used >= 1 ? 0 : .12) - flow[i]) * Math.min(1, dt * 3); });
+  if (state.view === 'accounts') profiles.forEach(p => p.pools.forEach((pool, pi) => pool.accounts.forEach((a, ai) => {
+    const key = p.name + pi + ai, el = view.querySelector('[data-m="' + key + '"]'); if (!el) return;
+    const recent = a.busy > 0 || (a.last > 0 && Date.now() - a.last < 12000);
+    el.classList.toggle('on', recent); if (!recent) return;
+    const low = a.busy ? 3 : 2, high = a.busy ? Math.min(7 + a.busy, 10) : 3.5, rate = (a.busy ? .7 + .15 * Math.min(a.busy, 4) : .85) * 6;
+    const h = heights[key] = heights[key] || [low, low, low];
+    [...el.children].forEach((bar, i) => { h[i] = Math.max(low, h[i] - 10 / 1.7 * dt); if (Math.random() < rate * dt) h[i] = low + (high - low) * (.5 + Math.random() * .5); bar.style.height = h[i] + 'px'; });
+  })));
+}
+
+/* The water. A fragment shader draws three layers, the streams that feed them, and the headline, bent where it is under the surface. */
+const canvas = $('#water'), hero = $('#hero');
+const gl = canvas.getContext('webgl', { antialias: false, alpha: false, premultipliedAlpha: false });
+const VS = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0., 1.); }';
+const FS = `precision highp float;
+uniform vec2 R; uniform float T, S, D, F, top; uniform vec3 sx, fl; uniform vec3 M; uniform sampler2D tex;
+vec3 navy = vec3(.039, .075, .149), violet = vec3(.36, .44, .93), blue = vec3(.10, .52, .86), teal = vec3(.16, .74, .72), cream = vec3(1., .957, .871);
+float wave(float x, float k, float t) { return sin(x * .0052 * k + t * .8 + k * 1.7) * 9. + sin(x * .0121 * k - t * 1.15 + k) * 4.5 + sin(x * .031 + t * 1.9 + k * 3.) * 1.6; }
+float splash(float x, float c, float f) { float d = (x - c) / D; return f * 5. * exp(-d * d / 3600.) * sin(d * .16 - T * 7.); }
+void main() {
+  vec2 q = gl_FragCoord.xy; float x = q.x, y = R.y - q.y, xd = x / D;
+  float rip = M.z * 9. * exp(-pow((x - M.x) / (150. * D), 2.)) * sin((x - M.x) / D * .07 - T * 5.);
+  float sp = splash(x, sx.x, fl.x) + splash(x, sx.y, fl.y) + splash(x, sx.z, fl.z);
+  float s1 = S + (wave(xd, 1., T) + rip + sp) * D;
+  float s2 = S + F * 1.22 + (wave(xd, 1.6, T * .9 + 2.) * .85 + rip * .5) * D;
+  float s3 = S + F * 2.25 + (wave(xd, 2.3, T * .8 + 4.) * .75) * D;
+  vec3 air = mix(vec3(.075, .13, .27), navy, clamp(y / max(S, 1.), 0., 1.));
+  // the streams, from the accounts down to the surface
+  vec3 col = air;
+  for (int i = 0; i < 3; i++) {
+    float c = i == 0 ? sx.x : i == 1 ? sx.y : sx.z, f = i == 0 ? fl.x : i == 1 ? fl.y : fl.z;
+    vec3 tint = i == 0 ? violet : i == 1 ? blue : teal;
+    float w = (2. + 9. * f) * D, d = abs(x - c + sin(y / D * .05 + T * 2. + float(i)) * 1.5 * D);
+    float body = smoothstep(w, w * .35, d) * step(top, y) * step(y, s1 + 4. * D);
+    float run = .62 + .38 * sin(y / D * .11 - T * 10. + float(i) * 2.);
+    col = mix(col, mix(tint, cream, .35) * (.75 + .25 * run), body * (.35 + .65 * f) * run);
+    col += tint * f * .22 * exp(-length(vec2(x - c, y - s1)) / (26. * D));
+  }
+  float e = 1.5 * D;
+  float in1 = smoothstep(s1 - e, s1 + e, y), in2 = smoothstep(s2 - e, s2 + e, y), in3 = smoothstep(s3 - e, s3 + e, y);
+  vec3 water = mix(mix(violet, blue, in2), teal, in3);
+  float deepen = smoothstep(s3 + F * .4, R.y, y);
+  water = mix(water, navy, deepen * .96);
+  float shimmer = sin(xd * .009 + T * .5 + y / D * .004) * .022 + sin(xd * .004 - T * .3) * .018;
+  water += shimmer * (1. - deepen);
+  float foam = exp(-abs(y - s1) / (1.8 * D)) * .5 + exp(-abs(y - s2) / (1.6 * D)) * .22 + exp(-abs(y - s3) / (1.6 * D)) * .16;
+  col = mix(col, water, in1) + foam * vec3(.85, .95, 1.) * .55;
+  // the headline: crisp in the air, bent by the water under it
+  float depth = clamp((y - s1) / (60. * D), 0., 1.) * in1;
+  vec2 bend = vec2(sin(y / D * .05 + T * 1.6) * 2.4 + sin(y / D * .12 - T * 2.1) * .9, cos(xd * .028 + T * 1.2) * 1.6) * depth * D;
+  vec2 uv = (q + vec2(bend.x, -bend.y)) / R;
+  float a = texture2D(tex, uv).a, a2 = texture2D(tex, uv + vec2(2.5 * D * depth, 0.) / R).a;
+  vec3 ink = mix(cream, vec3(.93, .98, 1.), depth);
+  col = mix(col, ink, a * (1. - .12 * depth));
+  col += vec3(.25, .5, .6) * (a2 - a) * depth * .5;
+  // a gauge's scale down the left edge, as on the icon
+  float row = mod(y / D - 20., 44.), wide = step(mod(floor((y / D - 20.) / 44.), 2.), .5);
+  float tick = smoothstep(1.6, .6, abs(row - 22.)) * step(14. * D, x) * step(x, (14. + 10. + 12. * wide) * D) * step(top * .5, y) * step(900. * D, R.x);
+  col = mix(col, cream, tick * .55);
+  gl_FragColor = vec4(col, 1.);
+}`;
+let prog, U = {}, text = document.createElement('canvas'), geo = { S: 300, F: 80, top: 200, sx: [0, 0, 0] }, mouse = [0, 0, 0], dpr = 1;
+function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function setup() {
+  prog = gl.createProgram(); gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const p = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(p); gl.vertexAttribPointer(p, 2, gl.FLOAT, false, 0, 0);
+  ['R', 'T', 'S', 'D', 'F', 'top', 'sx', 'fl', 'M', 'tex'].forEach(n => U[n] = gl.getUniformLocation(prog, n));
+  gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+}
+/* Where the headline, the sources and the surface are, read from the page so the drawing sits on the layout. */
+function measure() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const h = hero.getBoundingClientRect(), w = Math.round(h.width * dpr), ht = Math.round(h.height * dpr);
+  if (canvas.width !== w || canvas.height !== ht) { canvas.width = text.width = w; canvas.height = text.height = ht; gl.viewport(0, 0, w, ht); }
+  const c = text.getContext('2d'); c.clearRect(0, 0, w, ht); c.fillStyle = '#fff'; c.textBaseline = 'alphabetic';
+  let size = 80;
+  for (const id of ['l1', 'l2']) {
+    const el = document.getElementById(id), r = el.getBoundingClientRect(), cs = getComputedStyle(el); size = parseFloat(cs.fontSize);
+    c.font = cs.fontWeight + ' ' + size * dpr + 'px ' + cs.fontFamily;
+    const m = c.measureText(el.textContent), asc = m.fontBoundingBoxAscent ?? size * dpr * .8, desc = m.fontBoundingBoxDescent ?? size * dpr * .2;
+    c.fillText(el.textContent, (r.left - h.left) * dpr, (r.top - h.top) * dpr + (r.height * dpr - (asc + desc)) / 2 + asc);
+  }
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, text);
+  const l2 = $('#l2').getBoundingClientRect(), src = [...sources.querySelectorAll('.src')].map(e => e.getBoundingClientRect());
+  geo = { F: size * dpr, S: (l2.top - h.top - size * .2) * dpr, top: (src[0].bottom - h.top - 2) * dpr, sx: src.map(r => (r.left + r.width / 2 - h.left) * dpr) };
+}
+function draw(t) {
+  gl.uniform2f(U.R, canvas.width, canvas.height); gl.uniform1f(U.T, t); gl.uniform1f(U.S, geo.S); gl.uniform1f(U.D, dpr); gl.uniform1f(U.F, geo.F); gl.uniform1f(U.top, geo.top);
+  gl.uniform3f(U.sx, geo.sx[0], geo.sx[1], geo.sx[2]); gl.uniform3f(U.fl, flow[0], flow[1], flow[2]); gl.uniform3f(U.M, mouse[0], mouse[1], mouse[2]); gl.uniform1i(U.tex, 0);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+let glOK = false, seen = true;
+try { if (gl) { setup(); glOK = true; document.documentElement.classList.add('gl'); } } catch (e) { console.warn('water', e); }
+if (!glOK) canvas.hidden = true;
+if (!glOK) hero.style.background = 'linear-gradient(#0d1a36 0 46%, #5468e0 46% 62%, #1a82d6 62% 78%, #0a1326 100%)';
+function frame(now) {
+  meters(now);
+  mouse[2] *= .97;
+  if (glOK && seen) draw(now / 1000);
+  requestAnimationFrame(frame);
+}
+hero.addEventListener('pointermove', e => { const h = hero.getBoundingClientRect(); mouse[0] = (e.clientX - h.left) * dpr; mouse[1] = (e.clientY - h.top) * dpr; mouse[2] = Math.min(1, mouse[2] + .08); });
+new IntersectionObserver(es => { seen = es[0].isIntersecting; }).observe(hero);
+render(); rings();
+if (glOK) {
+  measure(); draw(0);
+  new ResizeObserver(() => { measure(); if (still) draw(0); }).observe(hero);
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => { measure(); if (still) draw(0); });
+}
+if (!still) { request(); setInterval(request, 2300); requestAnimationFrame(frame); }
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+<!-- Sluice: the pool as a gauge reads it, a layer of water an account, against a scale.
+     Tile: bounds=(64,64)-(960,960). The menu bar glyph (Sources/App/Glyph.swift) is the tile's outline with one wave. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a2f5c"/><stop offset="1" stop-color="#0c1730"/></linearGradient>
+    <clipPath id="tile-shape"><path d="M304 64 H720 C880 64 960 144 960 304 V720 C960 880 880 960 720 960 H304 C144 960 64 880 64 720 V304 C64 144 144 64 304 64 Z"/></clipPath>
+  </defs>
+  <g clip-path="url(#tile-shape)">
+    <rect id="tile" x="64" y="64" width="896" height="896" fill="url(#sky)"/>
+    <path id="water-1" fill="#7389ff" d="M64 430 C213 374 363 486 512 430 C661 374 811 486 960 430 V960 H64 Z"/>
+    <path id="water-2" fill="#1f9cf0" d="M64 590 C213 646 363 534 512 590 C661 646 811 534 960 590 V960 H64 Z"/>
+    <path id="water-3" fill="#35dcd6" d="M64 750 C213 694 363 806 512 750 C661 694 811 806 960 750 V960 H64 Z"/>
+  </g>
+  <g id="scale" fill="none" stroke="#fff4de" stroke-width="22" stroke-linecap="round">
+    <path d="M150 232 H234"/><path d="M150 326 H198"/><path d="M150 420 H234"/><path d="M150 514 H198"/><path d="M150 608 H234"/><path d="M150 702 H198"/><path d="M150 796 H234"/>
+  </g>
+</svg>

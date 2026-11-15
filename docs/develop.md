@@ -10,6 +10,7 @@ One Swift package, no dependencies.
 | `Tests` | What a caller can observe of Core and the providers. |
 | `script` | Building the app, releasing it, and fitting a provider's meter to the histories. |
 | `docs` | How Sluice is used and how it works, a page a subject, and what is known of each provider's wire format. |
+| `site` | The landing page at sluice.vikng.dev: static files, deployed with `npx wrangler deploy` from that folder. |
 | `skills` | A skill that teaches an agent to run the `sluice` command. |
 | `Assets` | The app icon: its drawing, and the built `.icns`. The menu bar glyph is drawn in code from the same shapes. Each provider's mark, named by provider, and GitHub's. |
 

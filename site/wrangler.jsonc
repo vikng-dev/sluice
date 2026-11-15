@@ -1,0 +1,7 @@
+{
+  // The landing page, served as static files at sluice.vikng.dev. Deploy with: npx wrangler deploy
+  "name": "sluice",
+  "compatibility_date": "2026-11-13",
+  "assets": { "directory": "." },
+  "routes": [{ "pattern": "sluice.vikng.dev", "custom_domain": true }]
+}
