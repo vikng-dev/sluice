@@ -13,8 +13,10 @@ private let log = Logger(subsystem: Sluice.id, category: "app")
 // The app's own executable always exists.
 private let program = Bundle.main.executableURL!
 
-/// The relay's life, started when the app launches, not when its panel is first opened.
+/// The app's state and what its panel can do, as the panel's views read and ask it.
 @MainActor @Observable final class Running {
+    /// What each provider's subscriptions are sold as, by its id.
+    let titles = Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0.name) })
     /// Why Sluice is not relaying, which stays so until it is started again.
     var problem = handoverProblem
     /// What could not be read at the last look, gone at the next that reads it.
@@ -26,12 +28,14 @@ private let program = Bundle.main.executableURL!
     var routed = false
     var accounts: [AccountStatus] = []
     var config = Config()
+    /// By profile.
     var identities: [String: [Identity]] = [:]
     var history = History()
     private var sluice: (server: Server, relay: Relay)?
     @ObservationIgnored private var refreshing = false
 
-    init() {
+    /// Starts the relay, when the app launches and not when its panel is first opened.
+    func start() {
         routed = (try? isSetUp()) ?? false
         Task {
             do {
@@ -103,6 +107,19 @@ private let program = Bundle.main.executableURL!
             refusal = ""
         } catch {
             refusal = "\(error)"
+        }
+    }
+
+    /// The same for what is asked of the relay, whose accounts are then read again.
+    private func attempt(_ action: @escaping @MainActor () async throws -> Void) {
+        Task {
+            do {
+                try await action()
+                refusal = ""
+            } catch {
+                refusal = "\(error)"
+            }
+            if let told = try? await sluice?.relay.status() { accounts = told }
         }
     }
 
@@ -196,17 +213,9 @@ private let program = Bundle.main.executableURL!
         }
     }
 
-    /// Asked of the relay as the command does, so that what came of it is said in the same words.
+    /// Spends the reset. Asked of the relay as the command does, so that what came of it is said in the same words.
     func useReset(_ reset: Reset, of account: AccountStatus) {
-        Task {
-            do {
-                try await SluiceProviders.useReset(reset.id, provider: account.provider, account: account.label)
-                refusal = ""
-            } catch {
-                refusal = "\(error)"
-            }
-            if let told = try? await sluice?.relay.status() { accounts = told }
-        }
+        attempt { try await SluiceProviders.useReset(reset.id, provider: account.provider, account: account.label) }
     }
 
     func star(_ profile: String, _ provider: String, _ starred: Bool) {
@@ -234,14 +243,7 @@ private let program = Bundle.main.executableURL!
     }
 
     func remove(_ account: AccountStatus) {
-        Task {
-            do {
-                try await forget(provider: account.provider, account: account.label)
-                refusal = ""
-            } catch {
-                refusal = "\(error)"
-            }
-        }
+        attempt { try await forget(provider: account.provider, account: account.label) }
     }
 
     /// The clients would be left talking to nothing, so they go direct first; then launchd is told to let go.
@@ -253,19 +255,14 @@ private let program = Bundle.main.executableURL!
 }
 
 struct SluiceApp: App {
-    @State private var running = Running()
+    private let running = Running()
     @AppStorage(Share.key) private var left = false
-    private let titles = Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0.name) })
+
+    init() { running.start() }
 
     var body: some Scene {
         MenuBarExtra {
-            Panel(
-                problem: running.said, accounts: running.accounts, config: running.config, identities: running.identities, titles: titles, now: Date(),
-                routed: running.routed, route: running.route, signIn: running.signIn, move: running.move, remove: running.remove, rename: running.rename, tint: running.tint, star: running.star, useReset: running.useReset, autoReset: running.autoReset,
-                addProfile: running.addProfile, removeProfile: running.removeProfile,
-                claimFolders: running.claimFolders, claimOwner: running.claimOwner, unclaim: { running.unclaim($1, from: $0) },
-                history: running.history, loadHistory: running.loadHistory, refresh: running.refresh, quit: running.quit
-            )
+            Panel(now: Date()).environment(running)
         } label: {
             // The glyph says whether clients are routed; while they are, the starred pools take its place.
             let counters = running.counters(left: left)

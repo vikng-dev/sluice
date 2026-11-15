@@ -3,42 +3,10 @@ import SwiftUI
 
 /// What opens from the menu bar: each profile's pools, one per provider, and how much of each is used.
 struct Panel: View {
-    let problem: String
-    let accounts: [AccountStatus]
-    let config: Config
-    /// By profile.
-    let identities: [String: [Identity]]
-    /// What each provider's subscriptions are sold as, by its id.
-    let titles: [String: String]
     let now: Date
-    let routed: Bool
-    let route: (Bool) -> Void
-    let signIn: (_ provider: String, _ profile: String) -> Void
-    let move: (AccountStatus, _ profile: String) -> Void
-    let remove: (AccountStatus) -> Void
-    let rename: (_ profile: String, _ label: String) -> Void
-    let tint: (_ profile: String, Tint?) -> Void
-    let star: (_ profile: String, _ provider: String, Bool) -> Void
-    /// Spends the reset.
-    let useReset: (Reset, AccountStatus) -> Void
-    /// Whether pools use the resets they hold without being asked.
-    let autoReset: (Bool) -> Void
-    /// Makes a profile, and when it is made for an account, with that account in it.
-    let addProfile: (_ shownAs: String, _ founder: AccountStatus?) -> Void
-    let removeProfile: (_ profile: String) -> Void
-    /// Asks which folders, and claims them.
-    let claimFolders: (_ profile: String) -> Void
-    /// Asks which owner, and claims it.
-    let claimOwner: (_ profile: String) -> Void
-    let unclaim: (_ profile: String, Claim) -> Void
-    let history: History
-    /// Reads the histories again, for the view of use.
-    let loadHistory: () -> Void
-    /// The panel was opened: what it shows is asked for again where it has grown old.
-    let refresh: () -> Void
-    let quit: () -> Void
+    @Environment(Running.self) private var running
 
-    private var profiles: [String] { config.names }
+    private var profiles: [String] { running.config.names }
     /// Which of the panel's two views is shown: the accounts, or their use over time.
     @AppStorage("showsUse") private var showsUse = false
     @Namespace private var views
@@ -62,7 +30,7 @@ struct Panel: View {
     }
 
     private var actions: RowActions {
-        RowActions(remove: remove, useReset: useReset, carry: { carry($0, client: $1, $2) }, drop: drop, putBack: putBack)
+        RowActions(carry: { carry($0, client: $1, $2) }, drop: drop, putBack: putBack)
     }
 
     private func carry(_ account: AccountStatus, client: String?, _ drag: DragGesture.Value) {
@@ -80,7 +48,7 @@ struct Panel: View {
             return putBack()
         }
         guard let target else { return putBack() }
-        move(carried.account, target)
+        running.move(carried.account, to: target)
         self.carried = nil
     }
 
@@ -93,15 +61,15 @@ struct Panel: View {
 
     /// Every profile, with a pool at each provider it has accounts at.
     private var sections: [(name: String, pools: [Pool])] {
-        let providers = Set(accounts.map(\.provider)).sorted()
+        let providers = Set(running.accounts.map(\.provider)).sorted()
         return profiles.map { profile in
             (name: profile, pools: providers.compactMap { provider -> Pool? in
-                let all = accounts.filter { $0.provider == provider }
+                let all = running.accounts.filter { $0.provider == provider }
                 let own = all.filter { $0.profile == profile }.sorted { $0.label < $1.label }
                 guard !own.isEmpty else { return nil }
-                let identity = identities[profile]?.first { $0.provider == provider }
+                let identity = running.identities[profile]?.first { $0.provider == provider }
                 return Pool(
-                    provider: provider, title: titles[provider] ?? provider, accounts: own, client: identity?.client ?? provider, identity: identity?.account,
+                    profile: profile, provider: provider, title: running.titles[provider] ?? provider, accounts: own, client: identity?.client ?? provider, identity: identity?.account,
                     identityIsAnothers: identity?.account.map { account in all.contains { $0.label == account } && !own.contains { $0.label == account } } ?? false
                 )
             })
@@ -109,6 +77,7 @@ struct Panel: View {
     }
 
     var body: some View {
+        let autoResets = running.config.autoResets
         VStack(alignment: .leading, spacing: 8) {
             // The panel's first line, which stays where it is whatever is under it: the two views, then what the app
             // does by itself and its own menu.
@@ -129,18 +98,18 @@ struct Panel: View {
                 .moves(.snappy(duration: 0.2), with: showsUse)
                 if showsUse { Text("Last 7 days").font(.caption.weight(.semibold)).foregroundStyle(.tertiary).frame(height: 16) }
                 Spacer()
-                Button { autoReset(!config.autoResets) } label: {
-                    Image(systemName: config.autoResets ? "bolt.fill" : "bolt").font(.caption).contentTransition(.symbolEffect(.replace))
+                Button { running.autoReset(!autoResets) } label: {
+                    Image(systemName: autoResets ? "bolt.fill" : "bolt").font(.caption).contentTransition(.symbolEffect(.replace))
                         .frame(width: 24, height: 16).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).foregroundStyle(config.autoResets ? Color.green : .secondary)
-                .moves(.snappy(duration: 0.2), with: config.autoResets)
-                .help(config.autoResets ? "Resets are used for you: when a pool is out, or one is about to lapse. Click to use them only yourself" : "Use resets for me: when a pool is out, or one is about to lapse")
+                .buttonStyle(.plain).foregroundStyle(autoResets ? Color.green : .secondary)
+                .moves(.snappy(duration: 0.2), with: autoResets)
+                .help(autoResets ? "Resets are used for you: when a pool is out, or one is about to lapse. Click to use them only yourself" : "Use resets for me: when a pool is out, or one is about to lapse")
                 Menu {
                     Text("Sluice \(Sluice.version)")
                     Divider()
-                    if routed { Button("Stop routing") { route(false) } }
-                    Button("Quit Sluice", action: quit)
+                    if running.routed { Button("Stop routing") { running.route(false) } }
+                    Button("Quit Sluice", action: running.quit)
                 } label: {
                     Image(systemName: "ellipsis")
                 }
@@ -148,34 +117,24 @@ struct Panel: View {
                 .help("Stop routing sends clients started from now on to their own providers; quitting sends them all")
             }
             .padding(.horizontal, 10)
-            if !problem.isEmpty { Text(problem).font(.caption).foregroundStyle(.red) }
-            if !routed {
+            if !running.said.isEmpty { Text(running.said).font(.caption).foregroundStyle(.red) }
+            if !running.routed {
                 HStack {
                     Text("Claude Code and Codex are not going through Sluice.").font(.callout).fixedSize(horizontal: false, vertical: true)
                     Spacer()
-                    Button("Turn on") { route(true) }.controlSize(.small)
+                    Button("Turn on") { running.route(true) }.controlSize(.small)
                 }
                 .padding(10)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
             }
-            if showsUse { UsageView(accounts: accounts, config: config, titles: titles, history: history, now: now) }
+            if showsUse { UsageView(now: now) }
             ForEach(showsUse ? [] : sections, id: \.name) { section in
                 VStack(alignment: .leading, spacing: 6) {
-                    ProfileCaption(
-                        name: section.name, profile: config.profiles[section.name],
-                        takesTheRest: section.name == Config.defaultProfile && profiles.count > 1, empty: section.pools.isEmpty, titles: titles,
-                        signIn: { signIn($0, section.name) }, rename: { rename(section.name, $0) }, setTint: { tint(section.name, $0) },
-                        claimFolders: { claimFolders(section.name) }, claimOwner: { claimOwner(section.name) },
-                        remove: section.name == Config.defaultProfile ? nil : { removeProfile(section.name) }, unclaim: { unclaim(section.name, $0) }
-                    )
-                    .padding(.horizontal, 10)
+                    ProfileCaption(name: section.name, empty: section.pools.isEmpty).padding(.horizontal, 10)
                     VStack(alignment: .leading, spacing: 10) {
                         if section.pools.isEmpty { Text("No accounts").font(.callout).foregroundStyle(.secondary) }
                         ForEach(section.pools) { pool in
-                            PoolView(
-                                pool: pool, now: now, carried: carried?.account.id, actions: actions,
-                                starred: config.profiles[section.name]?.starred.contains(pool.provider) == true, star: { star(section.name, pool.provider, $0) }
-                            )
+                            PoolView(pool: pool, now: now, carried: carried?.account.id, actions: actions)
                         }
                     }
                     // A profile's accounts sit on a card under its name. While an account is carried, the
@@ -188,7 +147,7 @@ struct Panel: View {
                 .framed("profile:\(section.name)")
             }
             if !showsUse {
-                NewProfile(founder: $founder, carrying: carried != nil, targeted: overNew) { addProfile($0, founder) }
+                NewProfile(founder: $founder, carrying: carried != nil, targeted: overNew)
                     .framed("new")
                     .padding(.horizontal, 10).padding(.top, 4)
             }
@@ -200,11 +159,12 @@ struct Panel: View {
         .environment(\.armed, $armed)
         .symbolEffectsRemoved(still)
         .sensoryFeedback(.alignment, trigger: target)
-        .task(id: showsUse) { if showsUse { loadHistory() } }
-        .task { refresh() }
+        // The panel was opened: what it shows is asked for again where it has grown old.
+        .task(id: showsUse) { if showsUse { running.loadHistory() } }
+        .task { running.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            refresh()
-            if showsUse { loadHistory() }
+            running.refresh()
+            if showsUse { running.loadHistory() }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in armed = nil }
         .onPreferenceChange(Frames.self) { frames = $0 }
@@ -353,10 +313,8 @@ private extension Menu {
     @MainActor func bare() -> some View { menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize() }
 }
 
-/// What can be done to an account's row. The copy that follows the pointer has none.
+/// How an account's row is carried by its handle. The copy that follows the pointer has none, and nothing can be done to it.
 private struct RowActions {
-    let remove: (AccountStatus) -> Void
-    let useReset: (Reset, AccountStatus) -> Void
     let carry: (AccountStatus, _ client: String?, DragGesture.Value) -> Void
     let drop: () -> Void
     let putBack: () -> Void
@@ -373,20 +331,12 @@ enum Claim: Hashable {
 /// pointer is on it, and always on an empty one.
 private struct ProfileCaption: View {
     let name: String
-    /// Nil for a profile the config says nothing about.
-    let profile: Profile?
-    /// The default profile among others: it has whatever work none of them claims.
-    let takesTheRest: Bool
     let empty: Bool
-    let titles: [String: String]
-    let signIn: (_ provider: String) -> Void
-    let rename: (_ label: String) -> Void
-    let setTint: (Tint?) -> Void
-    let claimFolders: () -> Void
-    let claimOwner: () -> Void
-    /// Nil for the default profile, which always exists.
-    let remove: (() -> Void)?
-    let unclaim: (Claim) -> Void
+    @Environment(Running.self) private var running
+    /// Nil for a profile the config says nothing about.
+    private var profile: Profile? { running.config.profiles[name] }
+    /// The default profile among others: it has whatever work none of them claims.
+    private var takesTheRest: Bool { name == Config.defaultProfile && running.config.names.count > 1 }
     @State private var hovered = false
     @State private var picking = false
     /// Whether the claims are laid out, and not only counted.
@@ -416,7 +366,7 @@ private struct ProfileCaption: View {
     private func keep() {
         guard editing else { return }
         editing = false
-        if draft != profile?.label ?? "" { rename(draft) }
+        if draft != profile?.label ?? "" { running.rename(name, to: draft) }
     }
 
     var body: some View {
@@ -427,7 +377,7 @@ private struct ProfileCaption: View {
                 if picking {
                     ForEach([nil] + Tint.allCases.map(Optional.some), id: \.self) { option in
                         Button {
-                            setTint(option)
+                            running.tint(name, option)
                             picking = false
                         } label: {
                             Dot(tint: option, size: 11).overlay { if option == profile?.color { Circle().strokeBorder(.primary.opacity(0.6), lineWidth: 1.5) } }
@@ -460,15 +410,16 @@ private struct ProfileCaption: View {
                 }
                 Spacer()
                 Menu {
-                    ForEach(titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
-                        Button { signIn(provider) } label: {
+                    ForEach(running.titles.sorted { $0.key < $1.key }, id: \.key) { provider, title in
+                        Button { running.signIn(provider: provider, profile: name) } label: {
                             Label { Text("Add a \(title) account") } icon: { providerMark(provider).map(Image.init(nsImage:)) }
                         }
                     }
                     Divider()
-                    Button(action: claimFolders) { Label("Add folders…", systemImage: "folder") }
-                    Button(action: claimOwner) { Label { Text("Add a repository owner…") } icon: { githubMark().map(Image.init(nsImage:)) } }
-                    if remove != nil {
+                    Button { running.claimFolders(for: name) } label: { Label("Add folders…", systemImage: "folder") }
+                    Button { running.claimOwner(for: name) } label: { Label { Text("Add a repository owner…") } icon: { githubMark().map(Image.init(nsImage:)) } }
+                    // The default profile always exists.
+                    if name != Config.defaultProfile {
                         Divider()
                         Button(role: .destructive) { armed.wrappedValue = removal } label: { Label("Remove this profile", systemImage: "trash") }
                     }
@@ -480,15 +431,15 @@ private struct ProfileCaption: View {
                 .opacity(armed.wrappedValue == removal ? 0 : hovered || empty ? 1 : 0)
                 .moves(.easeOut(duration: 0.12), with: hovered)
                 .overlay(alignment: .trailing) {
-                    if let remove, armed.wrappedValue == removal {
-                        Confirm(act: remove)
+                    if armed.wrappedValue == removal {
+                        Confirm { running.removeProfile(name) }
                             .help("Its accounts and the work it claims go to the default profile. Its client folders are left as they are")
                     }
                 }
                 .moves(.snappy(duration: 0.18), with: armed.wrappedValue == removal)
             }
             if open, !claims.isEmpty {
-                Flow { ForEach(claims, id: \.self) { claim in ClaimChip(claim: claim) { unclaim(claim) } } }.font(.caption2)
+                Flow { ForEach(claims, id: \.self) { claim in ClaimChip(claim: claim) { running.unclaim(claim, from: name) } } }.font(.caption2)
             }
         }
         .contentShape(Rectangle())
@@ -510,7 +461,7 @@ private struct NewProfile: View {
     /// Whether an account is being carried, and whether it is over this.
     let carrying: Bool
     let targeted: Bool
-    let add: (String) -> Void
+    @Environment(Running.self) private var running
     @State private var editing = false
     @State private var draft = ""
     @FocusState private var typing: Bool
@@ -529,7 +480,7 @@ private struct NewProfile: View {
 
     private func make() {
         guard editing, named else { return }
-        add(draft)
+        running.addProfile(shownAs: draft, with: founder)
         leave()
     }
 
@@ -675,6 +626,7 @@ extension Tint {
 
 /// One profile's accounts at one provider: the accounts a request from that profile's work may be paid by.
 private struct Pool: Identifiable {
+    let profile: String
     let provider: String
     let title: String
     let accounts: [AccountStatus]
@@ -706,16 +658,16 @@ private struct PoolView: View {
     /// The account being carried, whose row stays behind dimmed.
     let carried: String?
     let actions: RowActions
-    let starred: Bool
-    let star: (Bool) -> Void
-
+    @Environment(Running.self) private var running
     @State private var hovered = false
+
+    private var starred: Bool { running.config.profiles[pool.profile]?.starred.contains(pool.provider) == true }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 PoolTitle(provider: pool.provider, title: pool.title)
-                Button { star(!starred) } label: { Image(systemName: starred ? "star.fill" : "star").font(.caption).contentTransition(.symbolEffect(.replace)) }
+                Button { running.star(pool.profile, pool.provider, !starred) } label: { Image(systemName: starred ? "star.fill" : "star").font(.caption).contentTransition(.symbolEffect(.replace)) }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .help(starred ? "Shown in the menu bar. Click to take it out" : "Show how much of this pool is used in the menu bar")
                     .opacity(hovered ? 1 : 0)
@@ -753,6 +705,7 @@ private struct AccountRow: View {
     let now: Date
     /// Nil on the copy that follows the pointer.
     let actions: RowActions?
+    @Environment(Running.self) private var running
     @State private var hovered = false
     /// True for as long as the handle is held, however the hold ends.
     @GestureState private var held = false
@@ -846,9 +799,9 @@ private struct AccountRow: View {
                     Image(systemName: "person.crop.circle.fill").font(.caption).foregroundStyle(.secondary)
                         .help("\(client) itself is signed in as this account in this profile. What \(client) does outside Sluice is this account's; its requests are paid by the whole pool.")
                 }
-                if let actions {
+                if actions != nil {
                     if removing {
-                        Confirm { actions.remove(account) }
+                        Confirm { running.remove(account) }
                             .help("Sluice forgets this sign-in and stops using the account. Signing it in again needs the browser")
                     } else {
                         Button { armed.wrappedValue = "remove:\(account.id)" } label: { Image(systemName: "trash").font(.caption) }
@@ -908,7 +861,7 @@ private struct AccountRow: View {
                                 .buttonStyle(.plain).disabled(!reset.usable || actions == nil)
                                 .help(reset.usable ? "Use it: what it refills is whole again at once. It lapses in the time shown" : "Its provider would not take it now")
                                 if armed.wrappedValue == using {
-                                    Confirm(ready: reset.usable) { actions?.useReset(reset, account) }
+                                    Confirm(ready: reset.usable) { running.useReset(reset, of: account) }
                                 }
                             }
                         }

@@ -20,15 +20,13 @@ private extension Int {
 /// The last week of use: each profile's accounts over time with how fast each pool is going and how long it
 /// lasts, then when the work was done and where it went.
 struct UsageView: View {
-    let accounts: [AccountStatus]
-    let config: Config
-    let titles: [String: String]
-    let history: History
     let now: Date
+    @Environment(Running.self) private var running
 
     private var since: Date { now.addingTimeInterval(-7 * 86400) }
 
     var body: some View {
+        let accounts = running.accounts, config = running.config, history = running.history
         let requests = history.requests.filter { $0.at >= since }
         VStack(alignment: .leading, spacing: 8) {
             ForEach(config.names, id: \.self) { profile in
@@ -41,7 +39,7 @@ struct UsageView: View {
                         }
                         .padding(.horizontal, 10)
                         ProfileUsage(
-                            pools: pools.map { ($0.key, $0.value.sorted { $0.label < $1.label }) }, titles: titles,
+                            pools: pools.map { ($0.key, $0.value.sorted { $0.label < $1.label }) }, titles: running.titles,
                             samples: history.samples.filter { $0.at >= since }, requests: requests, since: since, now: now
                         )
                         .card()
