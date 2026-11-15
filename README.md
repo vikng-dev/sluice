@@ -33,18 +33,21 @@ Each profile's accounts sit on a card under its name, a pool per provider.
   pointer. The default profile has everything else.
 - **New profile**, after the last profile, is typed in place: what you type is what it is shown as,
   its name is made from it, and the check after it makes it.
-- **A repository owner** is asked for in a dialog. While it is typed, the ones offered are those of
-  the repositories the clients have worked in on this Mac, and then the accounts GitHub's public
-  search finds for the letters typed, which are all that is sent to it.
-- **The first line** holds the two views, the bolt and **⋯**. The bolt has Sluice use resets for
-  you, as [How an account is picked](#how-an-account-is-picked) says. **⋯** holds the version,
-  **Status line…**, **Stop routing** and **Quit**.
+- **A repository owner** is typed under the profile's name. While it is typed, the ones offered are
+  those of the repositories the clients have worked in on this Mac, and then the accounts GitHub's
+  public search finds for the letters typed, which are all that is sent to it. A click on one claims it.
+- **The first line** holds the panel's three views: the accounts, their use, and the settings.
 - **The second view** is the last seven days of use. Each pool has a bar for every day: how much of
   the pool that day used, in the colors of the accounts that gave it, against a dashed line at the
   pace that uses the pool up in a week. Over the bars is how much went in the last 24 hours, and
   when the pool runs dry at that rate if it does. Under the profiles, the tokens of each hour and
   where they went by folder and by model. Whatever the pointer is on says more beside it: a day's
   share by account, an hour's tokens, a folder's path and share.
+
+- **The third view** is the settings, each holding at once. The [status line](#the-status-line) as it
+  would read, over its items: a click takes one off or puts one on, and one is dragged onto another
+  to take its place. Whether the clients go through Sluice. The bolt, which has Sluice use resets
+  for you, as [How an account is picked](#how-an-account-is-picked) says. The version, and **Quit**.
 
 The panel also says when the clients are not going through Sluice. `sluice status` prints the same accounts.
 
@@ -73,7 +76,7 @@ That does two things, and `sluice setup --undo` reverses both:
   the client's own variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), opens that profile; a folder that is no
   profile's is passed over.
 
-**Stop routing** in the panel's menu, and quitting, turn only the address off: the clients go back to
+Turning routing off in the panel's settings, and quitting, turn only the address off: the clients go back to
 their providers, and work still opens in its own profile.
 
 ```sh
@@ -163,8 +166,7 @@ pays for the work, not of the one account the last answer came through:
 ● work | ━━━━━━━━ | 62% | 1d 4h
 ```
 
-What it says is one ordered list for every profile, changed under **Status line…** in the panel
-(tick an item to say it, drag it to where it is said) or with the command:
+What it says is one ordered list for every profile, changed in the panel's settings or with the command:
 
 ```sh
 sluice statusline items profile share reset   # or: none

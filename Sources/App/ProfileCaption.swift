@@ -22,6 +22,8 @@ struct ProfileCaption: View {
     @State private var picking = false
     /// Whether the claims are laid out, and not only counted.
     @State private var open = false
+    /// Whether a repository owner is being typed for it.
+    @State private var owning = false
     /// Whether the name is being typed. Kept apart from the text: a field that is going away writes its
     /// text once more, and that must not open it again.
     @State private var editing = false
@@ -98,7 +100,7 @@ struct ProfileCaption: View {
                     }
                     Divider()
                     Button { running.claimFolders(for: name) } label: { Label("Add folders…", systemImage: "folder") }
-                    Button { running.claimOwner(for: name) } label: { Label { Text("Add a repository owner…") } icon: { githubMark().map(Image.init(nsImage:)) } }
+                    Button { owning = true } label: { Label { Text("Add a repository owner") } icon: { githubMark().map(Image.init(nsImage:)) } }
                     // The default profile always exists.
                     if name != Config.defaultProfile {
                         Divider()
@@ -119,6 +121,7 @@ struct ProfileCaption: View {
                 }
                 .moves(.snappy(duration: 0.18), with: armed.wrappedValue == removal)
             }
+            if owning { OwnerField(profile: name) { owning = false } }
             if open, !claims.isEmpty {
                 Flow { ForEach(claims, id: \.self) { claim in ClaimChip(claim: claim) { running.unclaim(claim, from: name) } } }.font(.caption2)
             }
@@ -247,7 +250,7 @@ private struct Tight: LabelStyle {
 }
 
 /// What marks a repository's owner: GitHub's mark, or failing the drawing an @.
-private struct OwnerMark: View {
+struct OwnerMark: View {
     var body: some View {
         if let mark = githubMark() { Image(nsImage: mark).resizable().frame(width: 10, height: 10) } else { Image(systemName: "at") }
     }

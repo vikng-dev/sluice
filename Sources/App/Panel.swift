@@ -7,8 +7,7 @@ struct Panel: View {
     @Environment(Running.self) private var running
 
     private var profiles: [String] { running.config.names }
-    /// Which of the panel's two views is shown: the accounts, or their use over time.
-    @AppStorage("showsUse") private var showsUse = false
+    @AppStorage("shown") private var shown = Shown.accounts
     @Namespace private var views
     @Environment(\.accessibilityReduceMotion) private var still
     @State private var carried: Carried?
@@ -77,56 +76,39 @@ struct Panel: View {
     }
 
     var body: some View {
-        let autoResets = running.config.autoResets
         VStack(alignment: .leading, spacing: 8) {
-            // The panel's first line, which stays where it is whatever is under it: the two views, then what the app
-            // does by itself and its own menu.
+            // The panel's first line, which stays where it is whatever is under it: the views, and what the one shown is of.
             HStack(alignment: .top, spacing: 8) {
                 HStack(spacing: 2) {
-                    ForEach([(false, "rectangle.stack", "Accounts"), (true, "chart.xyaxis.line", "Use over time")], id: \.0) { use, symbol, name in
-                        Button { showsUse = use } label: {
-                            Image(systemName: symbol).font(.caption).frame(width: 24, height: 16)
+                    ForEach(Shown.allCases, id: \.self) { view in
+                        Button { shown = view } label: {
+                            Image(systemName: view.look.symbol).font(.caption).frame(width: 24, height: 16)
                                 .background {
                                     // One highlight, which slides to the view chosen.
-                                    if showsUse == use { RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.12)).matchedGeometryEffect(id: "chosen", in: views) }
+                                    if shown == view { RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.12)).matchedGeometryEffect(id: "chosen", in: views) }
                                 }
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain).foregroundStyle(showsUse == use ? .primary : .secondary).help(name)
+                        .buttonStyle(.plain).foregroundStyle(shown == view ? .primary : .secondary).help(view.look.name)
                     }
                 }
-                .moves(.snappy(duration: 0.2), with: showsUse)
-                if showsUse {
-                    HStack(spacing: 5) {
+                .moves(.snappy(duration: 0.2), with: shown)
+                HStack(spacing: 5) {
+                    if shown == .use {
                         Text("Last 7 days").fontWeight(.semibold)
                         Pace().frame(width: 14).padding(.leading, 6)
                         Text("pace \(Int((Forecast.pace * 100).rounded()))%/day")
+                    } else if shown == .settings {
+                        Text("Settings").fontWeight(.semibold)
                     }
-                    .font(.caption).foregroundStyle(.tertiary).frame(height: 16)
                 }
+                .font(.caption).foregroundStyle(.tertiary).frame(height: 16)
                 Spacer()
-                Button { running.autoReset(!autoResets) } label: {
-                    Image(systemName: autoResets ? "bolt.fill" : "bolt").font(.caption).contentTransition(.symbolEffect(.replace))
-                        .frame(width: 24, height: 16).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain).foregroundStyle(autoResets ? Color.green : .secondary)
-                .moves(.snappy(duration: 0.2), with: autoResets)
-                .help(autoResets ? "Resets are used for you: when a pool is out, or one is about to lapse. Click to use them only yourself" : "Use resets for me: when a pool is out, or one is about to lapse")
-                Menu {
-                    Text("Sluice \(Sluice.version)")
-                    Divider()
-                    Button("Status line…", action: running.editStatusLine)
-                    if running.routed { Button("Stop routing") { running.route(false) } }
-                    Button("Quit Sluice", action: running.quit)
-                } label: {
-                    Image(systemName: "ellipsis")
-                }
-                .bare().frame(height: 16)
-                .help("Stop routing sends clients started from now on to their own providers; quitting sends them all")
             }
             .padding(.horizontal, 10)
             if !running.said.isEmpty { Text(running.said).font(.caption).foregroundStyle(.red) }
-            if !running.routed {
+            // The settings say it themselves, where it is turned on.
+            if !running.routed, shown != .settings {
                 HStack {
                     Text("Claude Code and Codex are not going through Sluice.").font(.callout).fixedSize(horizontal: false, vertical: true)
                     Spacer()
@@ -135,8 +117,9 @@ struct Panel: View {
                 .padding(10)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
             }
-            if showsUse { UsageView(now: now) }
-            ForEach(showsUse ? [] : sections, id: \.name) { section in
+            if shown == .use { UsageView(now: now) }
+            if shown == .settings { SettingsView(now: now) }
+            ForEach(shown == .accounts ? sections : [], id: \.name) { section in
                 VStack(alignment: .leading, spacing: 6) {
                     ProfileCaption(name: section.name, empty: section.pools.isEmpty).padding(.horizontal, 10)
                     VStack(alignment: .leading, spacing: 10) {
@@ -154,7 +137,7 @@ struct Panel: View {
                 .padding(.top, 4)
                 .framed("profile:\(section.name)")
             }
-            if !showsUse {
+            if shown == .accounts {
                 NewProfile(founder: $founder, carrying: carried != nil, targeted: overNew)
                     .framed("new")
                     .padding(.horizontal, 10).padding(.top, 4)
@@ -168,11 +151,11 @@ struct Panel: View {
         .symbolEffectsRemoved(still)
         .sensoryFeedback(.alignment, trigger: target)
         // The panel was opened: what it shows is asked for again where it has grown old.
-        .task(id: showsUse) { if showsUse { running.loadHistory() } }
+        .task(id: shown) { if shown == .use { running.loadHistory() } }
         .task { running.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             running.refresh()
-            if showsUse { running.loadHistory() }
+            if shown == .use { running.loadHistory() }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in armed = nil }
         .onPreferenceChange(Frames.self) { frames = $0 }
@@ -210,6 +193,19 @@ struct Panel: View {
     }
 
     static let width = 392.0
+}
+
+/// The panel's views: the accounts, their use over time, and what the app does by itself.
+enum Shown: String, CaseIterable {
+    case accounts, use, settings
+
+    var look: (symbol: String, name: String) {
+        switch self {
+        case .accounts: ("rectangle.stack", "Accounts")
+        case .use: ("chart.xyaxis.line", "Use over time")
+        case .settings: ("slider.horizontal.3", "Settings")
+        }
+    }
 }
 
 /// An account lifted by its handle, on its way to another profile.

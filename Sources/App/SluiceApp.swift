@@ -167,11 +167,17 @@ private let program = Bundle.main.executableURL!
         change { config in for folder in chooser.urls { try config.claim(folder: folder.path, for: profile) } }
     }
 
-    /// Asks which owner, offering those no profile claims yet.
-    func claimOwner(for profile: String) {
+    /// Of `owners`, those no profile claims yet.
+    private func unclaimed(_ owners: [String]) -> [String] {
         let claimed = Set(config.profiles.values.flatMap(\.owners).map { $0.lowercased() })
-        func unclaimed(_ owners: [String]) -> [String] { owners.filter { !claimed.contains($0.lowercased()) } }
-        guard let owner = askForOwner(of: config.shown(profile), known: unclaimed(knownOwners()), find: { unclaimed(await githubOwners(like: $0)) }) else { return }
+        return owners.filter { !claimed.contains($0.lowercased()) }
+    }
+
+    /// The owners a profile could claim: those of the repositories on this Mac, and those GitHub finds for what is typed.
+    func ownersHere() -> [String] { unclaimed(knownOwners()) }
+    func owners(like text: String) async -> [String] { unclaimed(await githubOwners(like: text)) }
+
+    func claim(owner: String, for profile: String) {
         change { try $0.claim(owner: owner, for: profile) }
     }
 
@@ -224,9 +230,8 @@ private let program = Bundle.main.executableURL!
         change { try $0.star(profile, provider, starred) }
     }
 
-    /// Asks what the clients' status lines say, and has them say it.
-    func editStatusLine() {
-        guard let items = askForStatusLine(config.statusLine) else { return }
+    /// What the clients' status lines say from now on.
+    func say(_ items: [StatusLine.Item]) {
         change { $0.say(items) }
         if routed { attempt { try showStatusLines(by: program) } }
     }
