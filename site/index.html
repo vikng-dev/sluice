@@ -24,7 +24,7 @@
 }
 * { box-sizing: border-box; }
 html { background: var(--navy); }
-body { margin: 0; background: var(--navy); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.5; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+body { margin: 0; background: var(--navy); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.5; overflow-x: hidden; -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; min-height: 100svh; }
 a { color: inherit; text-decoration: none; }
 button { font: inherit; }
 :focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; border-radius: 6px; }
@@ -109,14 +109,21 @@ h1 span.l { display: block; white-space: nowrap; }
 .sw[aria-pressed="true"]::after { transform: translateX(12px); }
 .tip { position: absolute; z-index: 5; background: var(--card); color: var(--pfg); border: 1px solid var(--track); border-radius: 8px; padding: 6px 9px; font-size: 12px; pointer-events: none; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); white-space: nowrap; }
 
-/* under the water: three things it does, shown */
-.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding-block: 72px 28px; }
-.tile { border: 1px solid var(--line); border-radius: 18px; padding: 22px; display: flex; flex-direction: column; gap: 18px; background: var(--deep); transition: transform .2s, border-color .2s; }
-.tile:hover { transform: translateY(-3px); border-color: #34487c; }
-.tile h2 { margin: 0; font-family: var(--display); font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
-.tile h2 svg { color: var(--teal); flex: none; }
-.render { height: 92px; border-radius: 12px; background: var(--navy); display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 0 16px; font-size: 12px; overflow: hidden; }
+/* under the hero: the deep of the same water, the scale running on down, and three things it does, shown */
+.below { position: relative; flex: 1; background: linear-gradient(#113846, var(--navy) 88%); }
+.scale { position: absolute; left: 14px; top: 0; bottom: 90px; width: 22px; overflow: hidden; -webkit-mask-image: linear-gradient(#000 55%, transparent); mask-image: linear-gradient(#000 55%, transparent); }
+.scale::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; top: calc(-1px * var(--phase, 0));
+  background: repeating-linear-gradient(transparent 0 41px, rgba(255, 244, 222, .55) 41px 43px, transparent 43px 88px) left / 22px 100% no-repeat,
+              repeating-linear-gradient(transparent 0 85px, rgba(255, 244, 222, .55) 85px 87px, transparent 87px 88px) left / 10px 100% no-repeat; }
+.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding-block: 64px 26px; }
+.tile { padding: 4px 34px; border-left: 1px solid rgba(255, 255, 255, .1); display: flex; flex-direction: column; gap: 14px; }
+.tile:first-child { border-left: 0; padding-left: 0; } .tile:last-child { padding-right: 0; }
+.tile h2 { margin: 0; font-family: var(--display); font-size: 22px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+.tile h2 svg { color: var(--teal); flex: none; transition: transform .25s; }
+.tile:hover h2 svg { transform: translateX(4px); }
+.render { height: 84px; display: flex; flex-direction: column; justify-content: center; gap: 12px; font-size: 12px; overflow: hidden; }
 .r-row { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 9px; align-items: center; color: var(--muted); }
+.r-row .track { background: rgba(255, 255, 255, .12); height: 6px; }
 .r-row .track i { width: 0; }
 .swap .a i { animation: fillA 6s linear infinite; } .swap .b i { animation: fillB 6s linear infinite; }
 .swap .a .pm { animation: dimA 6s linear infinite; } .swap .b .pm { animation: dimB 6s linear infinite; }
@@ -124,7 +131,7 @@ h1 span.l { display: block; white-space: nowrap; }
 @keyframes fillB { 0%, 45% { width: 12%; } 100% { width: 58%; } }
 @keyframes dimA { 0%, 42% { color: var(--teal); } 47%, 100% { color: var(--muted); } }
 @keyframes dimB { 0%, 42% { color: var(--muted); } 47%, 100% { color: var(--teal); } }
-.folders { flex-direction: row; align-items: center; justify-content: space-around; padding: 0 10px; }
+.folders { flex-direction: row; align-items: center; justify-content: flex-start; gap: 34px; }
 .fold { display: flex; flex-direction: column; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .fold svg { display: block; }
 .render .strip { background: none; padding: 0; min-height: 0; font-size: 12.5px; }
@@ -136,13 +143,15 @@ h1 span.l { display: block; white-space: nowrap; }
 .scope span, .scope a { display: flex; align-items: center; gap: 8px; }
 .scope a { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
 .scope a:hover { color: var(--fg); }
-footer { display: flex; justify-content: center; gap: 22px; color: var(--muted); font-size: 13px; padding-block: 18px 44px; border-top: 1px solid var(--line); }
+footer { display: flex; justify-content: center; gap: 22px; color: var(--muted); font-size: 13px; padding-block: 14px 44px; }
 footer a:hover { color: var(--fg); }
 
 @media (max-width: 900px) {
   .stage { grid-template-columns: 1fr; gap: 44px; padding-bottom: 64px; }
   .float { max-width: 400px; width: 100%; margin: 0 auto; }
-  .three { grid-template-columns: 1fr; padding-top: 48px; }
+  .three { grid-template-columns: 1fr; padding-top: 44px; gap: 30px; }
+  .tile, .tile:first-child, .tile:last-child { border-left: 0; padding: 0; }
+  .scale { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .float, .swap i, .swap .pm, .caret { animation: none; } .swap .a i { width: 100%; background: var(--warn); } .swap .b i { width: 40%; } .track i, .sw::after, .tile { transition: none; } }
 </style>
@@ -184,6 +193,7 @@ footer a:hover { color: var(--fg); }
   </div>
 </section>
 
+<div class="below"><div class="scale" id="scale" aria-hidden="true"></div>
 <div class="wrap">
   <section class="three">
     <div class="tile">
@@ -217,7 +227,7 @@ footer a:hover { color: var(--fg); }
     <a href="https://github.com/vikng-dev/sluice/blob/main/docs/terms.md"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.500v.01"/></svg>Not endorsed by Anthropic or OpenAI</a>
   </section>
   <footer><a href="https://github.com/vikng-dev/sluice/tree/main/docs">Docs</a><a href="https://github.com/vikng-dev/sluice">GitHub</a><span>MIT</span></footer>
-</div>
+</div></div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -339,17 +349,17 @@ const canvas = $('#water'), hero = $('#hero');
 const gl = canvas.getContext('webgl', { antialias: false, alpha: false, premultipliedAlpha: false });
 const VS = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0., 1.); }';
 const FS = `precision highp float;
-uniform vec2 R; uniform float T, S, D, F, top; uniform vec3 sx, fl; uniform vec3 M; uniform sampler2D tex;
+uniform vec2 R; uniform float T, S, D, F, top; uniform vec3 sx, fl; uniform sampler2D tex, hf;
 vec3 navy = vec3(.039, .075, .149), violet = vec3(.36, .44, .93), blue = vec3(.10, .52, .86), teal = vec3(.16, .74, .72), cream = vec3(1., .957, .871);
 float wave(float x, float k, float t) { return sin(x * .0052 * k + t * .8 + k * 1.7) * 9. + sin(x * .0121 * k - t * 1.15 + k) * 4.5 + sin(x * .031 + t * 1.9 + k * 3.) * 1.6; }
-float splash(float x, float c, float f) { float d = (x - c) / D; return f * 5. * exp(-d * d / 3600.) * sin(d * .16 - T * 7.); }
+float cell(float i) { vec4 c = texture2D(hf, vec2((clamp(i, 0., 255.) + .5) / 256., .5)); return ((c.r * 255. * 256. + c.g * 255.) / 65535. * 2. - 1.) * 64.; }
+float field(float x) { float u = x / R.x * 256. - .5, i = floor(u), f = fract(u); f = f * f * (3. - 2. * f); return mix(cell(i), cell(i + 1.), f); }
 void main() {
   vec2 q = gl_FragCoord.xy; float x = q.x, y = R.y - q.y, xd = x / D;
-  float rip = M.z * 9. * exp(-pow((x - M.x) / (150. * D), 2.)) * sin((x - M.x) / D * .07 - T * 5.);
-  float sp = splash(x, sx.x, fl.x) + splash(x, sx.y, fl.y) + splash(x, sx.z, fl.z);
-  float s1 = S + (wave(xd, 1., T) + rip + sp) * D;
-  float s2 = S + F * 1.22 + (wave(xd, 1.6, T * .9 + 2.) * .85 + rip * .5) * D;
-  float s3 = S + F * 2.25 + (wave(xd, 2.3, T * .8 + 4.) * .75) * D;
+  float h = field(x), slope = field(x + 3. * D) - field(x - 3. * D);
+  float s1 = S + (wave(xd, 1., T) * .6 + h) * D;
+  float s2 = S + F * 1.22 + (wave(xd, 1.6, T * .9 + 2.) * .6 + h * .45) * D;
+  float s3 = S + F * 2.25 + (wave(xd, 2.3, T * .8 + 4.) * .6 + h * .2) * D;
   vec3 air = mix(vec3(.075, .13, .27), navy, clamp(y / max(S, 1.), 0., 1.));
   // the streams, from the accounts down to the surface
   vec3 col = air;
@@ -366,26 +376,24 @@ void main() {
   float in1 = smoothstep(s1 - e, s1 + e, y), in2 = smoothstep(s2 - e, s2 + e, y), in3 = smoothstep(s3 - e, s3 + e, y);
   vec3 water = mix(mix(violet, blue, in2), teal, in3);
   float deepen = smoothstep(s3 + F * .4, R.y, y);
-  water = mix(water, navy, deepen * .96);
+  water = mix(water, navy, deepen * .78);
   float shimmer = sin(xd * .009 + T * .5 + y / D * .004) * .022 + sin(xd * .004 - T * .3) * .018;
   water += shimmer * (1. - deepen);
-  float foam = exp(-abs(y - s1) / (1.8 * D)) * .5 + exp(-abs(y - s2) / (1.6 * D)) * .22 + exp(-abs(y - s3) / (1.6 * D)) * .16;
+  float fade = 1. - smoothstep(R.y - 160. * D, R.y, y);
+  float foam = fade * exp(-abs(y - s1) / (1.8 * D)) * (.5 + min(abs(slope) * .25, .6)) + exp(-abs(y - s2) / (1.6 * D)) * .22 + exp(-abs(y - s3) / (1.6 * D)) * .16;
   col = mix(col, water, in1) + foam * vec3(.85, .95, 1.) * .55;
-  // the headline: crisp in the air, bent by the water under it
-  float depth = clamp((y - s1) / (60. * D), 0., 1.) * in1;
-  vec2 bend = vec2(sin(y / D * .05 + T * 1.6) * 2.4 + sin(y / D * .12 - T * 2.1) * .9, cos(xd * .028 + T * 1.2) * 1.6) * depth * D;
-  vec2 uv = (q + vec2(bend.x, -bend.y)) / R;
-  float a = texture2D(tex, uv).a, a2 = texture2D(tex, uv + vec2(2.5 * D * depth, 0.) / R).a;
-  vec3 ink = mix(cream, vec3(.93, .98, 1.), depth);
-  col = mix(col, ink, a * (1. - .12 * depth));
-  col += vec3(.25, .5, .6) * (a2 - a) * depth * .5;
+  // the headline, crisp above the water and in it
+  float a = texture2D(tex, q / R).a;
+  col = mix(col, mix(cream, vec3(.95, .98, 1.), in1), a);
   // a gauge's scale down the left edge, as on the icon
   float row = mod(y / D - 20., 44.), wide = step(mod(floor((y / D - 20.) / 44.), 2.), .5);
   float tick = smoothstep(1.6, .6, abs(row - 22.)) * step(14. * D, x) * step(x, (14. + 10. + 12. * wide) * D) * step(top * .5, y) * step(900. * D, R.x);
   col = mix(col, cream, tick * .55);
   gl_FragColor = vec4(col, 1.);
 }`;
-let prog, U = {}, text = document.createElement('canvas'), geo = { S: 300, F: 80, top: 200, sx: [0, 0, 0] }, mouse = [0, 0, 0], dpr = 1;
+let prog, U = {}, text = document.createElement('canvas'), geo = { S: 300, F: 80, top: 200, sx: [0, 0, 0] }, dpr = 1;
+const COLS = 256, hgt = new Float32Array(COLS), vel = new Float32Array(COLS), packed = new Uint8Array(COLS * 4);
+let textTex, fieldTex, ptr = null;
 function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
 function setup() {
   prog = gl.createProgram(); gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
@@ -393,10 +401,10 @@ function setup() {
   gl.useProgram(prog);
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   const p = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(p); gl.vertexAttribPointer(p, 2, gl.FLOAT, false, 0, 0);
-  ['R', 'T', 'S', 'D', 'F', 'top', 'sx', 'fl', 'M', 'tex'].forEach(n => U[n] = gl.getUniformLocation(prog, n));
-  gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  ['R', 'T', 'S', 'D', 'F', 'top', 'sx', 'fl', 'tex', 'hf'].forEach(n => U[n] = gl.getUniformLocation(prog, n));
+  const made = filter => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; };
+  gl.activeTexture(gl.TEXTURE1); fieldTex = made(gl.NEAREST);
+  gl.activeTexture(gl.TEXTURE0); textTex = made(gl.LINEAR);
 }
 /* Where the headline, the sources and the surface are, read from the page so the drawing sits on the layout. */
 function measure() {
@@ -411,30 +419,58 @@ function measure() {
     const m = c.measureText(el.textContent), asc = m.fontBoundingBoxAscent ?? size * dpr * .8, desc = m.fontBoundingBoxDescent ?? size * dpr * .2;
     c.fillText(el.textContent, (r.left - h.left) * dpr, (r.top - h.top) * dpr + (r.height * dpr - (asc + desc)) / 2 + asc);
   }
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, textTex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, text);
   const l2 = $('#l2').getBoundingClientRect(), src = [...sources.querySelectorAll('.src')].map(e => e.getBoundingClientRect());
+  $('#scale').style.setProperty('--phase', Math.round(h.height) % 88);
   geo = { F: size * dpr, S: (l2.top - h.top - size * .2) * dpr, top: (src[0].bottom - h.top - 2) * dpr, sx: src.map(r => (r.left + r.width / 2 - h.left) * dpr) };
+}
+/* The surface: a row of springs, each pulled level and toward its neighbours, so a push travels and dies away. Heights are CSS pixels, down positive. */
+function ripple(dt) {
+  const steps = Math.max(1, Math.min(4, Math.round(dt * 120)));
+  for (let n = 0; n < steps; n++) {
+    for (let i = 0; i < COLS; i++) { const l = hgt[i > 0 ? i - 1 : i], r = hgt[i < COLS - 1 ? i + 1 : i]; vel[i] += (l + r - 2 * hgt[i]) * .24 - hgt[i] * .006 - hgt[i] * hgt[i] * hgt[i] * .00002; vel[i] = Math.max(-4, Math.min(4, vel[i] * .988)); }
+    for (let i = 0; i < COLS; i++) hgt[i] += vel[i];
+  }
+  const wide = canvas.width / dpr;
+  // each stream stirs the water where it lands, the more the more it carries
+  geo.sx.forEach((x, k) => { const i = Math.round(x / dpr / wide * COLS); if (i > 1 && i < COLS - 2) { const push = (Math.random() - .5) * 1.1 * flow[k]; vel[i] += push; vel[i - 1] += push * .5; vel[i + 1] += push * .5; } });
+  for (let i = 0; i < COLS; i++) { const v = Math.max(0, Math.min(65535, Math.round((Math.max(-1, Math.min(1, hgt[i] / 64)) + 1) / 2 * 65535))); packed[i * 4] = v >> 8; packed[i * 4 + 1] = v & 255; packed[i * 4 + 3] = 255; }
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, fieldTex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, packed);
+}
+/* The pointer pushes the surface where it crosses it, and drags a wake when it moves just under it. */
+function push(x, y) {
+  const wide = canvas.width / dpr, surface = geo.S / dpr;
+  if (ptr) {
+    const dx = x - ptr.x, dy = y - ptr.y, i = Math.round(x / wide * COLS), at = surface + (hgt[Math.max(0, Math.min(COLS - 1, i))] || 0);
+    const crossed = (ptr.y - at) * (y - at) < 0, near = Math.abs(y - at) < 26;
+    if (crossed || near) for (let k = -9; k <= 9; k++) { const j = i + k; if (j < 0 || j >= COLS) continue; const fall = Math.exp(-k * k / 18);
+      vel[j] += Math.max(-9, Math.min(9, dy)) * (crossed ? .3 : .09) * fall + Math.min(Math.abs(dx), 30) * (near ? -.02 : 0) * fall; }
+  }
+  ptr = { x, y };
 }
 function draw(t) {
   gl.uniform2f(U.R, canvas.width, canvas.height); gl.uniform1f(U.T, t); gl.uniform1f(U.S, geo.S); gl.uniform1f(U.D, dpr); gl.uniform1f(U.F, geo.F); gl.uniform1f(U.top, geo.top);
-  gl.uniform3f(U.sx, geo.sx[0], geo.sx[1], geo.sx[2]); gl.uniform3f(U.fl, flow[0], flow[1], flow[2]); gl.uniform3f(U.M, mouse[0], mouse[1], mouse[2]); gl.uniform1i(U.tex, 0);
+  gl.uniform3f(U.sx, geo.sx[0], geo.sx[1], geo.sx[2]); gl.uniform3f(U.fl, flow[0], flow[1], flow[2]); gl.uniform1i(U.tex, 0); gl.uniform1i(U.hf, 1);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
-let glOK = false, seen = true;
+let glOK = false, seen = true, last = performance.now();
 try { if (gl) { setup(); glOK = true; document.documentElement.classList.add('gl'); } } catch (e) { console.warn('water', e); }
 if (!glOK) canvas.hidden = true;
 if (!glOK) hero.style.background = 'linear-gradient(#0d1a36 0 46%, #5468e0 46% 62%, #1a82d6 62% 78%, #0a1326 100%)';
 function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
   meters(now);
-  mouse[2] *= .97;
-  if (glOK && seen) draw(now / 1000);
+  if (glOK && seen) { ripple(dt); draw(now / 1000); }
   requestAnimationFrame(frame);
 }
-hero.addEventListener('pointermove', e => { const h = hero.getBoundingClientRect(); mouse[0] = (e.clientX - h.left) * dpr; mouse[1] = (e.clientY - h.top) * dpr; mouse[2] = Math.min(1, mouse[2] + .08); });
+hero.addEventListener('pointermove', e => { const h = hero.getBoundingClientRect(); push(e.clientX - h.left, e.clientY - h.top); });
+hero.addEventListener('pointerleave', () => { ptr = null; });
 new IntersectionObserver(es => { seen = es[0].isIntersecting; }).observe(hero);
 render(); rings();
 if (glOK) {
-  measure(); draw(0);
+  measure(); ripple(0); draw(0);
   new ResizeObserver(() => { measure(); if (still) draw(0); }).observe(hero);
   (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => { measure(); if (still) draw(0); });
 }
