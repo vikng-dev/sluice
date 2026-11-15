@@ -77,8 +77,14 @@ private struct LineCard: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Status line").font(.callout.weight(.semibold))
-                Text(providers.filter { $0 is any StatusShowing }.map(\.name).formatted(.list(type: .and))).font(.caption).foregroundStyle(.secondary)
-                    .help("The clients that show it under their prompt, of the pool that pays for the work, before a line of your own")
+                ForEach(providers.filter { $0 is any StatusShowing }.map { (id: $0.id, name: $0.name) }, id: \.id) { provider in
+                    HStack(spacing: 3) {
+                        if let mark = providerMark(provider.id) { Image(nsImage: mark).resizable().frame(width: 10, height: 10) }
+                        Text(provider.name).font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .help("Shows it under its prompt, of the pool that pays for the work, before a line of your own")
+                }
                 Spacer()
                 Toggle("", isOn: Binding { on } set: { running.showStatusLine($0) }).toggleStyle(.switch).controlSize(.mini).labelsHidden()
             }
