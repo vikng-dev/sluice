@@ -26,14 +26,10 @@ private let program = Bundle.main.executableURL!
     /// The one of them the panel says.
     var said: String { [problem, unread, refusal].first { !$0.isEmpty } ?? "" }
     var routed = false
-    var accounts: [AccountStatus] = [] {
-        didSet {
-            let now = Dictionary(accounts.map { ($0.id, $0.streaming) }) { $0 + $1 }
-            if now != streaming { streaming = now }
-        }
-    }
-    /// How many answers are coming through each account now, by its id.
-    private(set) var streaming: [String: Int] = [:]
+    var accounts: [AccountStatus] = []
+    /// By account, how many requests it is at work on now, for those that are or were within the last
+    /// minute: what the bars beside an account show.
+    private(set) var levels: [String: Int] = [:]
     var config = Config()
     /// By profile.
     var identities: [String: [Identity]] = [:]
@@ -217,13 +213,18 @@ private let program = Bundle.main.executableURL!
         }
     }
 
-    /// While the panel is looked at, it shows which accounts answers are coming through as they come:
-    /// the relay is asked every second, and the accounts are told again only when that has changed.
+    /// While the panel is looked at, the relay is asked every second which accounts are at work, and the
+    /// bars are told only when that has changed.
     func meter() async {
         while !Task.isCancelled, let relay = sluice?.relay {
-            if let told = try? await relay.status(), Dictionary(told.map { ($0.id, $0.streaming) }, uniquingKeysWith: +) != streaming { accounts = told }
+            if let told = try? await relay.status() { measure(told, now: Date()) }
             try? await Task.sleep(for: .seconds(1))
         }
+    }
+
+    func measure(_ told: [AccountStatus], now: Date) {
+        let levels = Dictionary(told.filter { $0.streaming > 0 || $0.lastAnswered.map { now.timeIntervalSince($0) < 60 } == true }.map { ($0.id, $0.streaming) }, uniquingKeysWith: +)
+        if levels != self.levels { self.levels = levels }
     }
 
     /// The histories are read off the main thread: a week of requests is many lines.

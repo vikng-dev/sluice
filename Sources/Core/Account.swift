@@ -56,7 +56,7 @@ public struct AccountStatus: Codable, Sendable {
     /// The resets it holds, as its provider last told.
     public var resets: [Reset] = []
     public var warmConversations: Int
-    /// When it last answered a relayed request, since the relay started.
+    /// When it last answered a relayed request, or finished answering one, since the relay started.
     public var lastAnswered: Date?
     /// How many requests it is at work on now: sent to it, and not yet answered to the end.
     public var streaming: Int
@@ -274,6 +274,8 @@ actor Accounts {
     /// A request was sent to the account, or with -1 its answer came to its end.
     func streams(_ id: String, _ change: Int) {
         run[id, default: Run()].streaming += change
+        // It was at work until now.
+        if change < 0 { run[id]?.answered = Date() }
     }
 
     private func record(_ windows: [Window], for id: String) {

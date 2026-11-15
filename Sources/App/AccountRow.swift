@@ -106,11 +106,6 @@ struct AccountRow: View {
     static let share: Double = 34
     static let clock: Double = 52
 
-    /// How many answers are coming through it now; nil when none is and none was within the last minute.
-    private var level: Int? {
-        let streaming = running.streaming[account.id] ?? 0
-        return streaming > 0 || account.lastAnswered.map { now.timeIntervalSince($0) < 60 } == true ? streaming : nil
-    }
 
     /// Open, the row lists every limit the account has and the resets it holds.
     @State private var opened = false
@@ -149,7 +144,7 @@ struct AccountRow: View {
                 .opacity(actions == nil || hovered ? 1 : 0)
                 // Where the handle is not showing, an account that is answering says so.
                 .overlay(alignment: .leading) {
-                    if let level, actions != nil { Playing(level: level).id(level).opacity(hovered ? 0 : 1) }
+                    if let level = running.levels[account.id], actions != nil { Playing(level: level).id(level).opacity(hovered ? 0 : 1) }
                 }
                 .moves(.easeOut(duration: 0.12), with: hovered)
                 .gesture(actions.map { actions in
@@ -291,25 +286,26 @@ extension Reset {
     }
 }
 
-/// A level meter of three bars: they rise and fall while answers come through the account, higher and
-/// faster the more of them there are, and stand low and still when it has only just answered. Made anew
-/// for each level, so that it moves as that level does from the start.
+/// A level meter of three bars. While the account is at work on requests they rise and fall, higher and
+/// faster the more there are; for a minute after, they barely stir. Made anew for each level, so that it
+/// moves as that level does from the start.
 private struct Playing: View {
     let level: Int
     @State private var up = false
     @Environment(\.accessibilityReduceMotion) private var still
 
     var body: some View {
-        // One answer fills a little over half of it, and four fill it.
-        let top = min(0.4 + 0.15 * Double(level), 1)
-        HStack(alignment: .bottom, spacing: 1.5) {
+        // In points of a bar's ten: one request fills a little over half of it, and four fill it.
+        let (low, high, pace) = level == 0 ? (2.0, 3.0, 0.3) : (3.0, min(4 + 1.5 * Double(level), 10), 0.7 + 0.15 * Double(min(level, 4)))
+        HStack(alignment: .bottom, spacing: 2) {
             ForEach(Array([0.5, 0.34, 0.44].enumerated()), id: \.offset) { bar, beat in
-                Capsule().fill(.green).frame(width: 2, height: 10)
-                    .scaleEffect(y: level == 0 ? 0.3 : still ? [0.5, 0.9, 0.6][bar] * top : up ? top : 0.3, anchor: .bottom)
-                    .moves(.easeInOut(duration: beat / (0.7 + 0.15 * Double(min(level, 4)))).repeatForever(autoreverses: true), with: up)
+                // Its height is its own, not a taller bar's squeezed, so that its ends stay round at any height.
+                Capsule().fill(.green).frame(width: 2, height: still ? low + (high - low) * [0.5, 0.9, 0.6][bar] : up ? high : low)
+                    .moves(.easeInOut(duration: beat / pace).repeatForever(autoreverses: true), with: up)
             }
         }
-        .onAppear { up = level > 0 }
+        .frame(height: 10, alignment: .bottom)
+        .onAppear { up = true }
     }
 }
 
