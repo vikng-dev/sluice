@@ -898,7 +898,7 @@ private struct AccountRow: View {
                                 Button { armed.wrappedValue = using } label: {
                                     HStack(spacing: 4) {
                                         Text(reset.kind(for: account) + (count > 1 ? " ×\(count)" : "")).fontWeight(.semibold)
-                                        if let expires = reset.expiresAt { Text(expires.leftText(now: now)).opacity(0.7) }
+                                        if let expires = reset.expiresAt { Text(expires.leftText(now: now, units: 1)).opacity(0.7) }
                                     }
                                     .font(.caption2.monospacedDigit()).lineLimit(1).fixedSize()
                                     .foregroundStyle(reset.usable ? Color.green : Color.secondary)

@@ -29,12 +29,13 @@ public extension Date {
         settled.formatted(Calendar.current.isDateInToday(settled) ? Date.FormatStyle(date: .omitted, time: .shortened) : Date.FormatStyle().weekday(.abbreviated).hour().minute())
     }
 
-    /// How long until it, in its two largest units and without one that is nought: "4d 20h", "1d", "3h 5m", "12m".
-    func leftText(now: Date) -> String {
+    /// How long until it, in its largest units, two unless told one, and without a second that is nought:
+    /// "4d 20h", "1d", "3h 5m", "12m"; in one, "4d".
+    func leftText(now: Date, units: Int = 2) -> String {
         let minutes = max(0, Int((timeIntervalSince(now) / 60).rounded()))
         let (days, hours) = (minutes / 1440, minutes / 60 % 24)
         let parts = days > 0 ? [(days, "d"), (hours, "h")] : hours > 0 ? [(hours, "h"), (minutes % 60, "m")] : [(minutes, "m")]
-        return parts.enumerated().filter { $0.offset == 0 || $0.element.0 > 0 }.map { "\($0.element.0)\($0.element.1)" }.joined(separator: " ")
+        return parts.prefix(units).enumerated().filter { $0.offset == 0 || $0.element.0 > 0 }.map { "\($0.element.0)\($0.element.1)" }.joined(separator: " ")
     }
 }
 

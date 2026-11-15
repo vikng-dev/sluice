@@ -321,13 +321,15 @@ import Testing
         #expect(Forecast.burn([(samples, 1)], from: start, to: start + 600) == nil)
     }
 
-    @Test func theTimeLeftIsReadInItsTwoLargestUnits() {
+    @Test func theTimeLeftIsReadInItsLargestUnits() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         func left(_ seconds: Double) -> String { (now + seconds).leftText(now: now) }
         #expect(left(4 * 86400 + 20 * 3600 + 50 * 60) == "4d 20h")
         #expect(left(3 * 3600 + 5 * 60) == "3h 5m")
         #expect(left(86400 + 20) == "1d")
         #expect(left(12 * 60) == "12m")
+        #expect((now + 122 * 86400 + 19 * 3600).leftText(now: now, units: 1) == "122d")
+        #expect((now + 19 * 3600 + 40 * 60).leftText(now: now, units: 1) == "19h")
         // A reset that has just passed is not time owed.
         #expect(left(-90) == "0m")
     }
