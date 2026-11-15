@@ -26,7 +26,14 @@ private let program = Bundle.main.executableURL!
     /// The one of them the panel says.
     var said: String { [problem, unread, refusal].first { !$0.isEmpty } ?? "" }
     var routed = false
-    var accounts: [AccountStatus] = []
+    var accounts: [AccountStatus] = [] {
+        didSet {
+            let now = Dictionary(accounts.map { ($0.id, $0.streaming) }) { $0 + $1 }
+            if now != streaming { streaming = now }
+        }
+    }
+    /// How many answers are coming through each account now, by its id.
+    private(set) var streaming: [String: Int] = [:]
     var config = Config()
     /// By profile.
     var identities: [String: [Identity]] = [:]
@@ -207,6 +214,15 @@ private let program = Bundle.main.executableURL!
             await relay.checkUsage(olderThan: 60, resetsOlderThan: 600)
             if let told = try? await relay.status() { accounts = told }
             refreshing = false
+        }
+    }
+
+    /// While the panel is looked at, it shows which accounts answers are coming through as they come:
+    /// the relay is asked every second, and the accounts are told again only when that has changed.
+    func meter() async {
+        while !Task.isCancelled, let relay = sluice?.relay {
+            if let told = try? await relay.status(), Dictionary(told.map { ($0.id, $0.streaming) }, uniquingKeysWith: +) != streaming { accounts = told }
+            try? await Task.sleep(for: .seconds(1))
         }
     }
 

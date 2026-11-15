@@ -58,6 +58,8 @@ public struct AccountStatus: Codable, Sendable {
     public var warmConversations: Int
     /// When it last answered a relayed request, since the relay started.
     public var lastAnswered: Date?
+    /// How many answers are coming through it now.
+    public var streaming: Int
     /// Why it cannot serve, in the provider's or Sluice's words; nil when nothing is known to be wrong.
     public var problem: String?
     /// How much its week holds beside the other accounts of its pool. Where its provider's meter has a
@@ -83,6 +85,8 @@ actor Accounts {
     private struct Run {
         /// When it last answered a relayed request.
         var answered: Date?
+        /// How many answers are coming through it now.
+        var streaming = 0
         /// Why it cannot serve; nil when nothing is known to be wrong.
         var problem: String?
         /// When its usage was last told, and its resets last asked for.
@@ -113,7 +117,7 @@ actor Accounts {
             return AccountStatus(
                 provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), plan: plan,
                 windows: live.windows, scoped: live.scoped, resets: live.resets,
-                warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: run[$0.id]?.answered, problem: run[$0.id]?.problem,
+                warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: run[$0.id]?.answered, streaming: run[$0.id]?.streaming ?? 0, problem: run[$0.id]?.problem,
                 size: sizing?.size ?? formulas[$0.provider]?.size(of: plan) ?? Double(plan?.multiple ?? 1), spread: sizing?.spread
             )
         }
@@ -265,6 +269,11 @@ actor Accounts {
     func answered(_ id: String, reporting windows: [Window]) {
         run[id, default: Run()].answered = Date()
         record(windows, for: id)
+    }
+
+    /// An answer began to come through the account, or with -1 came to its end.
+    func streams(_ id: String, _ change: Int) {
+        run[id, default: Run()].streaming += change
     }
 
     private func record(_ windows: [Window], for id: String) {

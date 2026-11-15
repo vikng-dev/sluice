@@ -16,6 +16,8 @@ struct Panel: View {
     @State private var founder: AccountStatus?
     /// Where each profile, each account's row and the place for a new profile is in the panel.
     @State private var frames: [String: CGRect] = [:]
+    /// Whether the panel is open: it is the same view when it is not.
+    @State private var looked = false
 
     /// The profile the carried account would land in: the one under the pointer, unless it is its own.
     private var target: String? {
@@ -145,9 +147,14 @@ struct Panel: View {
         .task { running.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             running.refresh()
+            looked = true
             if shown == .use { running.loadHistory() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in armed = nil }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            armed = nil
+            looked = false
+        }
+        .task(id: looked) { if looked { await running.meter() } }
         .onPreferenceChange(Frames.self) { frames = $0 }
         .coordinateSpace(name: Frames.space)
         // The carried account's row, lifted off the panel and following the pointer.

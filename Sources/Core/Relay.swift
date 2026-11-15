@@ -303,7 +303,13 @@ public final class Relay: Sendable {
                 let counted = Metered(base: body, count: provider.count) { spend in
                     Task { await accounts.spent(spend, by: account.id, for: profile, folder: folder, conversation: conversation?.id, since: asked) }
                 }
-                return try await writer.send(response.statusCode, headers: headers, body: counted)
+                // It is streaming until the last of the answer is handed on, or the client is gone.
+                await accounts.streams(account.id, 1)
+                do { try await writer.send(response.statusCode, headers: headers, body: counted) } catch {
+                    await accounts.streams(account.id, -1)
+                    throw error
+                }
+                return await accounts.streams(account.id, -1)
             }
         }
     }
