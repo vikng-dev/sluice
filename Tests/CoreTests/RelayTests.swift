@@ -103,6 +103,11 @@ private actor Hits {
         _ = try await HTTPCall.send("GET", url, headers: ["User-Agent": "other/9"])
         await relay.checkUsage()
         #expect(try await relay.status().first?.resets.map(\.id) == ["own/1"])
+        // Two versions of the client side by side go by the later one, whichever came through last.
+        _ = try await HTTPCall.send("GET", url, headers: ["User-Agent": "own/2"])
+        _ = try await HTTPCall.send("GET", url, headers: ["User-Agent": "own/1"])
+        await relay.checkUsage(resetsOlderThan: 0)
+        #expect(try await relay.status().first?.resets.map(\.id) == ["own/2"])
         withExtendedLifetime((provider, server)) {}
     }
 

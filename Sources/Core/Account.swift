@@ -169,9 +169,10 @@ actor Accounts {
         run[id]?.usageAsked.map { now.timeIntervalSince($0) >= age } ?? true
     }
 
-    /// A provider's own client named itself on a request. True when that is news.
+    /// A provider's own client named itself on a request. True when that is news: none was known, or
+    /// this is a later version. Two versions running side by side are then one name, not news at each turn.
     func seen(client: String, of provider: String) -> Bool {
-        guard memory.clients[provider] != client else { return false }
+        guard memory.clients[provider].map({ client.compare($0, options: .numeric) == .orderedDescending }) ?? true else { return false }
         memory.clients[provider] = client
         remember()
         return true
