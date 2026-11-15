@@ -1,23 +1,26 @@
 import Foundation
 import Network
+import os
 
 public typealias Handler = @Sendable (HTTPRequest, ResponseWriter) async throws -> Void
 
 /// An HTTP/1.1 server on loopback: keep-alive, bodies framed by Content-Length in, chunked out.
 public final class Server: Sendable {
     private let listener: NWListener
+    /// How many requests are being answered, and whether it is letting go of its port.
+    private let work = OSAllocatedUnfairLock(initialState: (answering: 0, draining: false))
 
     public init(port: UInt16, handler: @escaping Handler) throws {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: port)!)
         parameters.allowLocalEndpointReuse = true
         listener = try NWListener(using: parameters)
-        listener.newConnectionHandler = { connection in
+        listener.newConnectionHandler = { [work] connection in
             connection.start(queue: .global())
             Task {
                 var folder: String?
                 if case .hostPort(_, let from) = connection.endpoint { folder = Caller.folder(ofLocalPort: from.rawValue, to: port) }
-                await Self.serve(Peer(connection: connection), from: folder, handler)
+                await Self.serve(Peer(connection: connection), from: folder, work, handler)
                 connection.cancel()
             }
         }
@@ -47,16 +50,28 @@ public final class Server: Sendable {
         listener.cancel()
     }
 
-    private static func serve(_ peer: Peer, from folder: String?, _ handler: Handler) async {
+    /// Lets go of the port for another copy to take, and returns once no request is being answered or
+    /// `givenUp` says so. The answers under way are finished. A connection is closed after its answer, and a
+    /// request that still comes on one is answered and told so, for the client to connect to the other copy.
+    public func drain(givenUp: @Sendable () -> Bool) async {
+        listener.cancel()
+        work.withLock { $0.draining = true }
+        while work.withLock({ $0.answering > 0 }), !givenUp() { try? await Task.sleep(for: .milliseconds(100)) }
+    }
+
+    private static func serve(_ peer: Peer, from folder: String?, _ work: OSAllocatedUnfairLock<(answering: Int, draining: Bool)>, _ handler: Handler) async {
         var buffer = Data()
         do {
             while var request = try await peer.request(&buffer) {
+                let closes = work.withLock { $0.answering += 1; return $0.draining }
+                defer { work.withLock { $0.answering -= 1 } }
                 request.callerFolder = folder
                 guard request.isLocalCaller else { throw HTTPError.notLocal }
-                try await handler(request, ResponseWriter(peer: peer, method: request.method))
+                try await handler(request, ResponseWriter(peer: peer, method: request.method, closes: closes))
+                if work.withLock({ $0.draining }) { break }
             }
         } catch let error as HTTPError {
-            try? await ResponseWriter(peer: peer, method: "").send(error.status, text: "sluice: \(error)")
+            try? await ResponseWriter(peer: peer, method: "", closes: true).send(error.status, text: "sluice: \(error)")
         } catch {
             // The client went away or the upstream broke mid-body: closing the connection tells the client.
         }
@@ -111,12 +126,15 @@ struct Peer: Sendable {
 public struct ResponseWriter: Sendable {
     let peer: Peer
     let method: String
+    /// The connection is closed after this answer, and the answer says so.
+    let closes: Bool
 
     public func send<Body: AsyncSequence>(_ status: Int, headers: [(String, String)], body: Body) async throws where Body.Element == Data {
         // HEAD, 204 and 304 responses have no body by definition.
         let bodiless = method == "HEAD" || status == 204 || status == 304
         var head = "HTTP/1.1 \(status) \(HTTPURLResponse.localizedString(forStatusCode: status))\r\n"
         for (name, value) in headers where !Hop.response.contains(name.lowercased()) { head += "\(name): \(value)\r\n" }
+        if closes { head += "Connection: close\r\n" }
         head += bodiless ? "\r\n" : "Transfer-Encoding: chunked\r\n\r\n"
         try await peer.send(Data(head.utf8))
         if bodiless { return }

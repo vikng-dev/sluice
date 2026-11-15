@@ -3,12 +3,12 @@ import SluiceCore
 
 public let providers: [any Provider] = [Claude(), Codex()]
 
-/// Starts the relay with every provider on Sluice's port, and keeps every account's usage current:
-/// a request's answer updates the account it went through, and the rest are asked every five minutes.
-public func startSluice() async throws -> (server: Server, relay: Relay) {
+/// Starts the relay with every provider on Sluice's port, taking it over from a copy that has it, and
+/// keeps every account's usage current: a request's answer updates the account it went through, and the
+/// rest are asked every five minutes. `yielded` is told when a newer copy takes the port from this one.
+public func startSluice(yielded: @escaping @Sendable () -> Void = {}) async throws -> (server: Server, relay: Relay) {
     let relay = try Relay(providers: providers, storage: .live, port: Sluice.port)
-    let server = try Server(port: Sluice.port) { try await relay.handle($0, $1) }
-    try await server.start()
+    let server = try await Handover.start({ try Server(port: Sluice.port) { try await relay.handle($0, $1) } }, yielded: yielded)
     Task {
         while !Task.isCancelled {
             await relay.checkUsage()

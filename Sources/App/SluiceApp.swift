@@ -8,6 +8,8 @@ import SwiftUI
 let keeperLabel = "\(Sluice.id).relay"
 @MainActor let keeper = SMAppService.agent(plistName: "\(keeperLabel).plist")
 let isKept = ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == keeperLabel
+/// The argument a replaced copy runs its successor with: it serves beside a copy that is kept.
+let takeover = "takeover"
 @MainActor var handoverProblem = ""
 private let log = Logger(subsystem: Sluice.id, category: "app")
 // The app's own executable always exists.
@@ -35,6 +37,8 @@ private let program = Bundle.main.executableURL!
     var identities: [String: [Identity]] = [:]
     var history = History()
     private var sluice: (server: Server, relay: Relay)?
+    /// A newer copy has the port and the menu bar; this one only finishes the answers it was giving.
+    private(set) var yielded = false
     @ObservationIgnored private var refreshing = false
 
     /// Starts the relay, when the app launches and not when its panel is first opened.
@@ -44,22 +48,26 @@ private let program = Bundle.main.executableURL!
         if routed { attempt { try showStatusLines(by: program) } }
         Task {
             do {
-                sluice = try await startSluice()
+                sluice = try await startSluice { Task { @MainActor in self.yielded = true } }
                 Task { await watch() }
                 // Only launchd starts a copy that left; one run by hand stays as it is.
                 if isKept { await follow() }
             } catch {
                 problem = "Not relaying: \(error)"
                 log.error("not relaying: \(String(describing: error), privacy: .public)")
-                // Clients may be set to talk to Sluice, so a kept copy does not sit there deaf: launchd starts it again.
-                if isKept { exit(1) }
+                // Clients may be set to talk to Sluice, so a kept copy does not sit there deaf: launchd starts it
+                // again. One that was to take over leaves too, and the copy that started it does the same.
+                if isKept || CommandLine.arguments.dropFirst() == [takeover] { exit(1) }
             }
         }
     }
 
-    /// A kept copy follows its own program file. Replaced by an upgrade, it leaves and launchd starts the
-    /// new one. It does not wait for a quiet moment: under steady traffic none comes, the relay is back
-    /// within a second, and the clients resend what was cut. Removed by an uninstall, it quits as from the menu.
+    /// A kept copy follows its own program file. Replaced by an upgrade, it starts the new one beside
+    /// itself, which takes the port while this one finishes the answers it is giving and then leaves;
+    /// launchd then starts its own copy, which takes over the same way. It does not wait for a quiet
+    /// moment: under steady traffic none comes. A new one that does not take the port within half a
+    /// minute cannot run beside this, so this leaves at once for launchd to start it, as a copy without
+    /// a handover did. Removed by an uninstall, it quits as from the menu.
     private func follow() async {
         func found() -> UInt64? { ((try? FileManager.default.attributesOfItem(atPath: program.path))?[.systemFileNumber] as? NSNumber)?.uint64Value }
         var watch = ProgramWatch(launched: found())
@@ -69,13 +77,31 @@ private let program = Bundle.main.executableURL!
             case .stay:
                 continue
             case .restart:
-                log.notice("the app was replaced: restarting into it")
-                exit(0)
+                log.notice("the app was replaced: starting the new one to take over")
+                startSuccessor()
+                try? await Task.sleep(for: .seconds(30))
+                if !yielded { exit(0) }
+                return
             case .leave:
                 log.notice("the app is gone: quitting")
                 return quit()
             }
         }
+    }
+
+    /// Runs the program now in this one's place, apart from this process: launchd ends what a job leaves
+    /// in its own session, and tells a kept copy by its environment.
+    private func startSuccessor() {
+        var attributes: posix_spawnattr_t?
+        posix_spawnattr_init(&attributes)
+        defer { posix_spawnattr_destroy(&attributes) }
+        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID))
+        let environment = ProcessInfo.processInfo.environment.filter { $0.key != "XPC_SERVICE_NAME" }.map { "\($0)=\($1)" }
+        func strings(_ list: [String]) -> [UnsafeMutablePointer<CChar>?] { list.map { strdup($0) } + [nil] }
+        let arguments = strings([program.path, takeover]), variables = strings(environment)
+        defer { (arguments + variables).forEach { free($0) } }
+        let status = posix_spawn(nil, program.path, nil, &attributes, arguments, variables)
+        if status != 0 { log.error("could not start the new app: \(String(cString: strerror(status)), privacy: .public)") }
     }
 
     /// Reading the accounts is local and asks no provider. It goes on while the panel is shut, as the
@@ -299,7 +325,7 @@ struct SluiceApp: App {
     init() { running.start() }
 
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra(isInserted: Binding { !running.yielded } set: { _ in }) {
             Panel(now: Date()).environment(running)
         } label: {
             // The glyph says whether clients are routed; while they are, the starred pools take its place.

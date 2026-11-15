@@ -301,4 +301,47 @@ private actor Hits {
         #expect(try await HTTPCall.send("DELETE", address).status == 404)
         withExtendedLifetime(server) {}
     }
+
+    @Test func anAnswerUnderWayIsFinishedWhileAnotherCopyTakesThePort() async throws {
+        let old = try Server(port: 47640) { _, writer in
+            try await writer.send(200, headers: [], body: AsyncStream<Data> { pieces in
+                Task {
+                    for piece in 0..<5 {
+                        try? await Task.sleep(for: .milliseconds(200))
+                        pieces.yield(Data("\(piece)".utf8))
+                    }
+                    pieces.finish()
+                }
+            })
+        }
+        try await old.start()
+        let address = URL(string: "http://127.0.0.1:47640/")!
+        async let underWay = HTTPCall.send("GET", address)
+        try await Task.sleep(for: .milliseconds(300))
+
+        let drained = Task { await old.drain { false } }
+        var new = try Server(port: 47640) { _, writer in try await writer.send(200, text: "new") }
+        // The port is free once the old one has let go of it, which is within its next turn.
+        for attempt in 0... {
+            do { try await new.start(); break } catch where attempt < 50 {
+                try await Task.sleep(for: .milliseconds(20))
+                new = try Server(port: 47640) { _, writer in try await writer.send(200, text: "new") }
+            }
+        }
+        #expect(String(decoding: try await HTTPCall.send("GET", address).body, as: UTF8.self) == "new")
+        #expect(String(decoding: try await underWay.body, as: UTF8.self) == "01234")
+        await drained.value
+        withExtendedLifetime(new) {}
+    }
+
+    @Test func aSignInAnotherCopySavedIsKeptWhenThisOneSavesItsOwn() async throws {
+        @Sendable func account(_ name: String, token: String = "") -> Account { Account(provider: "fake", subject: name, organization: nil, label: name, accessToken: token, refreshToken: "", expiresAt: .distantFuture) }
+        let stored = OSAllocatedUnfairLock(initialState: [account("a")])
+        let accounts = try Accounts(storage: Storage(loadAccounts: { stored.withLock { $0 } }, storeAccounts: { next in stored.withLock { $0 = next } }, config: { Config() }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in }))
+        // Another copy signs b in, which this one has not read.
+        stored.withLock { $0.append(account("b")) }
+        try await accounts.save(account("a", token: "renewed"))
+        #expect(stored.withLock { $0.map(\.label) } == ["a", "b"])
+        #expect(stored.withLock { $0.first?.accessToken } == "renewed")
+    }
 }

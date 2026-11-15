@@ -5,8 +5,8 @@ brew install --cask vikng-dev/tap/sluice
 ```
 
 Open Sluice once. macOS keeps it running from then on: it starts with the Mac and comes back if it
-stops. An upgrade needs nothing more: the running copy sees that its app was replaced and starts again
-from the new one, within a second. The app is also the `sluice` command, which Homebrew puts on your PATH. Then press
+stops. An upgrade needs nothing more and cuts no answer: the running copy sees that its app was replaced
+and starts the new one, which takes over while the old one finishes the answers it is giving. The app is also the `sluice` command, which Homebrew puts on your PATH. Then press
 **Turn on** in the panel, or run:
 
 ```sh

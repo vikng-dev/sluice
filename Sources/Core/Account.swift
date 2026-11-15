@@ -136,7 +136,7 @@ actor Accounts {
     /// Forgets a sign-in, and what was observed about it. False when there is no such account.
     func remove(provider: String, label: String) throws -> Bool {
         guard let gone = accounts.first(where: { $0.provider == provider && $0.label == label }) else { return false }
-        let next = accounts.filter { $0.id != gone.id }
+        let next = try storage.loadAccounts().filter { $0.id != gone.id }
         try storage.storeAccounts(next)
         accounts = next
         (memory.accounts[gone.id], run[gone.id]) = (nil, nil)
@@ -144,8 +144,9 @@ actor Accounts {
         return true
     }
 
+    /// What is stored is what is changed: during a handover another copy saves there too.
     func save(_ account: Account) throws {
-        var next = accounts
+        var next = try storage.loadAccounts()
         if let index = next.firstIndex(where: { $0.id == account.id }) { next[index] = account } else { next.append(account) }
         try storage.storeAccounts(next)
         accounts = next
@@ -352,7 +353,15 @@ actor Accounts {
     /// A renewal that fails is the account's problem until it next works.
     func fresh(_ id: String, using provider: any Provider) async throws -> Account {
         if let running = refreshing[id] { return try await running.value }
-        guard let account = accounts.first(where: { $0.id == id }) else { throw ProviderError.signedOut }
+        func known() throws -> Account {
+            guard let account = accounts.first(where: { $0.id == id }) else { throw ProviderError.signedOut }
+            return account
+        }
+        var account = try known()
+        guard account.expiresAt < Date().addingTimeInterval(300) else { return account }
+        // During a handover another copy may have renewed it, and a sign-in is renewed with what the last renewal gave.
+        accounts = try storage.loadAccounts()
+        account = try known()
         guard account.expiresAt < Date().addingTimeInterval(300) else { return account }
         let task = Task { try await provider.refresh(account) }
         refreshing[id] = task
