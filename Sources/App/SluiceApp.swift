@@ -304,7 +304,7 @@ struct SluiceApp: App {
         } label: {
             // The glyph says whether clients are routed; while they are, the starred pools take its place.
             let counters = running.counters(left: left)
-            Image(nsImage: counters.isEmpty || !running.routed ? gateGlyph(open: running.routed) : counterGlyph(counters))
+            Image(nsImage: counters.isEmpty || !running.routed ? poolGlyph(routed: running.routed) : counterGlyph(counters))
         }
         .menuBarExtraStyle(.window)
     }

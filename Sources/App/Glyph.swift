@@ -1,30 +1,34 @@
 import AppKit
 
-/// The menu bar glyph: the gate of the app icon, in the icon's own coordinates (Assets/AppIcon.svg).
-/// The blade is up with water running under it while clients are routed, and down on the sill when not.
-func gateGlyph(open: Bool) -> NSImage {
-    let scale = 18.0 / 624
-    let image = NSImage(size: NSSize(width: 672 * scale, height: 18), flipped: true) { _ in
+/// The menu bar glyph: the app icon's tile as an outline (Assets/AppIcon.svg), in a 760-unit square.
+/// It holds a wave of water while clients are routed, and a low still line when not.
+func poolGlyph(routed: Bool) -> NSImage {
+    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
         let fit = NSAffineTransform()
-        fit.scale(by: scale)
-        fit.translateX(by: -176, yBy: -224)
+        fit.scale(by: 18.0 / 760)
+        fit.translateX(by: -132, yBy: -132)
         fit.concat()
-        NSColor.black.withAlphaComponent(0.45).setFill()
-        if open {
+        NSColor.black.set()
+        let tile = NSBezierPath(roundedRect: NSRect(x: 176, y: 176, width: 672, height: 672), xRadius: 170, yRadius: 170)
+        tile.lineWidth = 72
+        tile.stroke()
+        if routed {
+            NSBezierPath(roundedRect: NSRect(x: 200, y: 200, width: 624, height: 624), xRadius: 140, yRadius: 140).addClip()
             let water = NSBezierPath()
-            water.move(to: NSPoint(x: 336, y: 528))
-            water.line(to: NSPoint(x: 688, y: 528))
-            water.line(to: NSPoint(x: 688, y: 616))
-            water.curve(to: NSPoint(x: 848, y: 848), controlPoint1: NSPoint(x: 688, y: 724), controlPoint2: NSPoint(x: 752, y: 780))
+            water.move(to: NSPoint(x: 176, y: 520))
+            water.curve(to: NSPoint(x: 512, y: 520), controlPoint1: NSPoint(x: 288, y: 450), controlPoint2: NSPoint(x: 400, y: 590))
+            water.curve(to: NSPoint(x: 848, y: 520), controlPoint1: NSPoint(x: 624, y: 450), controlPoint2: NSPoint(x: 736, y: 590))
+            water.line(to: NSPoint(x: 848, y: 848))
             water.line(to: NSPoint(x: 176, y: 848))
-            water.curve(to: NSPoint(x: 336, y: 616), controlPoint1: NSPoint(x: 272, y: 780), controlPoint2: NSPoint(x: 336, y: 724))
             water.fill()
         } else {
-            NSRect(x: 336, y: 552, width: 352, height: 40).fill()
+            let still = NSBezierPath()
+            still.move(to: NSPoint(x: 350, y: 670))
+            still.line(to: NSPoint(x: 674, y: 670))
+            still.lineWidth = 68
+            still.lineCapStyle = .round
+            still.stroke()
         }
-        NSColor.black.setFill()
-        for x in [248.0, 688] { NSBezierPath(roundedRect: NSRect(x: x, y: 224, width: 88, height: 544), xRadius: 24, yRadius: 24).fill() }
-        NSBezierPath(roundedRect: NSRect(x: 360, y: open ? 280 : 592, width: 304, height: 176), xRadius: 20, yRadius: 20).fill()
         return true
     }
     image.isTemplate = true
