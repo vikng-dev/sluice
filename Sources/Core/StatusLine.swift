@@ -43,10 +43,16 @@ public enum StatusLine {
     /// The tone that warns of a share nearly or wholly gone; nil while there is room.
     public static func alarm(_ used: Double) -> Tone? { used >= 1 ? .critical : used >= 0.85 ? .warning : nil }
 
-    /// What each item says of the pool, in the order given. An item with nothing to say is left out.
+    /// What each item says of the pool, in the order given, each a part of the line. An item with nothing
+    /// to say is left out, and the bar and the share, which say one thing, are one part where they meet.
     public static func runs(_ items: [Item], of pool: Pool, now: Date) -> [[Run]] {
         func percent(_ share: Double) -> String { "\(Int((share * 100).rounded()))%" }
-        return items.compactMap { item -> [Run]? in
+        return items.enumerated().reduce(into: []) { parts, next in
+            guard let said = runs(next.element) else { return }
+            let before = next.offset > 0 ? items[next.offset - 1] : nil
+            if Set([before, next.element]) == [.bar, .share] { parts[parts.count - 1] += [(" ", .plain)] + said } else { parts.append(said) }
+        }
+        func runs(_ item: Item) -> [Run]? {
             switch item {
             case .profile: return [("● ", .tint(pool.tint)), (pool.profile, .plain)]
             case .bar:

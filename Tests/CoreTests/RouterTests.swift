@@ -394,7 +394,7 @@ import Testing
         let now = Date(timeIntervalSince1970: 1_000_000)
         let pool = StatusLine.Pool(profile: "work", tint: nil, used: 0.5, resetsAt: now + 26 * 3600, dry: nil, account: nil, today: nil)
         let line = StatusLine.runs([.dry, .reset, .account, .share, .bar], of: pool, now: now).map { $0.map(\.text).joined() }
-        #expect(line == ["1d 2h", "50%", "━━━━━━━━"])
+        #expect(line == ["1d 2h", "50% ━━━━━━━━"])
     }
 }
 
