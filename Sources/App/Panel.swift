@@ -77,7 +77,7 @@ struct Panel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // The panel's first line, which stays where it is whatever is under it: the views, and what the one shown is of.
+            // The panel's first line, which stays where it is whatever is under it: the views.
             HStack(alignment: .top, spacing: 8) {
                 HStack(spacing: 2) {
                     ForEach(Shown.allCases, id: \.self) { view in
@@ -93,16 +93,6 @@ struct Panel: View {
                     }
                 }
                 .moves(.snappy(duration: 0.2), with: shown)
-                HStack(spacing: 5) {
-                    if shown == .use {
-                        Text("Last 7 days").fontWeight(.semibold)
-                        Pace().frame(width: 14).padding(.leading, 6)
-                        Text("pace \(Int((Forecast.pace * 100).rounded()))%/day")
-                    } else if shown == .settings {
-                        Text("Settings").fontWeight(.semibold)
-                    }
-                }
-                .font(.caption).foregroundStyle(.tertiary).frame(height: 16)
                 Spacer()
             }
             .padding(.horizontal, 10)

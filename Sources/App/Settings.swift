@@ -12,16 +12,8 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             LineCard(items: running.config.statusLine, now: now).card()
             VStack(alignment: .leading, spacing: 10) {
-                Setting(title: "Route the clients", says: "Claude Code and Codex go through Sluice") {
-                    Toggle("", isOn: Binding { running.routed } set: { running.route($0) }).toggleStyle(.switch).controlSize(.mini).labelsHidden()
-                }
-                Setting(title: "Use resets for me", says: "when a pool is out, or one is about to lapse") {
-                    Button { running.autoReset(!autoResets) } label: {
-                        Image(systemName: autoResets ? "bolt.fill" : "bolt").contentTransition(.symbolEffect(.replace)).frame(width: 30, height: 18).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain).foregroundStyle(autoResets ? Color.green : .secondary)
-                    .moves(.snappy(duration: 0.2), with: autoResets)
-                }
+                Setting(symbol: "arrow.triangle.branch", title: "Route the clients", says: "Claude Code and Codex go through Sluice", on: running.routed, turn: running.route)
+                Setting(symbol: autoResets ? "bolt.fill" : "bolt", title: "Use resets for me", says: "when a pool is out, or one is about to lapse", on: autoResets, turn: running.autoReset)
             }
             .card()
             HStack {
@@ -34,20 +26,23 @@ struct SettingsView: View {
     }
 }
 
-/// One thing the app does, with what that is, and at its end what turns it on and off.
-private struct Setting<Control: View>: View {
+/// One thing the app does: its mark, what it is, and the switch that turns it on and off.
+private struct Setting: View {
+    let symbol: String
     let title: String
     let says: String
-    @ViewBuilder let control: Control
+    let on: Bool
+    let turn: (Bool) -> Void
 
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
+            Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.callout)
                 Text(says).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            control
+            Toggle("", isOn: Binding { on } set: { turn($0) }).toggleStyle(.switch).controlSize(.mini).labelsHidden()
         }
     }
 }

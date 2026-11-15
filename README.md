@@ -39,7 +39,7 @@ Each profile's accounts sit on a card under its name, a pool per provider.
 - **The first line** holds the panel's three views: the accounts, their use, and the settings.
 - **The second view** is the last seven days of use. Each pool has a bar for every day: how much of
   the pool that day used, in the colors of the accounts that gave it, against a dashed line at the
-  pace that uses the pool up in a week. Over the bars is how much went in the last 24 hours, and
+  pace that uses the pool up in a week, a seventh of it a day. Over the bars is how much went in the last 24 hours, and
   when the pool runs dry at that rate if it does. Under the profiles, the tokens of each hour and
   where they went by folder and by model. Whatever the pointer is on says more beside it: a day's
   share by account, an hour's tokens, a folder's path and share.
