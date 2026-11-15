@@ -1,6 +1,7 @@
 # Sluice
 
-`README.md` says what Sluice is, how it is laid out, and how to build and release it.
+`README.md` says what Sluice is and how to install it, briefly; `docs/` says the rest, a page a subject, and
+`docs/develop.md` how it is laid out, built and released.
 The goal is the smallest codebase that does the job. Churn is welcome: when a new requirement
 breaks an old assumption (a type, a name, a folder), change the old code in the same change.
 
