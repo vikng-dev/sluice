@@ -26,7 +26,7 @@ if let provider = providers.first(where: { $0.client == name }) {
     SluiceApp.main()
 } else {
     Task {
-        await command(arguments)
+        do { try await command(arguments) } catch { fail("\(error)") }
         exit(0)
     }
     dispatchMain()

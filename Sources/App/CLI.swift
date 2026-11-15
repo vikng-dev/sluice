@@ -27,10 +27,6 @@ func standIn(for provider: any Provider, _ arguments: [String]) -> Never {
     fail("could not run \(real): \(String(cString: strerror(errno)))")
 }
 
-private func accounts() async -> [AccountStatus] {
-    do { return try await relayAccounts() } catch { fail("\(error)") }
-}
-
 /// This program's own file, which the stand-ins link to.
 private func program() -> URL {
     guard let me = Bundle.main.executableURL?.resolvingSymlinksInPath() else { fail("could not find this program's own path") }
@@ -63,11 +59,6 @@ private struct ProfileReport: Encodable {
 /// A client's own sign-in in a profile, in words.
 private func said(_ identity: Identity) -> String {
     identity.account.map { "\(identity.client) signed in as \($0)" } ?? "\(identity.client) not signed in"
-}
-
-/// Changes the profiles on disk, or says why not.
-private func change(_ edit: (inout Config) throws -> Void) -> Config {
-    do { return try Storage.live.change(edit) } catch { fail("\(error)") }
 }
 
 /// The values given for a repeatable option, e.g. every `--folder <path>`.
@@ -112,19 +103,16 @@ Nothing asks a question. Results are on standard output, messages on standard er
 exits with 1 and says what to do. A change holds at once, without a restart.
 """
 
-func command(_ arguments: [String]) async {
+/// What cannot be done is thrown, and said where the command is run from.
+func command(_ arguments: [String]) async throws {
     let json = arguments.contains("--json")
     let words = arguments.filter { !$0.hasPrefix("--") }
     switch (words.first, words.dropFirst().first) {
     case ("serve", nil):
-        do {
-            let server = try await startSluice().server
-            print("sluice \(Sluice.version) on \(Sluice.address)")
-            while !Task.isCancelled { try await Task.sleep(for: .seconds(3600)) }
-            withExtendedLifetime(server) {}
-        } catch {
-            fail("\(error)")
-        }
+        let server = try await startSluice().server
+        print("sluice \(Sluice.version) on \(Sluice.address)")
+        while !Task.isCancelled { try await Task.sleep(for: .seconds(3600)) }
+        withExtendedLifetime(server) {}
     case ("login", _):
         let profile = values(of: "--profile", in: arguments).first
         let provider = words.dropFirst().first { $0 != profile } ?? "claude"
@@ -133,18 +121,14 @@ func command(_ arguments: [String]) async {
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         open.arguments = [url]
-        do { try open.run() } catch { fail("\(error)") }
+        try open.run()
     case ("status", nil):
-        let rows = await accounts()
+        let rows = try await relayAccounts()
         if json { return printJSON(rows) }
-        let names: [String]
-        do { names = try Storage.live.config().names } catch { fail("\(error)") }
-        for profile in names {
+        for profile in try Storage.live.config().names {
             let rows = rows.filter { $0.profile == profile }
             if rows.isEmpty { continue }
-            let signedIn: [String]
-            do { signedIn = try identities(in: profile).map(said) } catch { fail("\(error)") }
-            print(([profile] + signedIn).joined(separator: "  "))
+            print(([profile] + (try identities(in: profile).map(said))).joined(separator: "  "))
             for row in rows {
                 let windows = (row.windows + row.scoped).map { "\($0.name) \($0.percentText) → \($0.resetText)" } + (row.resets.isEmpty ? [] : ["\(row.resets.map(\.left).reduce(0, +)) resets"])
                 let plan = row.plan.map { ($0.business ? "business " : "") + $0.tier }
@@ -156,33 +140,23 @@ func command(_ arguments: [String]) async {
         if rows.isEmpty { print("No accounts. Run: sluice login") }
     case ("resets", let mode):
         guard words.count <= 2, mode == nil || mode == "auto" || mode == "manual" else { fail("usage: sluice resets [auto | manual]") }
-        let config: Config
-        if let mode { config = change { $0.useResets(mode == "auto") } } else { do { config = try Storage.live.config() } catch { fail("\(error)") } }
+        let config = try mode.map { mode in try Storage.live.change { $0.useResets(mode == "auto") } } ?? Storage.live.config()
         if json { return printJSON(["resets": config.autoResets ? "auto" : "manual"]) }
         print(config.autoResets ? "auto: a pool uses the resets it holds when it is out, or one is about to lapse." : "manual: a reset is used only when told to, in the panel or with: sluice account refill")
     case ("setup", nil):
-        do {
-            if arguments.contains("--undo") {
-                try stopRouting(all: true)
-                print("Claude Code and Codex talk to their providers directly again, and open one profile everywhere.")
-            } else {
-                try setUp(program: program())
-                print("Claude Code and Codex now talk to Sluice. In a new shell, claude and codex open the profile their folder belongs to. Undo with: sluice setup --undo")
-            }
-        } catch {
-            fail("\(error)")
+        if arguments.contains("--undo") {
+            try stopRouting(all: true)
+            print("Claude Code and Codex talk to their providers directly again, and open one profile everywhere.")
+        } else {
+            try setUp(program: program())
+            print("Claude Code and Codex now talk to Sluice. In a new shell, claude and codex open the profile their folder belongs to. Undo with: sluice setup --undo")
         }
     case ("profile", "list"):
-        let reports: [(report: ProfileReport, identities: [Identity])]
-        do {
-            let config = try Storage.live.config()
-            reports = try config.names.map { name in
-                let profile = config.profiles[name], identities = try identities(in: name)
-                let signedIn = Dictionary(uniqueKeysWithValues: identities.compactMap { identity in identity.account.map { (identity.client, $0) } })
-                return (ProfileReport(name: name, label: profile?.label, color: profile?.color, starred: profile?.starred ?? [], signedIn: signedIn, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? []), identities)
-            }
-        } catch {
-            fail("\(error)")
+        let config = try Storage.live.config()
+        let reports = try config.names.map { name in
+            let profile = config.profiles[name], identities = try identities(in: name)
+            let signedIn = Dictionary(uniqueKeysWithValues: identities.compactMap { identity in identity.account.map { (identity.client, $0) } })
+            return (report: ProfileReport(name: name, label: profile?.label, color: profile?.color, starred: profile?.starred ?? [], signedIn: signedIn, accounts: profile?.accounts ?? [], folders: profile?.folders ?? [], owners: profile?.owners ?? []), identities: identities)
         }
         if json { return printJSON(reports.map(\.report)) }
         for (report, identities) in reports {
@@ -194,34 +168,30 @@ func command(_ arguments: [String]) async {
         }
     case ("profile", "add"):
         guard words.count == 3 else { fail("usage: sluice profile add <name>") }
-        do {
-            // A new profile has its own client folder, which is set to talk to Sluice like the others.
-            let routed = try isSetUp()
-            _ = change { try $0.add(profile: words[2]) }
-            if routed { try setUp(program: program()) }
-        } catch {
-            fail("\(error)")
-        }
+        // A new profile has its own client folder, which is set to talk to Sluice like the others.
+        let routed = try isSetUp()
+        try Storage.live.change { try $0.add(profile: words[2]) }
+        if routed { try setUp(program: program()) }
         print("Added profile \(words[2]). Give it work with: sluice profile claim \(words[2]) --folder <path>")
     case ("profile", "rename"):
         guard words.count >= 3 else { fail("usage: sluice profile rename <name> [label]") }
-        let config = change { try $0.label(words[2], as: words.dropFirst(3).joined(separator: " ")) }
+        let config = try Storage.live.change { try $0.label(words[2], as: words.dropFirst(3).joined(separator: " ")) }
         print("Profile \(words[2]) is shown as \(config.shown(words[2])).")
     case ("profile", "color"):
         guard words.count == 4, words[3] == "none" || Tint(rawValue: words[3]) != nil else {
             fail("usage: sluice profile color <name> \(Tint.allCases.map(\.rawValue).joined(separator: " | ")) | none")
         }
         let color = Tint(rawValue: words[3])
-        _ = change { try $0.color(words[2], color) }
+        try Storage.live.change { try $0.color(words[2], color) }
         print("Profile \(words[2]) is \(color?.rawValue ?? "no color").")
     case ("profile", let verb) where verb == "star" || verb == "unstar":
         guard words.count == 4 else { fail("usage: sluice profile \(verb!) <name> <provider>") }
         guard providers.contains(where: { $0.id == words[3] }) else { fail("no provider \(words[3]); there is: \(providers.map(\.id).joined(separator: ", "))") }
-        _ = change { try $0.star(words[2], words[3], verb == "star") }
+        try Storage.live.change { try $0.star(words[2], words[3], verb == "star") }
         print("Profile \(words[2])'s \(words[3]) pool is \(verb == "star" ? "" : "no longer ")shown in the menu bar.")
     case ("profile", "remove"):
         guard words.count == 3 else { fail("usage: sluice profile remove <name>") }
-        _ = change { try $0.remove(profile: words[2]) }
+        try Storage.live.change { try $0.remove(profile: words[2]) }
         print("Removed profile \(words[2]). Its accounts serve the default profile; its client folder is left as it is.")
     case ("profile", let verb) where verb == "claim" || verb == "unclaim":
         let folders = values(of: "--folder", in: arguments), owners = values(of: "--owner", in: arguments)
@@ -230,24 +200,24 @@ func command(_ arguments: [String]) async {
             fail("usage: sluice profile \(verb!) <name> --folder <path> | --owner <owner>")
         }
         let name = arguments[2]
-        _ = change { config in
+        try Storage.live.change { config in
             for folder in folders { if verb == "claim" { try config.claim(folder: folder, for: name) } else { try config.unclaim(folder: folder, from: name) } }
             for owner in owners { if verb == "claim" { try config.claim(owner: owner, for: name) } else { try config.unclaim(owner: owner, from: name) } }
         }
         print("Profile \(name) \(verb == "claim" ? "now claims" : "no longer claims") \((folders + owners).joined(separator: ", ")).")
     case ("account", "move"):
         guard words.count == 4 else { fail("usage: sluice account move <account> <profile>") }
-        let known = await accounts().map(\.label)
+        let known = try await relayAccounts().map(\.label)
         guard known.contains(words[2]) else { fail("no account \(words[2]); there is: \(Set(known).sorted().joined(separator: ", "))") }
-        _ = change { try $0.move(account: words[2], to: words[3]) }
+        try Storage.live.change { try $0.move(account: words[2], to: words[3]) }
         print("\(words[2]) now serves profile \(words[3]).")
     case ("account", "remove"):
         guard words.count == 4 else { fail("usage: sluice account remove <provider> <account>") }
-        do { try await forget(provider: words[2], account: words[3]) } catch { fail("\(error)") }
+        try await forget(provider: words[2], account: words[3])
         print("Removed the \(words[2]) account \(words[3]).")
     case ("account", "refill"):
         guard words.count == 5 else { fail("usage: sluice account refill <provider> <account> <reset>") }
-        do { try await useReset(words[4], provider: words[2], account: words[3]) } catch { fail("\(error)") }
+        try await useReset(words[4], provider: words[2], account: words[3])
         print("Used the reset \(words[4]) of the \(words[2]) account \(words[3]).")
     default:
         if let first = words.first, first != "help" { fail("no such command: \(words.joined(separator: " ")). Run sluice for the list.") }
