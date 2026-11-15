@@ -99,13 +99,6 @@ public func showStatusLines(by program: URL?) throws {
     for provider in lined { try provider.showStatus(by: config.statusLine.isEmpty ? nil : program, profiles: config.names) }
 }
 
-/// What to say of the profiles that keep a status line of the user's own; nil when none does.
-public func ownStatusLines() throws -> String? {
-    let config = try Storage.live.config(), kept = try lined.flatMap { try $0.ownStatus(in: config.names) }
-    let profiles = config.names.filter(kept.contains).map(config.shown)
-    return profiles.isEmpty ? nil : "\(profiles.formatted(.list(type: .and))) \(profiles.count == 1 ? "keeps its" : "keep their") own line"
-}
-
 /// Makes every client talk to its provider again. With `all`, the stand-ins go too; without, they stay,
 /// since work keeps belonging to its profile whether or not Sluice relays it.
 /// A client that cannot be set back does not keep the others talking to a relay that is going away:

@@ -62,13 +62,16 @@ public enum StatusLine {
 /// A provider whose client shows a line under its prompt that a command of the user's writes.
 public protocol StatusShowing: Provider {
     /// Has the client run `program` for that line in each profile, or with nil no longer. A line the
-    /// user set there themselves is left as it is.
+    /// user set there themselves is not lost: `program` is told to run it too, and it is put back as it was.
     func showStatus(by program: URL?, profiles: [String]) throws
-    /// The profiles, of those given, where the client has a line the user set themselves.
-    func ownStatus(in profiles: [String]) throws -> [String]
 }
 
 public extension StatusShowing {
     /// What Sluice is run with to write this provider's line.
     var statusArguments: String { "statusline \(id)" }
+}
+
+public extension StatusLine {
+    /// The option after which Sluice is given the user's own command for the line, to run beside its own.
+    static let own = "--with"
 }

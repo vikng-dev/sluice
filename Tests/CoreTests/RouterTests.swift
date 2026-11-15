@@ -371,16 +371,18 @@ import Testing
         #expect(throws: UserFileError.self) { try Claude.pointed(Data("[]".utf8), at: "A", path: "") }
     }
 
-    @Test func claudeShowsSluicesStatusLineButNeverOverALineOfTheUsersOwn() throws {
-        func line(_ settings: Data?) throws -> NSDictionary? { try settings.flatMap { (try JSONSerialization.jsonObject(with: $0) as? NSDictionary)?["statusLine"] as? NSDictionary } }
-        let ours = try Claude.lined(Data(#"{"model":"x"}"#.utf8), by: "'/a/Sluice' statusline claude", ours: "statusline claude", path: "")
-        #expect(try line(ours) == ["type": "command", "command": "'/a/Sluice' statusline claude"])
-        // Its own line is replaced wherever Sluice has moved to, and taken out without the rest.
-        #expect(try line(Claude.lined(ours, by: "'/b/Sluice' statusline claude", ours: "statusline claude", path: ""))?["command"] as? String == "'/b/Sluice' statusline claude")
-        #expect(try JSONSerialization.jsonObject(with: #require(try Claude.lined(ours, by: nil, ours: "statusline claude", path: ""))) as? NSDictionary == ["model": "x"])
-        let own = Data(#"{"statusLine":{"type":"command","command":"~/bin/line.sh"}}"#.utf8)
-        #expect(try Claude.lined(own, by: "'/a/Sluice' statusline claude", ours: "statusline claude", path: "") == nil)
-        #expect(try Claude.lined(own, by: nil, ours: "statusline claude", path: "") == nil)
+    @Test func claudeRunsTheUsersOwnStatusLineBesideSluicesAndGetsItBackUnchanged() throws {
+        func settings(_ data: Data) throws -> NSDictionary? { try JSONSerialization.jsonObject(with: data) as? NSDictionary }
+        let bare = Data(#"{"model":"x"}"#.utf8)
+        let ours = try Claude.lined(bare, by: "/a/Sluice", words: "statusline claude", path: "")
+        #expect(try settings(ours)?["statusLine"] as? NSDictionary == ["type": "command", "command": "'/a/Sluice' statusline claude"])
+        #expect(try settings(Claude.lined(ours, by: nil, words: "statusline claude", path: "")) == settings(bare))
+        // A command with a quote of its own, and a setting beside it, come back as they were, however often Sluice's is set.
+        let own = Data(#"{"statusLine":{"type":"command","command":"echo it's","padding":2}}"#.utf8)
+        let both = try Claude.lined(Claude.lined(own, by: "/a/Sluice", words: "statusline claude", path: ""), by: "/b/Sluice", words: "statusline claude", path: "")
+        let line = try #require(try settings(both)?["statusLine"] as? [String: Any])
+        #expect(line["command"] as? String == #"'/b/Sluice' statusline claude --with 'echo it'\''s'"# && line["padding"] as? Int == 2)
+        #expect(try settings(Claude.lined(both, by: nil, words: "statusline claude", path: "")) == settings(own))
     }
 
     @Test func aStatusLineItemTheConfigMisnamesIsSaidWithTheOnesThereAre() throws {

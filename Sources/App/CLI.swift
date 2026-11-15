@@ -96,8 +96,9 @@ sluice \(Sluice.version)
   sluice resets [auto | manual]                  whether a pool uses the resets it holds by itself: when it is out,
                                                  or one is about to lapse. With neither word, says which it is
 
-  sluice statusline [provider]                   the line a client shows under its prompt, of the pool its folder's
-                                                 profile has there (default: claude)
+  sluice statusline [provider] [--with <command>]
+                                                 the line a client shows under its prompt, of the pool its folder's
+                                                 profile has there (default: claude), and after it what the command says
   sluice statusline items [<item> ... | none]    what that line says, in order: \(StatusLine.Item.allCases.map(\.rawValue).joined(separator: ", ")).
                                                  With no item, says what it is
 
@@ -157,19 +158,32 @@ func command(_ arguments: [String]) async throws {
         let config = try names.isEmpty ? Storage.live.config() : Storage.live.change { $0.say(items) }
         if json { printJSON(config.statusLine) } else { print(config.statusLine.isEmpty ? "none" : config.statusLine.map(\.rawValue).joined(separator: " ")) }
         if !names.isEmpty, try isSetUp() { try showStatusLines(by: program()) }
-        if let kept = try ownStatusLines() { print("\(kept), set in the client's settings.") }
-    case ("statusline", let id):
-        guard let provider = providers.first(where: { $0.id == id ?? "claude" }) else { fail("no provider \(id!); there is: \(providers.map(\.id).joined(separator: ", "))") }
-        // Under a prompt is no place to say that the relay is not running: the line is then empty.
-        guard let accounts = try? await relayAccounts() else { return }
+    case ("statusline", _):
+        let own = values(of: StatusLine.own, in: arguments).first, id = words.dropFirst().first { $0 != own } ?? "claude"
+        guard let provider = providers.first(where: { $0.id == id }) else { fail("no provider \(id); there is: \(providers.map(\.id).joined(separator: ", "))") }
+        // The user's own line, run as the client would run it: by the shell, handed what the client hands this.
+        var theirs = ""
+        if let own {
+            let shell = Process(), said = Pipe(), told = Pipe()
+            shell.executableURL = URL(fileURLWithPath: "/bin/sh")
+            shell.arguments = ["-c", own]
+            (shell.standardInput, shell.standardOutput) = (told, said)
+            try shell.run()
+            told.fileHandleForWriting.write(FileHandle.standardInput.readDataToEndOfFile())
+            try told.fileHandleForWriting.close()
+            theirs = String(decoding: said.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        }
+        // Under a prompt is no place to say that the relay is not running: Sluice's part is then left out.
+        var ours = ""
         let config = try Storage.live.config(), now = Date()
         // The profile the client was opened in, as its variable names it, or else the folder's.
         let named = ProcessInfo.processInfo.environment[provider.home.variable].map { URL(fileURLWithPath: $0).standardizedFileURL.path }
         let profile = config.names.first { provider.folder(of: $0).standardizedFileURL.path == named } ?? config.profile(for: FileManager.default.currentDirectoryPath)
-        let pool = accounts.filter { $0.profile == profile && $0.provider == provider.id }
-        if pool.isEmpty { return }
-        let samples = try Storage.live.readings().filter { $0.at >= now.addingTimeInterval(-86400) }
-        print(terminalText(StatusLine.runs(config.statusLine, of: StatusLine.Pool(pool, profile: profile, config: config, samples: samples, now: now), now: now)))
+        if let pool = (try? await relayAccounts())?.filter({ $0.profile == profile && $0.provider == provider.id }), !pool.isEmpty {
+            let samples = try Storage.live.readings().filter { $0.at >= now.addingTimeInterval(-86400) }
+            ours = terminalText(StatusLine.runs(config.statusLine, of: StatusLine.Pool(pool, profile: profile, config: config, samples: samples, now: now), now: now))
+        }
+        print([ours, theirs].filter { !$0.isEmpty }.joined(separator: "  "), terminator: theirs.isEmpty ? "\n" : "")
     case ("setup", nil):
         if arguments.contains("--undo") {
             try stopRouting(all: true)

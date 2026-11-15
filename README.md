@@ -180,8 +180,9 @@ sluice statusline                             # the line for the folder you are 
 | `account` | the account that answered last |
 | `today` | today's use against the pace that uses the pool up in a week |
 
-A profile whose client settings already have a status line of your own keeps it; run
-`sluice statusline` from yours to have both. Codex's status line takes no command, so it shows none.
+A status line of your own in the client's settings is kept: Sluice runs it too and puts what it
+says after the pool, and `sluice setup --undo` leaves the setting as you had it. Codex's status
+line takes no command, so it shows none.
 
 ## How an account is picked
 

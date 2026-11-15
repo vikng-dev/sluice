@@ -78,12 +78,27 @@ public struct Claude: Provider {
         try profiles.map(settings).allSatisfy { try Self.environment(in: try $0.read(), path: $0.path).env["ANTHROPIC_BASE_URL"] as? String == address }
     }
 
-    /// The settings with Claude Code's `statusLine` running `command`, or with nil without that; nil where
-    /// the line there is one the user set, which is told by its not being run with Sluice's words.
-    static func lined(_ settings: Data?, by command: String?, ours words: String, path: String) throws -> Data? {
+    /// The settings with Claude Code's `statusLine` running `program` with `words`, or with nil no longer.
+    /// A command the user had there is handed to `program` as one quoted word after `StatusLine.own`, and
+    /// is the line again once Sluice's is taken out.
+    static func lined(_ settings: Data?, by program: String?, words: String, path: String) throws -> Data {
         var all = try environment(in: settings, path: path).all
-        if let line = all["statusLine"] as? [String: Any], (line["command"] as? String)?.hasSuffix(" " + words) != true { return nil }
-        all["statusLine"] = command.map { ["type": "command", "command": $0] }
+        var line = all["statusLine"] as? [String: Any]
+        var own = line?["command"] as? String
+        // Sluice's own is its quoted path and then its words.
+        if let command = own, let ours = command.range(of: "' \(words)") {
+            let rest = command[ours.upperBound...]
+            own = rest.hasPrefix(" \(StatusLine.own) '") ? rest.dropFirst(StatusLine.own.count + 3).dropLast().replacingOccurrences(of: #"'\''"#, with: "'") : nil
+        }
+        if let program {
+            line = line ?? ["type": "command"]
+            line?["command"] = "'\(program)' \(words)" + (own.map { " \(StatusLine.own) '\($0.replacingOccurrences(of: "'", with: #"'\''"#))'" } ?? "")
+        } else if let own {
+            line?["command"] = own
+        } else {
+            line = nil
+        }
+        all["statusLine"] = line
         return try JSONSerialization.data(withJSONObject: all, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
     }
 
@@ -334,14 +349,7 @@ extension Claude: StatusShowing {
         for settings in profiles.map(settings) {
             let now = try settings.read()
             if program == nil, now == nil { continue }
-            if let lined = try Self.lined(now, by: program.map { "'\($0.path)' \(statusArguments)" }, ours: statusArguments, path: settings.path) { try settings.write(lined) }
-        }
-    }
-
-    public func ownStatus(in profiles: [String]) throws -> [String] {
-        try profiles.filter { profile in
-            let settings = settings(of: profile)
-            return try settings.read().map { try Self.lined($0, by: nil, ours: statusArguments, path: settings.path) == nil } ?? false
+            try settings.write(Self.lined(now, by: program?.path, words: statusArguments, path: settings.path))
         }
     }
 }
