@@ -61,8 +61,8 @@ h1 span.l { display: block; white-space: nowrap; }
 .install code { font-family: var(--mono); font-size: 13.5px; white-space: nowrap; overflow-x: auto; min-width: 0; }
 .install button { background: var(--cream); color: #0a1326; border: 0; border-radius: 8px; width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer; flex: none; transition: transform .12s; }
 .install button:active { transform: scale(.92); }
-.get { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
-.download { display: inline-flex; align-items: center; gap: 10px; background: var(--cream); color: #0a1326; font-weight: 600; font-size: 16px; padding: 12px 20px 12px 17px; border-radius: 12px; transition: transform .12s, box-shadow .15s; box-shadow: 0 6px 20px rgba(4, 10, 24, .28); }
+.get { display: flex; flex-wrap: wrap; align-items: stretch; gap: 12px; }
+.download { display: inline-flex; align-items: center; gap: 10px; background: var(--cream); color: #0a1326; font-weight: 600; font-size: 16px; padding: 12px 20px 12px 17px; border-radius: 12px; white-space: nowrap; transition: transform .12s, box-shadow .15s; box-shadow: 0 6px 20px rgba(4, 10, 24, .28); }
 .download:hover { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(4, 10, 24, .36); } .download:active { transform: scale(.97); }
 .download svg { margin-top: -2px; }
 
