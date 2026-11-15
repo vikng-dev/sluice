@@ -62,8 +62,10 @@ public enum StatusLine {
 /// A provider whose client shows a line under its prompt that a command of the user's writes.
 public protocol StatusShowing: Provider {
     /// Has the client run `program` for that line in each profile, or with nil no longer. A line the
-    /// user set there themselves is left as it is: the profiles where one was are returned.
-    @discardableResult func showStatus(by program: URL?, profiles: [String]) throws -> [String]
+    /// user set there themselves is left as it is.
+    func showStatus(by program: URL?, profiles: [String]) throws
+    /// The profiles, of those given, where the client has a line the user set themselves.
+    func ownStatus(in profiles: [String]) throws -> [String]
 }
 
 public extension StatusShowing {

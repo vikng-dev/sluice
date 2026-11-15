@@ -228,7 +228,7 @@ private let program = Bundle.main.executableURL!
     func editStatusLine() {
         guard let items = askForStatusLine(config.statusLine) else { return }
         change { $0.say(items) }
-        if routed { do { refusal = try ownLines(showStatusLines(by: program)) ?? "" } catch { refusal = "\(error)" } }
+        if routed { attempt { try showStatusLines(by: program) } }
     }
 
     func autoReset(_ on: Bool) {

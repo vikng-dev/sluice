@@ -156,7 +156,8 @@ func command(_ arguments: [String]) async throws {
         }
         let config = try names.isEmpty ? Storage.live.config() : Storage.live.change { $0.say(items) }
         if json { printJSON(config.statusLine) } else { print(config.statusLine.isEmpty ? "none" : config.statusLine.map(\.rawValue).joined(separator: " ")) }
-        if !names.isEmpty, try isSetUp(), let kept = ownLines(try showStatusLines(by: program())) { print(kept) }
+        if !names.isEmpty, try isSetUp() { try showStatusLines(by: program()) }
+        if let kept = try ownStatusLines() { print("\(kept), set in the client's settings.") }
     case ("statusline", let id):
         guard let provider = providers.first(where: { $0.id == id ?? "claude" }) else { fail("no provider \(id!); there is: \(providers.map(\.id).joined(separator: ", "))") }
         // Under a prompt is no place to say that the relay is not running: the line is then empty.
@@ -174,8 +175,7 @@ func command(_ arguments: [String]) async throws {
             try stopRouting(all: true)
             print("Claude Code and Codex talk to their providers directly again, and open one profile everywhere.")
         } else {
-            let kept = try setUp(program: program())
-            if let kept = ownLines(kept) { print(kept) }
+            try setUp(program: program())
             print("Claude Code and Codex now talk to Sluice. In a new shell, claude and codex open the profile their folder belongs to. Undo with: sluice setup --undo")
         }
     case ("profile", "list"):

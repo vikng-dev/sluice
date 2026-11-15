@@ -330,13 +330,18 @@ public struct Claude: Provider {
 
 /// Claude Code runs the command its settings name under `statusLine` (seen in 2.1.325) and shows what it prints.
 extension Claude: StatusShowing {
-    public func showStatus(by program: URL?, profiles: [String]) throws -> [String] {
+    public func showStatus(by program: URL?, profiles: [String]) throws {
+        for settings in profiles.map(settings) {
+            let now = try settings.read()
+            if program == nil, now == nil { continue }
+            if let lined = try Self.lined(now, by: program.map { "'\($0.path)' \(statusArguments)" }, ours: statusArguments, path: settings.path) { try settings.write(lined) }
+        }
+    }
+
+    public func ownStatus(in profiles: [String]) throws -> [String] {
         try profiles.filter { profile in
-            let settings = settings(of: profile), now = try settings.read()
-            if program == nil, now == nil { return false }
-            guard let lined = try Self.lined(now, by: program.map { "'\($0.path)' \(statusArguments)" }, ours: statusArguments, path: settings.path) else { return true }
-            try settings.write(lined)
-            return false
+            let settings = settings(of: profile)
+            return try settings.read().map { try Self.lined($0, by: nil, ours: statusArguments, path: settings.path) == nil } ?? false
         }
     }
 }

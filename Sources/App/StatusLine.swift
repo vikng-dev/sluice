@@ -96,6 +96,8 @@ private extension StatusLine.Item {
 private struct LineEditor: View {
     @Bindable var draft: LineDraft
     let now: Date
+    /// Which profiles keep a line of their own, in words; nil when none does.
+    let kept: String?
 
     var body: some View {
         // A pool that has something to say for every item.
@@ -120,19 +122,22 @@ private struct LineEditor: View {
                 .onMove { draft.rows.move(fromOffsets: $0, toOffset: $1) }
             }
             .listStyle(.plain)
+            if let kept { Text(kept).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
         }
-        .frame(width: 340, height: 236)
+        .frame(width: 340, height: 252)
     }
 }
 
 /// Asks what the status line says; nil when the person thinks better of it.
 @MainActor func askForStatusLine(_ items: [StatusLine.Item]) -> [StatusLine.Item]? {
     let draft = LineDraft(items), clients = providers.compactMap { $0 as? any StatusShowing }.map(\.client)
+    let kept: String?
+    do { kept = try ownStatusLines() } catch { kept = "\(error)" }
     let alert = NSAlert()
     alert.messageText = "Status line"
     alert.informativeText = "What \(clients.formatted(.list(type: .and))) shows under its prompt of the pool that pays for the work. Drag an item to where it is said."
-    alert.accessoryView = NSHostingView(rootView: LineEditor(draft: draft, now: Date()))
-    alert.accessoryView?.frame.size = NSSize(width: 340, height: 236)
+    alert.accessoryView = NSHostingView(rootView: LineEditor(draft: draft, now: Date(), kept: kept))
+    alert.accessoryView?.frame.size = NSSize(width: 340, height: 252)
     alert.addButton(withTitle: "Save")
     alert.addButton(withTitle: "Cancel")
     NSApplication.shared.activate(ignoringOtherApps: true)
