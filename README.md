@@ -160,7 +160,7 @@ Claude Code shows a line under its prompt, and with Sluice set up that line is o
 pays for the work, not of the one account the last answer came through:
 
 ```
-● work  ━━━━━━━━  62%  1d 4h
+● work | ━━━━━━━━ | 62% | 1d 4h
 ```
 
 What it says is one ordered list for every profile, changed under **Status line…** in the panel

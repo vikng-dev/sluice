@@ -183,7 +183,7 @@ func command(_ arguments: [String]) async throws {
             let samples = try Storage.live.readings().filter { $0.at >= now.addingTimeInterval(-86400) }
             ours = terminalText(StatusLine.runs(config.statusLine, of: StatusLine.Pool(pool, profile: profile, config: config, samples: samples, now: now), now: now))
         }
-        print([ours, theirs].filter { !$0.isEmpty }.joined(separator: "  "), terminator: theirs.isEmpty ? "\n" : "")
+        print([ours, theirs].filter { !$0.isEmpty }.joined(separator: StatusLine.separator), terminator: theirs.isEmpty ? "\n" : "")
     case ("setup", nil):
         if arguments.contains("--undo") {
             try stopRouting(all: true)

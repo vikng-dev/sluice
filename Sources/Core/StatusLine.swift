@@ -7,6 +7,9 @@ public enum StatusLine {
         case profile, bar, share, reset, dry, account, today
     }
 
+    /// What stands between one item and the next, and before a line of the user's own.
+    public static let separator = " | "
+
     /// What is said until the user picks.
     public static let usual: [Item] = [.profile, .bar, .share, .reset, .dry]
 

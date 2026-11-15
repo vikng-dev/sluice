@@ -62,9 +62,9 @@ private extension StatusLine.Tone {
     }
 }
 
-/// The line as a terminal shows it, its items two spaces apart.
+/// The line as a terminal shows it.
 func terminalText(_ line: [[StatusLine.Run]]) -> String {
-    line.map { $0.map { run in run.tone.terminal.map { "\u{1B}[38;5;\($0)m\(run.text)\u{1B}[0m" } ?? run.text }.joined() }.joined(separator: "  ")
+    line.map { $0.map { run in run.tone.terminal.map { "\u{1B}[38;5;\($0)m\(run.text)\u{1B}[0m" } ?? run.text }.joined() }.joined(separator: StatusLine.separator)
 }
 
 /// The status line being put together: every item it could say, with whether it does, in order.
@@ -102,7 +102,7 @@ private struct LineEditor: View {
         let pool = StatusLine.Pool(profile: "work", tint: .purple, used: 0.87, resetsAt: now + 28 * 3600, dry: now + 19 * 3600, account: "ada@work.example", today: 0.09)
         VStack(alignment: .leading, spacing: 8) {
             StatusLine.runs(draft.items, of: pool, now: now).enumerated().reduce(Text("")) { line, item in
-                item.element.reduce(line + Text(item.offset > 0 ? "  " : "")) { $0 + Text($1.text).foregroundColor($1.tone.color) }
+                item.element.reduce(line + Text(item.offset > 0 ? StatusLine.separator : "")) { $0 + Text($1.text).foregroundColor($1.tone.color) }
             }
             .font(.system(size: 11, design: .monospaced)).lineLimit(1).minimumScaleFactor(0.6)
             .frame(maxWidth: .infinity, minHeight: 16, alignment: .leading)
