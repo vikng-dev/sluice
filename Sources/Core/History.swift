@@ -45,10 +45,7 @@ public struct Served: Codable, Sendable, Equatable {
 }
 
 extension Window {
-    /// The same reset is reported a second or so apart from one answer to the next.
-    var settled: Window {
-        Window(name: name, used: used, resetsAt: Date(timeIntervalSinceReferenceDate: (resetsAt.timeIntervalSinceReferenceDate / 60).rounded() * 60))
-    }
+    var settled: Window { Window(name: name, used: used, resetsAt: resetsAt.settled) }
 }
 
 /// Adds a line to a history file, which is made on the first.

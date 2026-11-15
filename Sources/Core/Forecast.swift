@@ -2,15 +2,15 @@ import Foundation
 
 /// One account of a pool, as far as how long the pool lasts goes.
 public struct Member: Sendable, Equatable {
-    /// How large its allowance is beside the others'.
-    public var weight: Double
+    /// How much its allowance holds beside the others'.
+    public var size: Double
     /// How much of its budget window is used; 0 when untouched.
     public var used: Double
     /// Nil while the window has not started.
     public var resetsAt: Date?
 
-    public init(weight: Double, used: Double, resetsAt: Date?) {
-        self.weight = weight
+    public init(size: Double, used: Double, resetsAt: Date?) {
+        self.size = size
         self.used = used
         self.resetsAt = resetsAt
     }
@@ -42,22 +42,22 @@ public enum Forecast {
     }
 
     /// The share of a pool used per hour between `start` and `now`: each account's samples from that
-    /// time, in order, and its weight. Nil when less than half an hour was watched.
-    public static func burn(_ accounts: [(samples: [Sample], weight: Double)], from start: Date, to now: Date) -> Double? {
-        let total = accounts.map(\.weight).reduce(0, +)
+    /// time, in order, and its size. Nil when less than half an hour was watched.
+    public static func burn(_ accounts: [(samples: [Sample], size: Double)], from start: Date, to now: Date) -> Double? {
+        let total = accounts.map(\.size).reduce(0, +)
         guard let first = accounts.compactMap(\.samples.first?.at).min(), total > 0 else { return nil }
         let hours = now.timeIntervalSince(max(first, start)) / 3600
         guard hours >= 0.5 else { return nil }
-        return accounts.map { rise($0.samples) * $0.weight }.reduce(0, +) / total / hours
+        return accounts.map { rise($0.samples) * $0.size }.reduce(0, +) / total / hours
     }
 
     /// When a pool used at `burn` (its share per hour) has nothing left, or nil when it lasts the week.
     /// It is used as the router uses it, the account that resets soonest first, and an account is whole
     /// again at its reset.
     public static func dry(_ members: [Member], burn: Double, now: Date) -> Date? {
-        let total = members.map(\.weight).reduce(0, +)
+        let total = members.map(\.size).reduce(0, +)
         guard burn > 0, total > 0 else { return nil }
-        var pool = members.map { (left: $0.weight / total * (1 - min($0.used, 1)), whole: $0.weight / total, reset: $0.resetsAt ?? .distantFuture) }
+        var pool = members.map { (left: $0.size / total * (1 - min($0.used, 1)), whole: $0.size / total, reset: $0.resetsAt ?? .distantFuture) }
         var time = now
         while time < now + week {
             guard let next = pool.indices.filter({ pool[$0].left > 0 }).min(by: { pool[$0].reset < pool[$1].reset }) else { return time }

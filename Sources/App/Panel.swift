@@ -864,7 +864,7 @@ private struct AccountRow: View {
                         .onTapGesture(perform: open)
                         .help(!opens ? "" : opened ? "Click for the one that stops it next" : "Click for every limit it has")
                         Share(used: limit.used).frame(width: Self.share, alignment: .trailing)
-                        Clock(window: limit, now: now).frame(width: Self.clock, alignment: .trailing)
+                        Clock(at: limit.resetsAt, now: now).frame(width: Self.clock, alignment: .trailing)
                     }
                     .fadesIn(limit.name != tightest?.name)
                 }
@@ -879,7 +879,7 @@ private struct AccountRow: View {
                                 Button { armed.wrappedValue = using } label: {
                                     HStack(spacing: 4) {
                                         Text(reset.kind(for: account) + (count > 1 ? " ×\(count)" : "")).fontWeight(.semibold)
-                                        if let expires = reset.expiresAt { Text(SluiceCore.Window(name: "", used: 0, resetsAt: expires).leftText(now: now)).opacity(0.7) }
+                                        if let expires = reset.expiresAt { Text(expires.leftText(now: now)).opacity(0.7) }
                                     }
                                     .font(.caption2.monospacedDigit()).lineLimit(1).fixedSize()
                                     .foregroundStyle(reset.usable ? Color.green : Color.secondary)
@@ -906,8 +906,10 @@ private struct AccountRow: View {
 extension SluiceCore.Window {
     /// What a limit is called where an account's limits are listed: a window by its length, and a limit
     /// on a part of the account's use by the name its provider gave.
-    var title: String {
-        guard let length = Self.length(named: name) else { return name.capitalized }
+    var title: String { Self.title(named: name) }
+
+    static func title(named name: String) -> String {
+        guard let length = length(named: name) else { return name.capitalized }
         let minutes = Int(length / 60)
         return minutes == 7 * 1440 ? "Week" : minutes % 1440 == 0 ? "\(minutes / 1440)-day" : minutes % 60 == 0 ? "\(minutes / 60)-hour" : "\(minutes)-minute"
     }
@@ -919,7 +921,7 @@ extension Reset {
     func kind(for account: AccountStatus) -> String {
         let has = Set((account.windows + account.scoped).map(\.name))
         if !has.isEmpty, has.isSubset(of: refills) { return "Full" }
-        return ListFormatter.localizedString(byJoining: refills.map { SluiceCore.Window(name: $0, used: 0, resetsAt: .distantFuture).title })
+        return ListFormatter.localizedString(byJoining: refills.map(SluiceCore.Window.title))
     }
 }
 
@@ -951,14 +953,14 @@ struct Share: View {
     }
 }
 
-/// When a window resets, read as the time left or as the time itself. A click on any of them turns them all.
+/// A time to come, read as the time left or as the time itself. A click on any of them turns them all.
 struct Clock: View {
-    let window: SluiceCore.Window
+    let at: Date
     let now: Date
     @AppStorage("readsResetTimes") private var times = false
 
     var body: some View {
-        let text = times ? window.resetText : window.leftText(now: now)
+        let text = times ? at.timeText : at.leftText(now: now)
         Text(text)
             .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
             .contentTransition(.numericText())

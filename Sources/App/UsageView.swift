@@ -140,11 +140,11 @@ private struct ProfileUsage: View {
                         if let burn = burn(of: pool) {
                             Text("\((burn * 100).formatted(.number.precision(.fractionLength(1))))%/h").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                                 .help("How much of the pool was used per hour over the last day")
-                            let members = pool.map { Member(weight: $0.size, used: $0.budget?.used ?? 0, resetsAt: $0.budget?.resetsAt) }
+                            let members = pool.map { Member(size: $0.size, used: $0.budget?.used ?? 0, resetsAt: $0.budget?.resetsAt) }
                             if let dry = Forecast.dry(members, burn: burn, now: now) {
                                 HStack(spacing: 3) {
                                     Text("dry").font(.caption).foregroundStyle(dry <= now ? Color.red : .orange)
-                                    if dry > now { Clock(window: Window(name: "", used: 1, resetsAt: dry), now: now) }
+                                    if dry > now { Clock(at: dry, now: now) }
                                 }
                                 .help("At this rate the pool has nothing left then, counting what comes back at each reset")
                             } else {

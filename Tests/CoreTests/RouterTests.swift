@@ -302,11 +302,11 @@ import Testing
     @Test func aPoolLastsLongerForWhatComesBackAtAReset() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         // Half of one account is left, and it is whole again in ten hours; the other is untouched.
-        let pool = [Member(weight: 1, used: 0.5, resetsAt: now + 10 * 3600), Member(weight: 1, used: 0, resetsAt: nil)]
+        let pool = [Member(size: 1, used: 0.5, resetsAt: now + 10 * 3600), Member(size: 1, used: 0, resetsAt: nil)]
         // At a twentieth of the pool an hour: the first is spent in 5h, is back at 10h, and all is spent at 25h, not 15h.
         #expect(Forecast.dry(pool, burn: 0.05, now: now) == now + 25 * 3600)
         #expect(Forecast.dry(pool, burn: 0.001, now: now) == nil)
-        #expect(Forecast.dry([Member(weight: 1, used: 1, resetsAt: now + 3600)], burn: 0.05, now: now) == now)
+        #expect(Forecast.dry([Member(size: 1, used: 1, resetsAt: now + 3600)], burn: 0.05, now: now) == now)
     }
 
     @Test func howFastAPoolIsUsedCountsNewHighsAndNotTheRoundingBetween() {
@@ -323,7 +323,7 @@ import Testing
 
     @Test func theTimeLeftIsReadInItsTwoLargestUnits() {
         let now = Date(timeIntervalSince1970: 1_000_000)
-        func left(_ seconds: Double) -> String { Window(name: "7d", used: 0, resetsAt: now + seconds).leftText(now: now) }
+        func left(_ seconds: Double) -> String { (now + seconds).leftText(now: now) }
         #expect(left(4 * 86400 + 20 * 3600 + 50 * 60) == "4d 20h")
         #expect(left(3 * 3600 + 5 * 60) == "3h 5m")
         #expect(left(86400 + 20) == "1d")
