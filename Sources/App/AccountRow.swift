@@ -107,7 +107,8 @@ struct AccountRow: View {
     static let clock: Double = 52
 
     /// It answered a request within the last minute.
-    private var serving: Bool { account.lastAnswered.map { now.timeIntervalSince($0) < 60 } ?? false }
+    /// How lately it answered: 1 just now, falling to nothing a minute on; nil for longer ago than that.
+    private var fresh: Double? { account.lastAnswered.map { 1 - now.timeIntervalSince($0) / 60 }.flatMap { $0 > 0 ? min($0, 1) : nil } }
 
     /// Open, the row lists every limit the account has and the resets it holds.
     @State private var opened = false
@@ -146,7 +147,7 @@ struct AccountRow: View {
                 .opacity(actions == nil || hovered ? 1 : 0)
                 // Where the handle is not showing, an account that is answering says so.
                 .overlay(alignment: .leading) {
-                    if serving && actions != nil { Playing().opacity(hovered ? 0 : 1) }
+                    if let fresh, actions != nil { Playing(fresh: fresh).opacity(hovered ? 0 : 1) }
                 }
                 .moves(.easeOut(duration: 0.12), with: hovered)
                 .gesture(actions.map { actions in
@@ -288,8 +289,11 @@ extension Reset {
     }
 }
 
-/// Three bars rising and falling, as beside what is playing: the account is answering requests now.
+/// Three bars rising and falling, as beside what is playing: the account answered within the last minute.
+/// The more lately it did, the higher and faster they go.
 private struct Playing: View {
+    /// From 1, just now, down to nothing.
+    let fresh: Double
     @State private var up = false
     @Environment(\.accessibilityReduceMotion) private var still
 
@@ -297,10 +301,11 @@ private struct Playing: View {
         HStack(alignment: .bottom, spacing: 1.5) {
             ForEach(Array([0.5, 0.34, 0.44].enumerated()), id: \.offset) { bar, beat in
                 Capsule().fill(.green).frame(width: 2, height: 10)
-                    .scaleEffect(y: still ? [0.5, 0.9, 0.6][bar] : up ? 1 : 0.3, anchor: .bottom)
-                    .moves(.easeInOut(duration: beat).repeatForever(autoreverses: true), with: up)
+                    .scaleEffect(y: still ? [0.5, 0.9, 0.6][bar] * (0.4 + 0.6 * fresh) : up ? 0.4 + 0.6 * fresh : 0.3, anchor: .bottom)
+                    .moves(.easeInOut(duration: beat / (0.35 + 0.65 * fresh)).repeatForever(autoreverses: true), with: up)
             }
         }
+        .opacity(0.45 + 0.55 * fresh)
         .onAppear { up = true }
     }
 }
