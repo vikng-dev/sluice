@@ -45,8 +45,8 @@ Each profile's accounts sit on a card under its name, a pool per provider.
   share by account, an hour's tokens, a folder's path and share.
 
 - **The third view** is the settings, each holding at once. The [status line](#the-status-line) as it
-  would read, over its items: a click takes one off or puts one on, and one is dragged onto another
-  to take its place. Whether the clients go through Sluice. The bolt, which has Sluice use resets
+  would read, over its items: a click takes one off or puts one on, and one is dragged to where
+  it is said. Whether the clients go through Sluice. The bolt, which has Sluice use resets
   for you, as [How an account is picked](#how-an-account-is-picked) says. The version, and **Quit**.
 
 The panel also says when the clients are not going through Sluice. `sluice status` prints the same accounts.

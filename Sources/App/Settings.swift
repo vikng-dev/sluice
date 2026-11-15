@@ -103,11 +103,16 @@ private struct LineCard: View {
                                 .onChanged { dragged = (item, $0.translation) }
                                 .onEnded { drop in
                                     dragged = nil
-                                    // Let go on another item, it takes that one's place.
-                                    guard let place = items.firstIndex(where: { frames["item:\($0.rawValue)"]?.contains(drop.location) == true }) else { return }
+                                    // It lands after the items its middle has passed, row by row.
+                                    guard let from = frames["item:\(item.rawValue)"] else { return }
+                                    let middle = CGPoint(x: from.midX + drop.translation.width, y: from.midY + drop.translation.height)
                                     var moved = items.filter { $0 != item }
-                                    moved.insert(item, at: place)
-                                    running.say(moved)
+                                    let passed = moved.filter { other in
+                                        guard let frame = frames["item:\(other.rawValue)"] else { return false }
+                                        return frame.maxY < middle.y || (frame.minY <= middle.y && frame.midX < middle.x)
+                                    }
+                                    moved.insert(item, at: passed.count)
+                                    if moved != items { running.say(moved) }
                                 }
                         )
                 }
