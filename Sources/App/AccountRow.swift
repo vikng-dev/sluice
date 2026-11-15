@@ -305,7 +305,6 @@ private struct Playing: View {
                     .moves(.easeInOut(duration: beat / (0.35 + 0.65 * fresh)).repeatForever(autoreverses: true), with: up)
             }
         }
-        .opacity(0.45 + 0.55 * fresh)
         .onAppear { up = true }
     }
 }
