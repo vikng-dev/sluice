@@ -40,7 +40,7 @@ struct UsageView: View {
                         .padding(.horizontal, 10)
                         ProfileUsage(
                             pools: pools.map { ($0.key, $0.value.sorted { $0.label < $1.label }) }, titles: running.titles,
-                            samples: history.samples.filter { $0.at >= since }, requests: requests, since: since, now: now
+                            samples: history.samples.filter { $0.at >= since }, since: since, now: now
                         )
                         .card()
                     }
@@ -62,12 +62,11 @@ struct UsageView: View {
 }
 
 /// One profile over the week: every account's week as a line on one chart, then for each pool how fast it
-/// is going and how long it lasts, and what each of its accounts has given for a point of its week.
+/// is going and how long it lasts, and which line is which account's.
 private struct ProfileUsage: View {
     let pools: [(provider: String, accounts: [AccountStatus])]
     let titles: [String: String]
     let samples: [Sample]
-    let requests: [Served]
     let since: Date
     let now: Date
 
@@ -92,13 +91,6 @@ private struct ProfileUsage: View {
     private func line(of account: AccountStatus) -> [(at: Date, used: Double)] {
         samples(of: account).compactMap { sample in sample.windows.budget.map { (sample.at, $0.used) } }
             + (account.budget.map { [(now, $0.used)] } ?? [])
-    }
-
-    /// The tokens the account answered with for each point its week rose, once it has risen a point.
-    private func given(by account: AccountStatus) -> Int? {
-        let points = Forecast.rise(samples(of: account)) * 100
-        let tokens = requests.filter { $0.provider == account.provider && $0.account == account.label }.map(\.tokens).reduce(0, +)
-        return points >= 1 && tokens > 0 ? Int(Double(tokens) / points) : nil
     }
 
     var body: some View {
@@ -146,11 +138,6 @@ private struct ProfileUsage: View {
                         HStack(spacing: 6) {
                             Capsule().fill(tints[account.id] ?? .secondary).frame(width: 10, height: 3)
                             Text(account.label).font(.caption).lineLimit(1).truncationMode(.middle)
-                            Spacer()
-                            if let given = given(by: account) {
-                                Text("\(given.compact) / 1%").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                                    .help("Tokens it answered with through Sluice for each point of its week. Rough until it has risen a few points, and low where the account is also used outside Sluice.")
-                            }
                         }
                     }
                 }

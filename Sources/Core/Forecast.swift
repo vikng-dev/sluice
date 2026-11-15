@@ -24,7 +24,7 @@ public enum Forecast {
     /// How much an account's budget window rose over its samples, in order of time. A fall within one
     /// window is the provider rounding, not use given back, so only a new high counts; a new window
     /// counts from nothing.
-    public static func rise(_ samples: [Sample]) -> Double {
+    static func rise(_ samples: [Sample]) -> Double {
         var rise = 0.0, high = 0.0, reset: Date?
         for (index, sample) in samples.enumerated() {
             guard let budget = sample.windows.budget else { continue }
