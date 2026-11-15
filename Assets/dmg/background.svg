@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+  <!-- The disk image's window: the pool in section, as on the icon, with the app to be carried across it into Applications. -->
+  <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#131f45"/><stop offset=".4" stop-color="#0a1326"/></linearGradient></defs>
+  <rect width="640" height="400" fill="url(#sky)"/>
+  <path fill="#7389ff" d="M0 126C80 110 160 142 240 126S400 110 480 126S600 138 640 124V400H0Z"/>
+  <path fill="#1f9cf0" d="M0 300C90 288 170 312 260 300S420 288 500 300S610 310 640 298V400H0Z"/>
+  <path fill="#35dcd6" d="M0 356C100 346 180 366 280 356S440 346 520 356S615 364 640 354V400H0Z"/>
+  <g stroke="#fff4de" stroke-opacity=".55" stroke-width="2" stroke-linecap="round">
+    <path d="M12 36h22M12 58h12M12 80h22M12 102h12M12 124h22M12 146h12M12 168h22M12 190h12M12 212h22M12 234h12M12 256h22M12 278h12M12 300h22M12 322h12M12 344h22M12 366h12"/>
+  </g>
+  <path fill="none" stroke="#fff4de" stroke-opacity=".92" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" d="M276 190h86M347 175l15 15-15 15"/>
+</svg>
