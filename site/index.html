@@ -423,8 +423,10 @@ const PASS = {
     void main(){ vec2 pos = uv * size, v = texture2D(vel, uv).xy; float wy = texture2D(wf, uv).y;
       v.y += dt * G * (rho(pos.y - wy) - rho(pos.y));
       for (int k = 0; k < 3; k++) { vec2 d = pos - jet[k].xy; v += jet[k].zw * exp(-dot(d, d) / 225.); }
-      // the water round the pointer goes the way the pointer goes, and no faster
-      vec2 hd = pos - hand.xy; v = mix(v, hand.zw, hold * exp(-dot(hd, hd) / (46. * 46.)));
+      // the water round the pointer goes the way the pointer goes, and no faster; air is thin, hardly taken along and soon still
+      float air = 1. - smoothstep(S - 8., S + 8., pos.y - wy);
+      vec2 hd = pos - hand.xy; v = mix(v, hand.zw, hold * (1. - .85 * air) * exp(-dot(hd, hd) / (46. * 46.)));
+      v *= 1. - air * min(1., dt * 7.);
       gl_FragColor = vec4(clamp(v, -500., 500.), 0., 1.); }`,
   div: HEAD + `uniform sampler2D vel; uniform vec2 tv; void main(){ vec2 c = texture2D(vel, uv).xy;
       float l = texture2D(vel, uv - vec2(tv.x, 0.)).x, r = texture2D(vel, uv + vec2(tv.x, 0.)).x, b = texture2D(vel, uv - vec2(0., tv.y)).y, t = texture2D(vel, uv + vec2(0., tv.y)).y;
