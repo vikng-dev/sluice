@@ -144,7 +144,7 @@ struct AccountRow: View {
                 .opacity(actions == nil || hovered ? 1 : 0)
                 // Where the handle is not showing, an account that is answering says so.
                 .overlay(alignment: .leading) {
-                    if let level = running.levels[account.id], actions != nil { Playing(level: level).id(level).opacity(hovered ? 0 : 1) }
+                    if let level = running.levels[account.id], actions != nil { Playing(level: level).opacity(hovered ? 0 : 1) }
                 }
                 .moves(.easeOut(duration: 0.12), with: hovered)
                 .gesture(actions.map { actions in
@@ -286,26 +286,64 @@ extension Reset {
     }
 }
 
-/// A level meter of three bars. While the account is at work on requests they rise and fall, higher and
-/// faster the more there are; for a minute after, they keep on low. Made anew for each level, so that it
-/// moves as that level does from the start.
+/// A level meter of three bars. While the account is at work on requests they are struck high and often,
+/// the more so the more requests there are; for a minute after, low. It is told only the level: the bars
+/// find their own way from where they are to what that asks of them.
 private struct Playing: View {
     let level: Int
-    @State private var up = false
+    @State private var meter = Meter()
     @Environment(\.accessibilityReduceMotion) private var still
 
     var body: some View {
-        // In points of a bar's ten: one request fills a little over half of it, and four fill it.
-        let (low, high, pace) = level == 0 ? (2.0, 3.5, 0.85) : (3.0, min(4 + 1.5 * Double(level), 10), 0.7 + 0.15 * Double(min(level, 4)))
-        HStack(alignment: .bottom, spacing: 2) {
-            ForEach(Array([0.5, 0.34, 0.44].enumerated()), id: \.offset) { bar, beat in
-                // Its height is its own, not a taller bar's squeezed, so that its ends stay round at any height.
-                Capsule().fill(.green).frame(width: 2, height: still ? low + (high - low) * [0.5, 0.9, 0.6][bar] : up ? high : low)
-                    .moves(.easeInOut(duration: beat / pace).repeatForever(autoreverses: true), with: up)
+        // In points of a bar's ten: one request strikes it to a little over half, and four to the top.
+        let aim = level == 0 ? Meter.Aim(low: 2, high: 3.5, pace: 0.85) : Meter.Aim(low: 3, high: min(4 + 1.5 * Double(level), 10), pace: 0.7 + 0.15 * Double(min(level, 4)))
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: still)) { frame in
+            let heights = still ? [0.5, 0.9, 0.6].map { aim.low + (aim.high - aim.low) * $0 } : meter.heights(toward: aim, at: frame.date)
+            HStack(alignment: .bottom, spacing: 2) {
+                // A bar's height is its own, not a taller bar's squeezed, so that its ends stay round at any height.
+                ForEach(heights.indices, id: \.self) { Capsule().fill(.green).frame(width: 2, height: heights[$0]) }
+            }
+            .frame(height: 10, alignment: .bottom)
+        }
+    }
+}
+
+/// Where the bars of a meter are from one frame to the next. They move as a peak programme meter's do:
+/// struck, a bar is up at once, and it falls back slowly and evenly.
+private final class Meter {
+    /// What the bars are to do: be struck to somewhere up to `high`, at this many times their usual
+    /// pace, and never fall under `low`.
+    struct Aim {
+        var low, high, pace: Double
+    }
+
+    /// The points a bar falls in a second: its whole height in 1.7 s, the time a Type I peak programme
+    /// meter takes to fall back its 20 dB (IEC 60268-10).
+    private static let fall = 10 / 1.7
+    /// The seconds between a bar's strikes at its usual pace, unlike so that they never fall in step.
+    private static let beats = [0.5, 0.34, 0.44]
+    private var heights = [0.0, 0.0, 0.0]
+    /// How long ago each bar was struck.
+    private var since = [0.0, 0.0, 0.0]
+    private var high = 0.0
+    private var last: Date?
+
+    /// The bars' heights at `date`. Aimed higher than before, every bar is struck at once; aimed lower,
+    /// they fall to it at their own rate.
+    func heights(toward aim: Aim, at date: Date) -> [Double] {
+        // A frame long after the last, as when the panel was shut, counts as the next one.
+        let step = min(last.map { date.timeIntervalSince($0) } ?? 0, 0.1), louder = aim.high > high
+        (last, high) = (date, aim.high)
+        for bar in heights.indices {
+            since[bar] += step
+            if louder || since[bar] >= Self.beats[bar] / aim.pace {
+                since[bar] = 0
+                heights[bar] = max(heights[bar], aim.low + (aim.high - aim.low) * .random(in: 0.5...1))
+            } else {
+                heights[bar] = max(heights[bar] - Self.fall * step, aim.low)
             }
         }
-        .frame(height: 10, alignment: .bottom)
-        .onAppear { up = true }
+        return heights
     }
 }
 

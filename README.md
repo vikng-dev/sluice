@@ -14,7 +14,8 @@ Each profile's accounts sit on a card under its name, a pool per provider.
   of its limits is fuller than its week and near its end, such as its five hours or one model's own
   share of the week, the bar is that one's, named. Left of an account that answered within the last
   minute, three green bars flicker low; while it is
-  at work on requests they rise and fall, higher and faster the more of them there are.
+  at work on requests they are a level meter, struck higher and oftener the more of them there are,
+  up at once and falling back slowly.
 - **A click on an account** lists every limit it has, and under them the resets it holds. Each is a
   chip saying what it refills and how long until it lapses; a click on a chip and then on the red
   check beside it uses it, which cannot be taken back.

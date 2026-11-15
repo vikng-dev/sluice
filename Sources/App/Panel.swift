@@ -175,14 +175,15 @@ struct Panel: View {
             ZStack(alignment: .topLeading) {
                 Color.clear
                 if let tip {
+                    let at = tip.at, width = Self.width
                     tip.view
                         .padding(.horizontal, 8).padding(.vertical, 6)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
                         .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.primary.opacity(0.12)))
                         .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
                         .fixedSize()
-                        .alignmentGuide(.leading) { $0.width * tip.at.x / Self.width - tip.at.x }
-                        .alignmentGuide(.top) { tip.at.y - 12 - $0.height < 0 ? -tip.at.y - 20 : $0.height + 12 - tip.at.y }
+                        .alignmentGuide(.leading) { $0.width * at.x / width - at.x }
+                        .alignmentGuide(.top) { at.y - 12 - $0.height < 0 ? -at.y - 20 : $0.height + 12 - at.y }
                 }
             }
             .allowsHitTesting(false)
