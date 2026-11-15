@@ -58,7 +58,7 @@ public struct AccountStatus: Codable, Sendable {
     public var warmConversations: Int
     /// When it last answered a relayed request, since the relay started.
     public var lastAnswered: Date?
-    /// How many answers are coming through it now.
+    /// How many requests it is at work on now: sent to it, and not yet answered to the end.
     public var streaming: Int
     /// Why it cannot serve, in the provider's or Sluice's words; nil when nothing is known to be wrong.
     public var problem: String?
@@ -85,7 +85,7 @@ actor Accounts {
     private struct Run {
         /// When it last answered a relayed request.
         var answered: Date?
-        /// How many answers are coming through it now.
+        /// How many requests it is at work on now.
         var streaming = 0
         /// Why it cannot serve; nil when nothing is known to be wrong.
         var problem: String?
@@ -271,7 +271,7 @@ actor Accounts {
         record(windows, for: id)
     }
 
-    /// An answer began to come through the account, or with -1 came to its end.
+    /// A request was sent to the account, or with -1 its answer came to its end.
     func streams(_ id: String, _ change: Int) {
         run[id, default: Run()].streaming += change
     }

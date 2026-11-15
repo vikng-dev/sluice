@@ -270,10 +270,16 @@ public final class Relay: Sendable {
                 call.httpMethod = outgoing.method
                 for (name, value) in outgoing.headers where !Hop.request.contains(name.lowercased()) { call.setValue(value, forHTTPHeaderField: name) }
                 if !outgoing.body.isEmpty { call.httpBody = outgoing.body }
+                // The account is at work on it from here until the last of its answer is handed on: a
+                // provider may take long over an answer before it sends the first of it.
+                let accounts = accounts
+                await accounts.streams(account.id, 1)
+                func ended() async { await accounts.streams(account.id, -1) }
                 let response: HTTPURLResponse, body: AsyncThrowingStream<Data, any Error>
                 do {
                     (response, body) = try await upstream.send(call)
                 } catch {
+                    await ended()
                     // Every account shares the upstream host, so an unreachable one is not retried on another.
                     return try await writer.send(502, text: "sluice: could not reach \(provider.id): \(error.localizedDescription)")
                 }
@@ -286,6 +292,7 @@ public final class Relay: Sendable {
                 if reading.refused, isLast, !refilled {
                     let back = await refills.one(for: "\(profile)/\(id)/\(pin ?? "")", refusedBy: account.id) { [self] in await refill(pool, for: model, at: provider) }
                     if let back {
+                        await ended()
                         refilled = true
                         queue = [back]
                         continue
@@ -295,21 +302,22 @@ public final class Relay: Sendable {
                     // how it stands, so that the next such request is not sent to it.
                     Task { await checkUsage(of: account, at: provider) }
                 }
-                if reading.refused, !isLast { continue }
+                if reading.refused, !isLast {
+                    await ended()
+                    continue
+                }
                 if let conversation, !reading.refused {
                     await accounts.served(conversation.id, by: account.id, cacheLifetime: conversation.cacheLifetime)
                 }
-                let accounts = accounts, folder = request.callerFolder
+                let folder = request.callerFolder
                 let counted = Metered(base: body, count: provider.count) { spend in
                     Task { await accounts.spent(spend, by: account.id, for: profile, folder: folder, conversation: conversation?.id, since: asked) }
                 }
-                // It is streaming until the last of the answer is handed on, or the client is gone.
-                await accounts.streams(account.id, 1)
                 do { try await writer.send(response.statusCode, headers: headers, body: counted) } catch {
-                    await accounts.streams(account.id, -1)
+                    await ended()
                     throw error
                 }
-                return await accounts.streams(account.id, -1)
+                return await ended()
             }
         }
     }
