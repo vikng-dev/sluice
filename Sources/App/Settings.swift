@@ -14,7 +14,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Setting(symbol: "arrow.triangle.branch", title: "Route the clients", says: "Your coding agents go through Sluice", on: running.routed, turn: running.route)
                 Setting(symbol: autoResets ? "bolt.fill" : "bolt", title: "Use resets for me", says: "when a pool is out, or one is about to lapse", on: autoResets, turn: running.autoReset)
-                Setting(symbol: "arrow.down.circle", title: "Update by itself", says: "to each new release, without cutting an answer", on: running.config.autoUpdate, turn: running.autoUpdate)
+                Setting(symbol: "arrow.down.circle", title: "Auto update", says: "to each new release, without cutting an answer", on: running.config.autoUpdate, turn: running.autoUpdate)
             }
             .card()
             HStack {
