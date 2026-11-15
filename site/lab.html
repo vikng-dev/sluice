@@ -360,18 +360,15 @@ const initialHash = location.hash;
 /* The water, six ways. One water for the whole page: the air, three layers each of its own weight, the deep, and the bed the footer lies on.
    The accounts pour in from above for as long as they have anything left; the agents, under the surface, draw from it. */
 const VARIANTS = [
-  { name: 'Siphon', says: 'You are the one drinking: the pointer pulls the pool to itself', supply: 'ribbon', draw: 'rings', deep: .5, suck: true },
-  { name: 'Stir', says: 'Drag through the water: the layers smear, then settle apart', supply: 'ribbon', draw: 'rings', deep: .5, smear: 1 },
-  { name: 'Density', says: 'Each layer has its own weight. Click to drop a pebble through them', supply: 'drops', draw: 'funnel', deep: 1, pebble: true },
-  { name: 'Bubbles', says: 'Move under the water to leave bubbles; the agents breathe it', supply: 'ribbon', draw: 'bubbles', deep: .6, bubbles: true },
-  { name: 'Ledger', says: 'A layer an account, as deep as what it has left. Hover a ring', supply: 'ribbon', draw: 'motes', deep: .6, truth: true },
-  { name: 'Tilt', says: 'The pool leans after the pointer, the heavy layers last; scrolling heaves it', supply: 'ribbon', draw: 'rings', deep: .4, tilt: true },
+  { name: 'Plume', says: 'Drag anywhere in the water. Each stream joins the surface and trails its colour under it', supply: 'ribbon', smear: 1, plume: 1, hum: .09 },
+  { name: 'Rings', says: 'Drag anywhere in the water. Each stream only sets small rings going on the surface', supply: 'ribbon', smear: 1, plume: 0, hum: .2 },
+  { name: 'Drips', says: 'Drag anywhere in the water. Accounts drip; each drop leaves a ring and a puff that sinks', supply: 'drops', smear: 1, puff: true },
 ];
 const page = $('#page'), canvas = $('#water'), hero = $('#hero');
 const gl = canvas.getContext('webgl', { antialias: false, alpha: true, premultipliedAlpha: false });
 const VS = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0., 1.); }';
 const FS = `precision highp float;
-uniform vec2 R, P; uniform float T, D, S, F, top, bed, TH, WH, wamt, lvl, hov, led, Pin;
+uniform vec2 R, P; uniform float T, D, S, F, top, bed, TH, WH, wamt, lvl, hov, led, Pin, plume, men;
 uniform vec3 th, tilt, sx, fl; uniform vec4 pts[20], sip[2], thr[2];
 uniform sampler2D tex, hf, wf;
 vec3 navy = vec3(.039, .075, .149), violet = vec3(.36, .44, .93), blue = vec3(.10, .52, .86), teal = vec3(.16, .74, .72), cream = vec3(1., .957, .871);
@@ -388,24 +385,25 @@ void main() {
   if (Pin > 0.) w -= pv / max(pd, 1.) * Pin * 70. * D * exp(-pd / (95. * D));
   float xw = x - w.x, yw = y - w.y, mixed = length(w), xwd = xw / D;
   float f0 = field(x, 0.), slope = field(x + 3. * D, 0.) - field(x - 3. * D, 0.);
-  float s1 = S + lvl + tilt.x * (x - R.x * .5) + (wave(xd, 1., T) * amp + f0) * D;
+  float s1 = S + lvl + tilt.x * (xw - R.x * .5) + (wave(xwd, 1., T) * amp + field(xw, 0.)) * D;
   float s2 = S + lvl + th.x + tilt.y * (xw - R.x * .5) + (wave(xwd, 1.6, T * .9 + 2.) * amp * .8 + field(xw, 1.) + field(xw, 0.) * .3) * D;
   float s3 = S + lvl + th.x + th.y + tilt.z * (xw - R.x * .5) + (wave(xwd, 2.3, T * .8 + 4.) * amp * .6 + field(xw, 2.) + field(xw, 0.) * .12) * D;
   s2 = max(s2, s1 + 5. * D); s3 = max(s3, s2 + 5. * D);
   float s4 = s3 + th.z + wave(xwd, 3.1, T * .6 + 1.) * amp * .4 * D;
   float by = bed + (sin(xd * .006 + .5) * 9. + sin(xd * .019 + 2.) * 4.) * D;
   vec3 col = mix(vec3(.075, .13, .27), navy, clamp(y / max(S, 1.), 0., 1.));
-  // what the accounts pour
+  float liquid = yw - s1;
+  // what the accounts pour: a stream bends with the water it is stirred with, and meets the surface in a small foot
   for (int i = 0; i < 3; i++) {
     float c = i == 0 ? sx.x : i == 1 ? sx.y : sx.z, f = i == 0 ? fl.x : i == 1 ? fl.y : fl.z;
     vec3 tint = tintOf(float(i));
-    float wd = (1.5 + 8. * f) * D, d = abs(x - c + sin(y / D * .05 + T * 2. + float(i)) * 1.2 * D * f);
+    float wd = (1.5 + 8. * f) * D, d = abs(mix(x, xw, smoothstep(top, top + 50. * D, y)) - c + sin(y / D * .05 + T * 2. + float(i)) * 1.2 * D * f);
     float run = .7 + .3 * sin(y / D * .11 - T * 9. + float(i) * 2.);
-    float body = smoothstep(wd, wd * .35, d) * step(top, y) * step(y, s1 + 4. * D) * step(.02, f);
+    float body = smoothstep(wd, wd * .35, d) * step(top, y) * step(yw, s1 + 4. * D) * step(.02, f);
     col = mix(col, mix(tint, cream, .35) * (.75 + .25 * run), body * (.4 + .6 * f));
-    col += tint * f * .2 * exp(-length(vec2(x - c, y - s1)) / (26. * D));
+    col += tint * f * .2 * exp(-length(vec2(xw - c, yw - s1)) / (26. * D));
+    if (men * f > .02) liquid = smax(liquid, min(wd - d, yw - (s1 - 13. * D)), 13. * D * min(1., f * 2.) * men);
   }
-  float liquid = y - s1;
   if (Pin > 0.) {
     // over the water and near it, the pointer draws a neck of it up; in it, it is a hole the water closes round
     float reach = smoothstep(260. * D, 40. * D, s1 - P.y);
@@ -420,6 +418,12 @@ void main() {
   vec3 deep = mix(vec3(.085, .45, .52), vec3(.03, .115, .2), pow(dfrac, .55));
   vec3 water = mix(mix(mix(c1, c2, in2), c3, in3), deep, in4);
   water *= 1. + .1 * exp(-max(y - s1, 0.) / (30. * D)) * (1. - in2);
+  if (plume > 0.) for (int i = 0; i < 3; i++) {
+    // its colour goes a little way down under where it lands, swaying, and thins out
+    float c = i == 0 ? sx.x : i == 1 ? sx.y : sx.z, f = i == 0 ? fl.x : i == 1 ? fl.y : fl.z, dn = max(yw - s1, 0.);
+    float px = xw - c + sin(yw / D * .03 + T * .7 + float(i) * 2.) * 6. * D * smoothstep(0., 60. * D, dn), wp = (7. + 9. * f) * D * (1. + dn / F);
+    water = mix(water, mix(tintOf(float(i)), cream, .3) * 1.06, exp(-px * px / (wp * wp)) * exp(-dn / (F * .8)) * .75 * f * plume);
+  }
   float lit = 1. - dfrac;
   water += (sin(xd * .009 + T * .5 + y / D * .004) * .022 + sin(xd * .004 - T * .3) * .018) * lit;
   // light let down into the deep, less of it the deeper
@@ -480,7 +484,7 @@ function setup() {
   gl.bindAttribLocation(prog, 0, 'p'); gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
   gl.useProgram(prog);
-  ['R', 'P', 'Pin', 'T', 'D', 'S', 'F', 'top', 'bed', 'TH', 'WH', 'wamt', 'lvl', 'hov', 'led', 'th', 'tilt', 'sx', 'fl', 'pts', 'sip', 'thr', 'tex', 'hf', 'wf'].forEach(n => U[n] = gl.getUniformLocation(prog, n));
+  ['R', 'P', 'Pin', 'plume', 'men', 'T', 'D', 'S', 'F', 'top', 'bed', 'TH', 'WH', 'wamt', 'lvl', 'hov', 'led', 'th', 'tilt', 'sx', 'fl', 'pts', 'sip', 'thr', 'tex', 'hf', 'wf'].forEach(n => U[n] = gl.getUniformLocation(prog, n));
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   const made = filter => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; };
@@ -536,6 +540,7 @@ function supply(dt) {
 }
 /* an agent takes from the pool: called as a request leaves */
 function took(a, pool) {
+  return; // the agents in the line under the headline are left alone
   const i = feeds.indexOf(a), k = pool.provider === 'Claude' ? 0 : 1, c = geo.cons[k]; if (!glOK || still || i < 0 || !c) return;
   const now = performance.now();
   if (V.draw === 'rings' || V.draw === 'bubbles') { sips[k] = { t: now, tint: i }; strike(0, c.x, 1.3, 3); }
@@ -579,13 +584,13 @@ function step(dt, now) {
   [48, 17, 7].forEach((k, l) => { leanV[l] += (k * (leanTo - lean[l]) - [5, 3.6, 3][l] * leanV[l]) * dt; lean[l] += leanV[l] * dt; });
   feeds.forEach((a, i) => {
     const left = 1 - Math.min(a.used, 1), x = geo.sx[i];
-    if (flow[i] > .05) strike(0, x, (Math.random() - .5) * .5 * flow[i] + (now < gush[i] ? .25 : 0));
-    if (V.supply === 'drops' && (left > 0 || now < gush[i]) && now - lastDrop[i] > (now < gush[i] ? 55 : 240 + 900 * (1 - left)) + Math.random() * 90) { lastDrop[i] = now; parts.push({ kind: i + 1, x: x + (Math.random() - .5) * 4, y: geo.top, vy: 40, r: 5.5 }); }
+    if (flow[i] > .05) strike(0, x, (Math.sin(now / 1000 * 13 + i * 2) * (V.hum ?? .1) + (Math.random() - .5) * .08) * (.4 + flow[i]) + (now < gush[i] ? .2 : 0), 1.5);
+    if (V.supply === 'drops' && (left > 0 || now < gush[i]) && now - lastDrop[i] > (now < gush[i] ? 70 : 520 + 1300 * (1 - left)) + Math.random() * 90) { lastDrop[i] = now; parts.push({ kind: i + 1, x: x + (Math.random() - .5) * 4, y: geo.top, vy: 40, r: 5.5 }); }
   });
   threads.forEach((t, k) => { if (now < t.until && geo.cons[k]) strike(0, geo.cons[k].x, .16, 2); });
   for (let n = parts.length - 1; n >= 0; n--) {
     const p = parts[n], was = p.y; let gone = false;
-    if (p.kind <= 3) { p.vy += 1500 * dt; p.y += p.vy * dt; if (p.y >= level(0, p.x)) { strike(0, p.x, 1.5, 1); gone = true; } }
+    if (p.kind <= 3) { p.vy += 1500 * dt; p.y += p.vy * dt; if (p.y >= level(0, p.x)) { strike(0, p.x, .7, 1.2); gone = true; if (V.puff) parts.push({ kind: 5 + p.kind, puff: now, x: p.x, y: p.y + 7, r: 8 }); } }
     else if (p.kind === 4) {
       // a pebble falls freely through the air and then at each layer's own pace, knocking every surface it goes through
       const depth = was < level(0, p.x) ? -1 : was < level(1, p.x) ? 0 : was < level(2, p.x) ? 1 : was < level(2, p.x) + thick[2] ? 2 : 3;
@@ -597,7 +602,8 @@ function step(dt, now) {
       p.y -= (p.y > level(2, p.x) ? 130 : p.y > level(1, p.x) ? 95 : 70) * (.7 + p.r / 6) * dt; p.x += Math.sin(now / 1000 * 5 + p.seed) * 18 * dt;
       for (let l = 2; l > 0; l--) { const at = level(l, p.x); if (was > at && p.y <= at) strike(l, p.x, -.9, 1.5); }
       if (p.y <= level(0, p.x) + 2) { strike(0, p.x, -1.1, 1.2); gone = true; }
-    } else { const t = (now - p.t0) / p.dur; if (t >= 1) gone = true; else if (t > 0) { const e = t * t * (3 - 2 * t); p.x = p.x0 + (p.x1 - p.x0) * e; p.y = p.y0 + (p.y1 - p.y0) * e; p.r = 5.5 * (1 - t * .5); } }
+    } else if (p.puff) { const age = (now - p.puff) / 1500; p.y += 24 * (1 - age * .6) * dt; p.r = 8 * (1 - age); gone = age >= 1; }
+    else { const t = (now - p.t0) / p.dur; if (t >= 1) gone = true; else if (t > 0) { const e = t * t * (3 - 2 * t); p.x = p.x0 + (p.x1 - p.x0) * e; p.y = p.y0 + (p.y1 - p.y0) * e; p.r = 5.5 * (1 - t * .5); } }
     if (gone) parts.splice(n, 1);
   }
   if (parts.length > 40) parts.splice(0, parts.length - 40);
@@ -610,13 +616,13 @@ function push(x, y) {
   if (ptr) {
     const dx = x - ptr.x, dy = y - ptr.y, i = column(x);
     // the pointer moves whichever surface it goes through or by, the heavier the less
-    for (let l = 0; l < 3; l++) {
+    if (!V.smear) for (let l = 0; l < 3; l++) {
       const gain = l === 0 ? 1 : V.deep * (l === 1 ? .85 : .65), at = level(l, x), crossed = (ptr.y - at) * (y - at) < 0, near = Math.abs(y - at) < 24;
       if (gain && (crossed || near)) for (let k = -9; k <= 9; k++) { const j = i + k; if (j < 0 || j >= COLS) continue; const fall = Math.exp(-k * k / 18);
         vel[l][j] += (Math.max(-9, Math.min(9, dy)) * (crossed ? .3 : .09) - Math.min(Math.abs(dx), 30) * (near ? .02 : 0)) * gain * fall; }
     }
     const under = y > level(0, x) + 4;
-    if (V.smear && under && y < geo.WH) smear(x, y, dx, dy);
+    if (V.smear && y > level(0, x) - 90 && y < geo.WH) smear(x, y, dx, dy);
     if (V.bubbles && under && y < geo.bed) { trail += Math.hypot(dx, dy); if (trail > 34) { trail = 0; parts.push({ kind: 5, x, y, r: 2.5 + Math.random() * 4, seed: Math.random() * 6 }); } }
   }
   if (V.tilt) leanTo = (x / geo.W - .5) * .07;
@@ -628,7 +634,7 @@ function draw(t) {
   gl.scissor(0, Math.max(0, Math.floor(canvas.height - b * d)), canvas.width, Math.ceil((b - a) * d));
   gl.uniform2f(U.R, canvas.width, canvas.height); gl.uniform1f(U.T, t); gl.uniform1f(U.D, d); gl.uniform1f(U.S, geo.S * d); gl.uniform1f(U.F, geo.F * d); gl.uniform1f(U.top, geo.top * d);
   gl.uniform1f(U.bed, geo.bed * d); gl.uniform1f(U.TH, geo.TH * d); gl.uniform1f(U.WH, geo.WH * d); gl.uniform1f(U.wamt, stirred ? 1 : 0); gl.uniform1f(U.lvl, lvl * d);
-  gl.uniform1f(U.hov, V.truth ? hovered : -1); gl.uniform1f(U.led, V.truth ? 1 : 0);
+  gl.uniform1f(U.plume, V.plume || 0); gl.uniform1f(U.men, V.supply === 'ribbon' ? 1 : 0); gl.uniform1f(U.hov, V.truth ? hovered : -1); gl.uniform1f(U.led, V.truth ? 1 : 0);
   gl.uniform2f(U.P, ptr ? ptr.x * d : -9999, ptr ? ptr.y * d : -9999); gl.uniform1f(U.Pin, suck > .01 && ptr ? suck : 0);
   gl.uniform3f(U.th, thick[0] * d, thick[1] * d, thick[2] * d); gl.uniform3f(U.tilt, lean[0], lean[1], lean[2]);
   gl.uniform3f(U.sx, geo.sx[0] * d, geo.sx[1] * d, geo.sx[2] * d); gl.uniform3f(U.fl, flow[0], flow[1], flow[2]);
@@ -660,8 +666,6 @@ function frame(now) {
 page.addEventListener('pointermove', e => { const r = page.getBoundingClientRect(); push(e.clientX - r.left, e.clientY - r.top); });
 page.addEventListener('pointerleave', () => { ptr = null; leanTo = 0; });
 page.addEventListener('click', e => { if (!V.pebble || e.target.closest('button, a, .panel')) return; const r = page.getBoundingClientRect(); parts.push({ kind: 4, x: e.clientX - r.left, y: e.clientY - r.top, vy: 0, r: 7 }); });
-// the page is the pool: moving down it heaves the water
-addEventListener('scroll', () => { const d = scrollY - lastScroll; lastScroll = scrollY; const kick = Math.max(-.6, Math.min(.6, d * .006)) * (V.tilt ? 2 : 1); [1, .6, .35].forEach((g, l) => { const v = vel[l]; for (let i = 0; i < COLS; i++) v[i] += kick * g; }); }, { passive: true });
 sources.querySelectorAll('.src').forEach((el, i) => { el.style.pointerEvents = 'auto'; el.addEventListener('pointerenter', () => { hovered = i; }); el.addEventListener('pointerleave', () => { hovered = -1; }); });
 render(); rings();
 if (glOK) {
