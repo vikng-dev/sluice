@@ -32,6 +32,16 @@ struct Memory: Codable {
     var router = Router()
     /// By provider: how its own client last named itself.
     var clients: [String: String] = [:]
+
+    init() {}
+
+    /// A memory an older Sluice wrote names none of what is by account: the rest of it is still read.
+    init(from decoder: any Decoder) throws {
+        let keyed = try decoder.container(keyedBy: CodingKeys.self)
+        accounts = try keyed.decodeIfPresent([String: Known].self, forKey: .accounts) ?? [:]
+        router = try keyed.decode(Router.self, forKey: .router)
+        clients = try keyed.decodeIfPresent([String: String].self, forKey: .clients) ?? [:]
+    }
 }
 
 /// An account as its provider last told of it, and what its week is seen to hold.

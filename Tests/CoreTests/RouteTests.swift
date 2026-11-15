@@ -201,7 +201,7 @@ import Testing
 
     /// Every change reads the file, edits it and writes it, so a key the reader dropped would be wiped at the next change.
     @Test func whatIsReadIsWrittenBackKeyForKey() throws {
-        let written = #"{"autoResets":true,"profiles":{"a":{"accounts":["x"],"color":"teal","folders":["~/w"],"label":"A side","owners":["Acme"],"starred":["p"]}}}"#
+        let written = #"{"autoResets":true,"profiles":{"a":{"accounts":["x"],"color":"teal","folders":["~/w"],"label":"A side","owners":["Acme"],"starred":["p"]}},"statusLine":["today","bar"],"statusLineOn":false}"#
         var config = try config(written)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]

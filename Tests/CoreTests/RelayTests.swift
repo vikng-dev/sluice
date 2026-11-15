@@ -77,6 +77,8 @@ private actor Hits {
         let first = try await HTTPCall.send("GET", url)
         #expect(first.status == 200)
         #expect(String(decoding: first.body, as: UTF8.self) == "served by b /v1/thing?x=1")
+        // The account that refused is no longer at work on the request.
+        #expect(try await relay.status().first { $0.label == "a" }?.streaming == 0)
         // `a` is now known spent, so the next request does not ask it again.
         _ = try await HTTPCall.send("GET", url)
         #expect(await hits.accounts == ["a", "b", "b"])
@@ -104,10 +106,10 @@ private actor Hits {
         await relay.checkUsage()
         #expect(try await relay.status().first?.resets.map(\.id) == ["own/1"])
         // Two versions of the client side by side go by the later one, whichever came through last.
-        _ = try await HTTPCall.send("GET", url, headers: ["User-Agent": "own/2"])
-        _ = try await HTTPCall.send("GET", url, headers: ["User-Agent": "own/1"])
+        _ = try await HTTPCall.send("GET", url, headers: ["User-Agent": "own/10"])
+        _ = try await HTTPCall.send("GET", url, headers: ["User-Agent": "own/9"])
         await relay.checkUsage(resetsOlderThan: 0)
-        #expect(try await relay.status().first?.resets.map(\.id) == ["own/2"])
+        #expect(try await relay.status().first?.resets.map(\.id) == ["own/10"])
         withExtendedLifetime((provider, server)) {}
     }
 
@@ -180,6 +182,32 @@ private actor Hits {
         #expect(try await accounts.candidates(provider: "fake", pin: nil, folder: nil, conversation: nil, model: nil).accounts.map(\.label) == ["b", "a"])
         let told = try await accounts.status().first
         #expect(told?.plan?.multiple == 20 && told?.scoped.map(\.name) == ["model"] && told?.resets.map(\.id) == ["r"])
+        // The file as 0.11.0 wrote it: what it knew by account is relearned, and where its conversations are held is kept.
+        let older = try JSONDecoder().decode(Memory.self, from: Data(#"{"usage":{"fake/a":[]},"plans":{},"router":{"holds":{}}}"#.utf8))
+        #expect(older.accounts.isEmpty)
+    }
+
+    /// An account whose answer breaks off is no longer at work on it: its bars would otherwise play until the relay restarts.
+    @Test func anAccountIsNoLongerAtWorkOnAnAnswerThatBrokeOffOrNeverCame() async throws {
+        let provider = try Server(port: 47628) { _, writer in
+            try await writer.send(200, headers: [], body: AsyncThrowingStream<Data, any Error> { $0.yield(Data("x".utf8)); $0.finish(throwing: CancellationError()) })
+        }
+        try await provider.start()
+        let account = Account(provider: "fake", subject: "a", organization: nil, label: "a", accessToken: "", refreshToken: "", expiresAt: .distantFuture)
+        func relay(upstream: Int, port: UInt16) throws -> (Relay, Server) {
+            let relay = try Relay(providers: [Fake(upstream: URL(string: "http://127.0.0.1:\(upstream)")!)], storage: Storage(loadAccounts: { [account] }, storeAccounts: { _ in }, config: { Config() }, storeConfig: { _ in }, loadMemory: { Memory() }, storeMemory: { _ in }), port: port)
+            return (relay, try Server(port: port) { try await relay.handle($0, $1) })
+        }
+        let (broken, first) = try relay(upstream: 47628, port: 47629)
+        try await first.start()
+        _ = try? await HTTPCall.send("GET", URL(string: "http://127.0.0.1:47629/fake/v1/thing")!)
+        #expect(try await broken.status().map(\.streaming) == [0])
+        // Nothing listens there.
+        let (unreached, second) = try relay(upstream: 1, port: 47630)
+        try await second.start()
+        _ = try? await HTTPCall.send("GET", URL(string: "http://127.0.0.1:47630/fake/v1/thing")!)
+        #expect(try await unreached.status().map(\.streaming) == [0])
+        withExtendedLifetime((provider, first, second)) {}
     }
 
     /// A pool weighs its accounts by size, so one sized wrongly misstates how much of the pool is left.

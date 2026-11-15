@@ -385,16 +385,23 @@ import Testing
         #expect(try settings(Claude.lined(both, by: nil, words: "statusline claude", path: "")) == settings(own))
     }
 
-    @Test func aStatusLineItemTheConfigMisnamesIsSaidWithTheOnesThereAre() throws {
+    @Test func aStatusLineItemTheConfigMisnamesIsAnErrorAndNotDropped() throws {
         #expect(try JSONDecoder().decode(Config.self, from: Data(#"{"statusLine":["share","profile"]}"#.utf8)).statusLine == [.share, .profile])
         #expect(throws: DecodingError.self) { try JSONDecoder().decode(Config.self, from: Data(#"{"statusLine":["shar"]}"#.utf8)) }
+        // A line that says nothing is one turned off, not one with no items.
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(Config.self, from: Data(#"{"statusLine":[]}"#.utf8)) }
+        var config = Config()
+        #expect(throws: ConfigError.self) { try config.say([]) }
     }
 
     @Test func theStatusLineSaysOnlyWhatThePoolHasToSayInTheOrderAsked() {
         let now = Date(timeIntervalSince1970: 1_000_000)
-        let pool = StatusLine.Pool(profile: "work", tint: nil, used: 0.5, resetsAt: now + 26 * 3600, dry: nil, account: nil, today: nil)
-        let line = StatusLine.runs([.dry, .reset, .account, .share, .bar], of: pool, now: now).map { $0.map(\.text).joined() }
-        #expect(line == ["1d 2h", "50% ━━━━━━━━"])
+        let pool = StatusLine.Pool(profile: "work", tint: nil, used: 0.25, resetsAt: now + 26 * 3600, dry: nil, account: nil, today: nil)
+        let line = StatusLine.runs([.dry, .reset, .account, .share, .bar], of: pool, now: now)
+        #expect(line.map { $0.map(\.text).joined() } == ["1d 2h", "25% ━━━━━━━━"])
+        // A quarter of the bar's eight is filled: the two halves differ only in tone.
+        let bar = line[1].suffix(2)
+        #expect(bar.map(\.text.count) == [2, 6] && bar.map(\.tone) == [.fill, .faint])
     }
 }
 

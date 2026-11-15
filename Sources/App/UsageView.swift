@@ -52,8 +52,8 @@ struct UsageView: View {
             } else {
                 Hours(requests: requests, days: days).card()
                 VStack(alignment: .leading, spacing: 12) {
-                    Shares(title: "Folders", parts: requests.map { ($0.folder.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "unknown", $0.folder ?? "", $0.tokens) })
-                    Shares(title: "Models", parts: requests.map { ($0.spend.model ?? "unknown", "", $0.tokens) })
+                    Shares(title: "Folders", parts: requests.map { ($0.folder.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "unknown", $0.folder ?? "unknown", $0.tokens) })
+                    Shares(title: "Models", parts: requests.map { ($0.spend.model ?? "unknown", $0.spend.model ?? "unknown", $0.tokens) })
                 }
                 .card()
             }
@@ -74,18 +74,12 @@ private struct PoolUsage: View {
     private static let tints: [Color] = [.blue, .orange, .green, .purple, .pink, .teal]
     private static let height = 56.0
 
-    private func samples(of account: AccountStatus) -> [Sample] {
-        samples.filter { $0.provider == account.provider && $0.account == account.label }
-    }
-
-    private func percent(_ share: Double) -> String { "\(Int((share * 100).rounded()))%" }
-
     var body: some View {
         let total = pool.map(\.size).reduce(0, +)
         // Each account with its colour and the share of the pool it gave each day.
         let parts = pool.enumerated().map { index, account in
             (label: account.label, tint: Self.tints[index % Self.tints.count], days: Dictionary(
-                Forecast.rises(samples(of: account)).map { (Calendar.current.startOfDay(for: $0.at), $0.by * account.size / total) }, uniquingKeysWith: +
+                Forecast.rises(account.samples(in: samples)).map { (Calendar.current.startOfDay(for: $0.at), $0.by * account.size / total) }, uniquingKeysWith: +
             ))
         }
         let top = max(days.map { day in parts.map { $0.days[day] ?? 0 }.reduce(0, +) }.max() ?? 0, 2 * Forecast.pace)
@@ -94,16 +88,15 @@ private struct PoolUsage: View {
                 PoolTitle(provider: provider, title: title)
                 Spacer()
                 if let burn = pool.burn(samples, now: now) {
-                    let members = pool.map { Member(size: $0.size, used: $0.budget?.used ?? 0, resetsAt: $0.budget?.resetsAt) }
-                    if let dry = Forecast.dry(members, burn: burn, now: now) {
+                    if let dry = pool.dry(burn: burn, now: now) {
                         HStack(spacing: 3) {
                             Text("dry").font(.caption).foregroundStyle(dry <= now ? Color.red : .orange)
                             if dry > now { Clock(at: dry, now: now) }
                         }
-                        .help("At this rate the pool has nothing left then, counting what comes back at each reset")
+                        .tip { Text("At this rate the pool has nothing left then, counting what comes back at each reset").font(.caption) }
                     }
-                    Text("\(percent(burn * 24))/day").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        .help("How much of the pool was used over the last 24 hours")
+                    Text("\((burn * 24).percentText)/day").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .tip { Text("How much of the pool was used over the last 24 hours").font(.caption) }
                 }
             }
             HStack(alignment: .bottom, spacing: 0) {
@@ -124,14 +117,14 @@ private struct PoolUsage: View {
                     }
                     .frame(maxWidth: .infinity)
                     .tip {
-                        Readout(about: day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)), figure: percent(all), unit: "\((all / Forecast.pace).formatted(.number.precision(.fractionLength(1))))× pace")
+                        Readout(about: day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)), figure: all.percentText, unit: "\((all / Forecast.pace).formatted(.number.precision(.fractionLength(1))))× pace")
                         if parts.count > 1 {
                             ForEach(parts.indices, id: \.self) { index in
                                 HStack(spacing: 6) {
                                     Capsule().fill(parts[index].tint).frame(width: 10, height: 3)
                                     Text(parts[index].label).font(.caption).foregroundStyle(.secondary)
                                     Spacer(minLength: 12)
-                                    Text(percent(spent[index])).font(.caption.monospacedDigit())
+                                    Text(spent[index].percentText).font(.caption.monospacedDigit())
                                 }
                             }
                         }
@@ -218,7 +211,7 @@ private struct Shares: View {
                     Text(part.tokens.compact).font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
                 }
                 .padding(.vertical, 2)
-                .tip { Readout(about: part.about.isEmpty ? part.name : part.about, figure: (Double(part.tokens) / all).formatted(.percent.precision(.fractionLength(0))), unit: "of the tokens") }
+                .tip { Readout(about: part.about, figure: (Double(part.tokens) / all).formatted(.percent.precision(.fractionLength(0))), unit: "of the tokens") }
             }
         }
     }

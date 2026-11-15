@@ -15,7 +15,7 @@ public struct Window: Sendable, Codable, Equatable {
 }
 
 public extension Window {
-    var percentText: String { "\(Int((used * 100).rounded()))%" }
+    var percentText: String { used.percentText }
 }
 
 extension Date {
@@ -55,4 +55,9 @@ public extension Window {
 
 extension Window {
     var settled: Window { Window(name: name, used: used, resetsAt: resetsAt.settled) }
+}
+
+public extension Double {
+    /// A share as a whole percentage.
+    var percentText: String { "\(Int((self * 100).rounded()))%" }
 }

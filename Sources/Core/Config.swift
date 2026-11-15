@@ -70,6 +70,7 @@ public struct Config: Codable, Sendable, Equatable {
             }
             return item
         } ?? StatusLine.usual
+        guard !statusLine.isEmpty else { throw DecodingError.dataCorruptedError(forKey: .statusLine, in: keys, debugDescription: "a status line says something; to say nothing, set statusLineOn to false") }
     }
 
     /// Only what is set is written, as a person would write it.

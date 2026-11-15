@@ -10,10 +10,10 @@ extension StatusLine.Pool {
         self.init(
             profile: config.shown(profile), tint: config.profiles[profile]?.color, used: accounts.used,
             resetsAt: accounts.compactMap(\.budget?.resetsAt).min(),
-            dry: burn.flatMap { Forecast.dry(accounts.map { Member(size: $0.size, used: $0.budget?.used ?? 0, resetsAt: $0.budget?.resetsAt) }, burn: $0, now: now) },
+            dry: burn.flatMap { accounts.dry(burn: $0, now: now) },
             account: accounts.filter { $0.lastAnswered != nil }.max { $0.lastAnswered! < $1.lastAnswered! }?.label,
             today: total > 0 ? accounts.map { account in
-                Forecast.rises(samples.filter { $0.provider == account.provider && $0.account == account.label }).filter { $0.at >= today }.map(\.by).reduce(0, +) * account.size / total
+                Forecast.rises(account.samples(in: samples)).filter { $0.at >= today }.map(\.by).reduce(0, +) * account.size / total
             }.reduce(0, +) : nil
         )
     }

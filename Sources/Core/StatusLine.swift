@@ -46,7 +46,6 @@ public enum StatusLine {
     /// What each item says of the pool, in the order given, each a part of the line. An item with nothing
     /// to say is left out, and the bar and the share, which say one thing, are one part where they meet.
     public static func runs(_ items: [Item], of pool: Pool, now: Date) -> [[Run]] {
-        func percent(_ share: Double) -> String { "\(Int((share * 100).rounded()))%" }
         return items.enumerated().reduce(into: []) { parts, next in
             guard let said = runs(next.element) else { return }
             let before = next.offset > 0 ? items[next.offset - 1] : nil
@@ -58,11 +57,11 @@ public enum StatusLine {
             case .bar:
                 let filled = Int((min(pool.used, 1) * 8).rounded())
                 return [(String(repeating: "━", count: filled), alarm(pool.used) ?? .fill), (String(repeating: "━", count: 8 - filled), .faint)]
-            case .share: return [(percent(pool.used), alarm(pool.used) ?? .plain)]
+            case .share: return [(pool.used.percentText, alarm(pool.used) ?? .plain)]
             case .reset: return pool.resetsAt.map { [($0.leftText(now: now), .dim)] }
             case .dry: return pool.dry.map { $0 <= now ? [("dry", .critical)] : [("dry ", .warning), ($0.leftText(now: now, units: 1), .dim)] }
             case .account: return pool.account.map { [($0, .dim)] }
-            case .today: return pool.today.map { [("today ", .dim), (percent($0), .plain), (" of \(percent(Forecast.pace))", .dim)] }
+            case .today: return pool.today.map { [("today ", .dim), ($0.percentText, .plain), (" of \(Forecast.pace.percentText)", .dim)] }
             }
         }
     }

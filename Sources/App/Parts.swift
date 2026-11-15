@@ -53,7 +53,7 @@ struct Readout: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if !about.isEmpty { Text(about).font(.caption2).foregroundStyle(.secondary) }
+            Text(about).font(.caption2).foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(figure).font(.callout.weight(.semibold).monospacedDigit())
                 Text(unit).font(.caption).foregroundStyle(.secondary)
@@ -229,10 +229,10 @@ struct Share: View {
     /// Where it is kept which way the shares read.
     static let key = "readsLeft"
 
-    static func text(_ used: Double, left: Bool) -> String { "\(Int(((left ? 1 - min(used, 1) : used) * 100).rounded()))%" }
+    static func text(_ used: Double, left: Bool) -> String { (left ? 1 - min(used, 1) : used).percentText }
 
     /// The colour that warns of a share nearly or wholly gone; nil while there is room.
-    static func warning(_ used: Double) -> Color? { StatusLine.alarm(used).map { $0 == .critical ? .red : .orange } }
+    static func warning(_ used: Double) -> Color? { StatusLine.alarm(used)?.color }
 
     var body: some View {
         let text = Self.text(used, left: left) + (worded ? (left ? " left" : " used") : "")

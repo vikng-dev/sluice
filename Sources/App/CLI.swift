@@ -96,9 +96,9 @@ sluice \(Sluice.version)
   sluice resets [auto | manual]                  whether a pool uses the resets it holds by itself: when it is out,
                                                  or one is about to lapse. With neither word, says which it is
 
-  sluice statusline [provider] [--with <command>]
+  sluice statusline <provider> [--with <command>]
                                                  the line a client shows under its prompt, of the pool its folder's
-                                                 profile has there (default: claude), and after it what the command says
+                                                 profile has there, and after it what the command says
   sluice statusline on | off                     whether the clients show it
   sluice statusline items [<item> ...]           what that line says, in order: \(StatusLine.Item.allCases.map(\.rawValue).joined(separator: ", ")).
                                                  With no item, says what it is
@@ -155,15 +155,15 @@ func command(_ arguments: [String]) async throws {
             guard let item = StatusLine.Item(rawValue: name) else { fail("no status line item \(name); there is: \(StatusLine.Item.allCases.map(\.rawValue).joined(separator: ", "))") }
             return item
         }
-        let config = try items.isEmpty ? Storage.live.config() : Storage.live.change { $0.say(items) }
+        let config = try items.isEmpty ? Storage.live.config() : Storage.live.change { try $0.say(items) }
         if json { printJSON(config.statusLine) } else { print(config.statusLine.map(\.rawValue).joined(separator: " ")) }
     case ("statusline", let turn) where turn == "on" || turn == "off":
         try Storage.live.change { $0.showStatusLine(turn == "on") }
         if try isSetUp() { try showStatusLines(by: program()) }
         print(turn == "on" ? "The clients' status lines say the pool." : "The clients' status lines say nothing of Sluice's.")
     case ("statusline", _):
-        let own = values(of: StatusLine.own, in: arguments).first, id = words.dropFirst().first { $0 != own } ?? "claude"
-        guard let provider = providers.first(where: { $0.id == id }) else { fail("no provider \(id); there is: \(providers.map(\.id).joined(separator: ", "))") }
+        let own = values(of: StatusLine.own, in: arguments).first, lined = statusShowing
+        guard let provider = words.dropFirst().first(where: { $0 != own }).flatMap({ id in lined.first { $0.id == id } }) else { fail("say whose status line: \(lined.map(\.id).joined(separator: ", "))") }
         // The user's own line, run as the client would run it: by the shell, handed what the client hands this.
         var theirs = ""
         if let own {
@@ -172,19 +172,24 @@ func command(_ arguments: [String]) async throws {
             shell.arguments = ["-c", own]
             (shell.standardInput, shell.standardOutput) = (told, said)
             try shell.run()
-            told.fileHandleForWriting.write(FileHandle.standardInput.readDataToEndOfFile())
+            // A command that reads nothing may be gone before it is told: that is no failure of its line.
+            signal(SIGPIPE, SIG_IGN)
+            try? told.fileHandleForWriting.write(contentsOf: FileHandle.standardInput.readDataToEndOfFile())
             try told.fileHandleForWriting.close()
             theirs = String(decoding: said.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         }
-        // Under a prompt is no place to say that the relay is not running: Sluice's part is then left out.
+        // Under a prompt is no place to say what went wrong, a relay not running or a config not read:
+        // Sluice's part is then left out, and the user's own line is said all the same.
         var ours = ""
-        let config = try Storage.live.config(), now = Date()
-        // The profile the client was opened in, as its variable names it, or else the folder's.
-        let named = ProcessInfo.processInfo.environment[provider.home.variable].map { URL(fileURLWithPath: $0).standardizedFileURL.path }
-        let profile = config.names.first { provider.folder(of: $0).standardizedFileURL.path == named } ?? config.profile(for: FileManager.default.currentDirectoryPath)
-        if let pool = (try? await relayAccounts())?.filter({ $0.profile == profile && $0.provider == provider.id }), !pool.isEmpty {
-            let samples = try Storage.live.readings().filter { $0.at >= now.addingTimeInterval(-86400) }
-            ours = terminalText(StatusLine.runs(config.statusLine, of: StatusLine.Pool(pool, profile: profile, config: config, samples: samples, now: now), now: now))
+        let now = Date()
+        // The pool is the one the relay draws on: that of the profile the folder belongs to.
+        if let config = try? Storage.live.config(), let accounts = try? await relayAccounts(), let readings = try? Storage.live.readings() {
+            let profile = config.profile(for: FileManager.default.currentDirectoryPath)
+            let pool = accounts.filter { $0.profile == profile && $0.provider == provider.id }
+            if !pool.isEmpty {
+                let samples = readings.filter { $0.at >= now.addingTimeInterval(-86400) }
+                ours = terminalText(StatusLine.runs(config.statusLine, of: StatusLine.Pool(pool, profile: profile, config: config, samples: samples, now: now), now: now))
+            }
         }
         print([ours, theirs].filter { !$0.isEmpty }.joined(separator: StatusLine.separator), terminator: theirs.isEmpty ? "\n" : "")
     case ("setup", nil):

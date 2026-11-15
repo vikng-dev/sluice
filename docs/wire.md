@@ -211,6 +211,10 @@ with no Codex headers, when the body is in its dialect: `stream: true`, `store: 
 list"). Another app's function tools are called normally. Fields outside the dialect are refused
 by name ("Unsupported parameter: temperature").
 
+**The status line (read in 0.160.0's program, 2026-11-14).** `[tui] status_line` in `config.toml` is a
+list of the client's own items, chosen with `/statusline`. None of them runs a command, so Sluice has
+nothing to write there.
+
 ## Who is calling
 
 The relay pins by the caller's folder, which no request carries. For a loopback connection macOS
@@ -240,8 +244,12 @@ Projects, voice, `/usage`. Claude Code 2.1.323:
 - `claude auth login` with `CLAUDE_CODE_OAUTH_REFRESH_TOKEN` and `CLAUDE_CODE_OAUTH_SCOPES` signs in
   with no browser and stores the result; the refresh token is rotated by it.
 - `/usage` shows the sign-in's own windows, whatever account served.
-- The status line (seen in 2.1.325): `statusLine` in `settings.json` is `{"type": "command", "command": …}`;
-  the command's output is the line. The `rate_limits` it is handed are the last answer's headers, so
+- The status line (seen in 2.1.325, 2026-11-15, with Sluice's command wrapping a script of the
+  user's): `statusLine` in `settings.json` is `{"type": "command", "command": …}`, with `padding` kept
+  beside it. The command is run by a shell, so Sluice writes it quoted for one; it is handed the
+  session as JSON on its input, which Sluice passes on to the user's own command; it runs in the
+  session's folder, which is how Sluice's line knows the profile; its output is the line, and the
+  terminal colours in it are shown. The `rate_limits` it is handed are the last answer's headers, so
   the serving account's, which is why Sluice's line asks the relay instead.
 - Whom it is signed in as is recorded in its state file, `oauthAccount.emailAddress`; signed out, there is
   no `oauthAccount`. The file is `~/.claude.json` for the usual folder and `<folder>/.claude.json` when

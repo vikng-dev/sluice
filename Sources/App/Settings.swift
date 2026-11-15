@@ -10,7 +10,7 @@ struct SettingsView: View {
     var body: some View {
         let autoResets = running.config.autoResets
         VStack(alignment: .leading, spacing: 8) {
-            LineCard(on: running.config.statusLineOn, items: running.config.statusLine, now: now).card()
+            LineCard(now: now).card()
             VStack(alignment: .leading, spacing: 10) {
                 Setting(symbol: "arrow.triangle.branch", title: "Route the clients", says: "Claude Code and Codex go through Sluice", on: running.routed, turn: running.route)
                 Setting(symbol: autoResets ? "bolt.fill" : "bolt", title: "Use resets for me", says: "when a pool is out, or one is about to lapse", on: autoResets, turn: running.autoReset)
@@ -50,10 +50,10 @@ private struct Setting: View {
 /// The clients' status line as it would read, over the items it says, in order, and those it could. A
 /// click takes an item off or puts it on at the end; one that is said is dragged to where it is said.
 private struct LineCard: View {
-    let on: Bool
-    let items: [StatusLine.Item]
     let now: Date
     @Environment(Running.self) private var running
+    private var on: Bool { running.config.statusLineOn }
+    private var items: [StatusLine.Item] { running.config.statusLine }
     @State private var frames: [String: CGRect] = [:]
     @State private var dragged: (item: StatusLine.Item, by: CGSize)?
 
@@ -77,13 +77,13 @@ private struct LineCard: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Status line").font(.callout.weight(.semibold))
-                ForEach(providers.filter { $0 is any StatusShowing }.map { (id: $0.id, name: $0.name) }, id: \.id) { provider in
+                ForEach(statusShowing, id: \.id) { provider in
                     HStack(spacing: 3) {
                         if let mark = providerMark(provider.id) { Image(nsImage: mark).resizable().frame(width: 10, height: 10) }
                         Text(provider.name).font(.caption)
                     }
                     .foregroundStyle(.secondary)
-                    .help("Shows it under its prompt, of the pool that pays for the work, before a line of your own")
+                    .tip { Text("Shows it under its prompt, of the pool that pays for the work, before a line of your own").font(.caption) }
                 }
                 Spacer()
                 Toggle("", isOn: Binding { on } set: { running.showStatusLine($0) }).toggleStyle(.switch).controlSize(.mini).labelsHidden()
@@ -107,7 +107,7 @@ private struct LineCard: View {
                     chip(item, said: true)
                         .framed("item:\(item.rawValue)")
                         .offset(dragged?.item == item ? dragged!.by : .zero).zIndex(dragged?.item == item ? 1 : 0)
-                        .onTapGesture { running.say(items.filter { $0 != item }) }
+                        .onTapGesture { if items == [item] { running.showStatusLine(false) } else { running.say(items.filter { $0 != item }) } }
                         .gesture(
                             DragGesture(minimumDistance: 4, coordinateSpace: .named(Frames.space))
                                 .onChanged { dragged = (item, $0.translation) }

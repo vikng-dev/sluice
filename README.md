@@ -68,7 +68,7 @@ from the new one, within a second. The app is also the `sluice` command, which H
 sluice setup
 ```
 
-That does two things, and `sluice setup --undo` reverses both:
+That does three things, and `sluice setup --undo` reverses them all:
 
 - It writes Sluice's address into each client's own settings (`settings.json` in every profile's
   Claude Code folder, `config.toml` in every profile's Codex folder) and touches nothing else in them.
@@ -77,9 +77,10 @@ That does two things, and `sluice setup --undo` reverses both:
   current folder belongs to, then runs the real client. A launch that names a profile's folder itself, in
   the client's own variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), opens that profile; a folder that is no
   profile's is passed over.
+- It has Claude Code run Sluice for [the status line](#the-status-line), in the same `settings.json`.
 
-Turning routing off in the panel's settings, and quitting, turn only the address off: the clients go back to
-their providers, and work still opens in its own profile.
+Turning routing off in the panel's settings, and quitting, take the address and the status line out: the
+clients go back to their providers, and work still opens in its own profile.
 
 ```sh
 sluice login                  # sign a Claude account in through the browser; repeat per account
@@ -173,7 +174,7 @@ What it says is one ordered list for every profile, changed in the panel's setti
 ```sh
 sluice statusline items profile share reset
 sluice statusline off                         # or: on
-sluice statusline                             # the line for the folder you are in
+sluice statusline claude                      # the line for the folder you are in
 ```
 
 | Item | Says |
@@ -255,7 +256,8 @@ log stream --info --predicate 'subsystem == "dev.vikng.sluice"'
 ```
 
 To remove Sluice: `brew uninstall --zap sluice`. A running copy sees its app gone and quits within a
-minute, as from the menu. The signed-in accounts stay in the Keychain item `dev.vikng.sluice` until
+minute, as from the menu. Before removing it while it is not running, run `sluice setup --undo`: the
+clients' settings would otherwise still name a relay that is gone. The signed-in accounts stay in the Keychain item `dev.vikng.sluice` until
 you delete it.
 
 ## Layout

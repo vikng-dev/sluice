@@ -87,19 +87,20 @@ public struct Claude: Provider {
         var own = line?["command"] as? String
         // Sluice's own is its quoted path and then its words.
         if let command = own, let ours = command.range(of: "' \(words)") {
-            let rest = command[ours.upperBound...]
-            own = rest.hasPrefix(" \(StatusLine.own) '") ? rest.dropFirst(StatusLine.own.count + 3).dropLast().replacingOccurrences(of: #"'\''"#, with: "'") : nil
+            let rest = command[ours.upperBound...], marker = " \(StatusLine.own) '"
+            own = rest.hasPrefix(marker) ? rest.dropFirst(marker.count).dropLast().replacingOccurrences(of: #"'\''"#, with: "'") : nil
         }
         if let program {
             line = line ?? ["type": "command"]
-            line?["command"] = "'\(program)' \(words)" + (own.map { " \(StatusLine.own) '\($0.replacingOccurrences(of: "'", with: #"'\''"#))'" } ?? "")
+            func quoted(_ word: String) -> String { "'\(word.replacingOccurrences(of: "'", with: #"'\''"#))'" }
+            line?["command"] = "\(quoted(program)) \(words)" + (own.map { " \(StatusLine.own) \(quoted($0))" } ?? "")
         } else if let own {
             line?["command"] = own
         } else {
             line = nil
         }
         all["statusLine"] = line
-        return try JSONSerialization.data(withJSONObject: all, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
+        return try written(all)
     }
 
     /// The settings with `env.ANTHROPIC_BASE_URL` set to `address`, or removed; everything else is kept.
@@ -109,7 +110,11 @@ public struct Claude: Provider {
         var (all, env) = try environment(in: settings, path: path)
         env["ANTHROPIC_BASE_URL"] = address
         all["env"] = env.isEmpty ? nil : env
-        return try JSONSerialization.data(withJSONObject: all, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
+        return try written(all)
+    }
+
+    private static func written(_ settings: [String: Any]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
     }
 
     private static func environment(in settings: Data?, path: String) throws -> (all: [String: Any], env: [String: Any]) {

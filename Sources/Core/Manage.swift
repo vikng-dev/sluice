@@ -82,8 +82,9 @@ public extension Config {
         statusLineOn = on
     }
 
-    /// Each item is said once, where it is first named.
-    mutating func say(_ items: [StatusLine.Item]) {
+    /// Each item is said once, where it is first named. A line that says nothing is one turned off.
+    mutating func say(_ items: [StatusLine.Item]) throws {
+        guard !items.isEmpty else { throw ConfigError(description: "a status line says something; to say nothing, turn it off") }
         statusLine = items.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
     }
 

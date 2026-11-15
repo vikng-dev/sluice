@@ -200,7 +200,7 @@ enum Shown: String, CaseIterable {
     var look: (symbol: String, name: String) {
         switch self {
         case .accounts: ("rectangle.stack", "Accounts")
-        case .use: ("chart.xyaxis.line", "Use over time")
+        case .use: ("chart.bar.xaxis", "Use over time")
         case .settings: ("slider.horizontal.3", "Settings")
         }
     }

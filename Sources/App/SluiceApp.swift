@@ -40,6 +40,8 @@ private let program = Bundle.main.executableURL!
     /// Starts the relay, when the app launches and not when its panel is first opened.
     func start() {
         routed = (try? isSetUp()) ?? false
+        // A machine set up by an older Sluice has no status line yet.
+        if routed { attempt { try showStatusLines(by: program) } }
         Task {
             do {
                 sluice = try await startSluice()
@@ -250,12 +252,12 @@ private let program = Bundle.main.executableURL!
     /// What the clients' status lines say from now on. The line is run afresh each time it is shown, so
     /// only turning it on or off is told to the clients.
     func say(_ items: [StatusLine.Item]) {
-        change { $0.say(items) }
+        change { try $0.say(items) }
     }
 
     func showStatusLine(_ on: Bool) {
         change { $0.showStatusLine(on) }
-        if routed { attempt { try showStatusLines(by: program) } }
+        if refusal.isEmpty, routed { attempt { try showStatusLines(by: program) } }
     }
 
     func autoReset(_ on: Bool) {

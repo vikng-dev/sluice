@@ -31,8 +31,18 @@ extension [AccountStatus] {
     /// The share of a pool of these used per hour over the last day, as the readings say.
     func burn(_ samples: [Sample], now: Date) -> Double? {
         let day = now.addingTimeInterval(-86400)
-        return Forecast.burn(map { account in (samples.filter { $0.provider == account.provider && $0.account == account.label && $0.at >= day }, account.size) }, from: day, to: now)
+        return Forecast.burn(map { account in (account.samples(in: samples).filter { $0.at >= day }, account.size) }, from: day, to: now)
     }
+
+    /// When a pool of these has nothing left at that rate; nil when it lasts.
+    func dry(burn: Double, now: Date) -> Date? {
+        Forecast.dry(map { Member(size: $0.size, used: $0.budget?.used ?? 0, resetsAt: $0.budget?.resetsAt) }, burn: burn, now: now)
+    }
+}
+
+extension AccountStatus {
+    /// The readings that are this account's.
+    func samples(in all: [Sample]) -> [Sample] { all.filter { $0.provider == provider && $0.account == label } }
 }
 
 struct PoolView: View {
