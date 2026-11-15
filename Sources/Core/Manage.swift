@@ -78,6 +78,10 @@ public extension Config {
         autoResets = on
     }
 
+    mutating func showStatusLine(_ on: Bool) {
+        statusLineOn = on
+    }
+
     /// Each item is said once, where it is first named.
     mutating func say(_ items: [StatusLine.Item]) {
         statusLine = items.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }

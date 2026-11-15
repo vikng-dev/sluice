@@ -92,11 +92,11 @@ public func setUp(program: URL) throws {
 
 private var lined: [any StatusShowing] { providers.compactMap { $0 as? any StatusShowing } }
 
-/// Has every client that shows a status line run `program` for it, or none of them where the user wants
-/// nothing said or `program` is nil.
+/// Has every client that shows a status line run `program` for it, or none of them where the user
+/// turned the line off or `program` is nil.
 public func showStatusLines(by program: URL?) throws {
     let config = try Storage.live.config()
-    for provider in lined { try provider.showStatus(by: config.statusLine.isEmpty ? nil : program, profiles: config.names) }
+    for provider in lined { try provider.showStatus(by: config.statusLineOn ? program : nil, profiles: config.names) }
 }
 
 /// Makes every client talk to its provider again. With `all`, the stand-ins go too; without, they stay,

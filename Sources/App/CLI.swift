@@ -99,7 +99,8 @@ sluice \(Sluice.version)
   sluice statusline [provider] [--with <command>]
                                                  the line a client shows under its prompt, of the pool its folder's
                                                  profile has there (default: claude), and after it what the command says
-  sluice statusline items [<item> ... | none]    what that line says, in order: \(StatusLine.Item.allCases.map(\.rawValue).joined(separator: ", ")).
+  sluice statusline on | off                     whether the clients show it
+  sluice statusline items [<item> ...]           what that line says, in order: \(StatusLine.Item.allCases.map(\.rawValue).joined(separator: ", ")).
                                                  With no item, says what it is
 
   sluice setup [--undo]                          make Claude Code and Codex talk to Sluice and open the right profile
@@ -150,14 +151,16 @@ func command(_ arguments: [String]) async throws {
         if json { return printJSON(["resets": config.autoResets ? "auto" : "manual"]) }
         print(config.autoResets ? "auto: a pool uses the resets it holds when it is out, or one is about to lapse." : "manual: a reset is used only when told to, in the panel or with: sluice account refill")
     case ("statusline", "items"):
-        let names = words.dropFirst(2)
-        let items: [StatusLine.Item] = names == ["none"] ? [] : names.map { name in
+        let items = words.dropFirst(2).map { name -> StatusLine.Item in
             guard let item = StatusLine.Item(rawValue: name) else { fail("no status line item \(name); there is: \(StatusLine.Item.allCases.map(\.rawValue).joined(separator: ", "))") }
             return item
         }
-        let config = try names.isEmpty ? Storage.live.config() : Storage.live.change { $0.say(items) }
-        if json { printJSON(config.statusLine) } else { print(config.statusLine.isEmpty ? "none" : config.statusLine.map(\.rawValue).joined(separator: " ")) }
-        if !names.isEmpty, try isSetUp() { try showStatusLines(by: program()) }
+        let config = try items.isEmpty ? Storage.live.config() : Storage.live.change { $0.say(items) }
+        if json { printJSON(config.statusLine) } else { print(config.statusLine.map(\.rawValue).joined(separator: " ")) }
+    case ("statusline", let turn) where turn == "on" || turn == "off":
+        try Storage.live.change { $0.showStatusLine(turn == "on") }
+        if try isSetUp() { try showStatusLines(by: program()) }
+        print(turn == "on" ? "The clients' status lines say the pool." : "The clients' status lines say nothing of Sluice's.")
     case ("statusline", _):
         let own = values(of: StatusLine.own, in: arguments).first, id = words.dropFirst().first { $0 != own } ?? "claude"
         guard let provider = providers.first(where: { $0.id == id }) else { fail("no provider \(id); there is: \(providers.map(\.id).joined(separator: ", "))") }

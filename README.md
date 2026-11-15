@@ -45,8 +45,8 @@ Each profile's accounts sit on a card under its name, a pool per provider.
   where they went by folder and by model. Whatever the pointer is on says more beside it: a day's
   share by account, an hour's tokens, a folder's path and share.
 
-- **The third view** is the settings, each holding at once. The [status line](#the-status-line) as it
-  would read, over its items: a click takes one off or puts one on, and one is dragged to where
+- **The third view** is the settings, each holding at once. The [status line](#the-status-line) with its switch, and while it is on, as it
+  would read over its items: a click takes one off or puts one on, and one is dragged to where
   it is said. Whether the clients go through Sluice. The bolt, which has Sluice use resets
   for you, as [How an account is picked](#how-an-account-is-picked) says. The version, and **Quit**.
 
@@ -170,7 +170,8 @@ pays for the work, not of the one account the last answer came through:
 What it says is one ordered list for every profile, changed in the panel's settings or with the command:
 
 ```sh
-sluice statusline items profile share reset   # or: none
+sluice statusline items profile share reset
+sluice statusline off                         # or: on
 sluice statusline                             # the line for the folder you are in
 ```
 

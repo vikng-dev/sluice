@@ -230,9 +230,14 @@ private let program = Bundle.main.executableURL!
         change { try $0.star(profile, provider, starred) }
     }
 
-    /// What the clients' status lines say from now on.
+    /// What the clients' status lines say from now on. The line is run afresh each time it is shown, so
+    /// only turning it on or off is told to the clients.
     func say(_ items: [StatusLine.Item]) {
         change { $0.say(items) }
+    }
+
+    func showStatusLine(_ on: Bool) {
+        change { $0.showStatusLine(on) }
         if routed { attempt { try showStatusLines(by: program) } }
     }
 

@@ -10,7 +10,7 @@ struct SettingsView: View {
     var body: some View {
         let autoResets = running.config.autoResets
         VStack(alignment: .leading, spacing: 8) {
-            LineCard(items: running.config.statusLine, now: now).card()
+            LineCard(on: running.config.statusLineOn, items: running.config.statusLine, now: now).card()
             VStack(alignment: .leading, spacing: 10) {
                 Setting(symbol: "arrow.triangle.branch", title: "Route the clients", says: "Claude Code and Codex go through Sluice", on: running.routed, turn: running.route)
                 Setting(symbol: autoResets ? "bolt.fill" : "bolt", title: "Use resets for me", says: "when a pool is out, or one is about to lapse", on: autoResets, turn: running.autoReset)
@@ -50,6 +50,7 @@ private struct Setting: View {
 /// The clients' status line as it would read, over the items it says, in order, and those it could. A
 /// click takes an item off or puts it on at the end; one that is said is dragged to where it is said.
 private struct LineCard: View {
+    let on: Bool
     let items: [StatusLine.Item]
     let now: Date
     @Environment(Running.self) private var running
@@ -76,10 +77,18 @@ private struct LineCard: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Status line").font(.callout.weight(.semibold))
-                Spacer()
                 Text(providers.filter { $0 is any StatusShowing }.map(\.name).formatted(.list(type: .and))).font(.caption).foregroundStyle(.secondary)
                     .help("The clients that show it under their prompt, of the pool that pays for the work, before a line of your own")
+                Spacer()
+                Toggle("", isOn: Binding { on } set: { running.showStatusLine($0) }).toggleStyle(.switch).controlSize(.mini).labelsHidden()
             }
+            if on { items(of: pool) }
+        }
+        .moves(.snappy(duration: 0.2), with: items)
+        .onPreferenceChange(Frames.self) { frames = $0 }
+    }
+
+    @ViewBuilder private func items(of pool: StatusLine.Pool) -> some View {
             StatusLine.runs(items, of: pool, now: now).enumerated().reduce(Text("")) { line, item in
                 item.element.reduce(line + Text(item.offset > 0 ? StatusLine.separator : "").foregroundColor(.gray)) { $0 + Text($1.text).foregroundColor($1.tone.color) }
             }
@@ -117,8 +126,5 @@ private struct LineCard: View {
                     chip(item, said: false).onTapGesture { running.say(items + [item]) }
                 }
             }
-        }
-        .moves(.snappy(duration: 0.2), with: items)
-        .onPreferenceChange(Frames.self) { frames = $0 }
     }
 }
