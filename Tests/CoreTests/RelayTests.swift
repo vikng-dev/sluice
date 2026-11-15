@@ -161,17 +161,19 @@ private actor Hits {
 
     /// What was observed is kept in a file that an upgrade must still read, and what it holds of a window
     /// that has since reset says nothing any more.
-    @Test func whatAnEarlierVersionRememberedStillLoadsAndAWindowPastItsResetNoLongerCounts() async throws {
+    @Test func whatWasRememberedIsReadBackAndAWindowPastItsResetNoLongerCounts() async throws {
         let stored = ["a", "b"].map { Account(provider: "fake", subject: $0, organization: nil, label: $0, accessToken: "", refreshToken: "", expiresAt: .distantFuture) }
-        func accounts(remembering json: String) throws -> Accounts {
-            let memory = try JSONDecoder().decode(Memory.self, from: Data(json.utf8))
-            return try Accounts(storage: Storage(loadAccounts: { stored }, storeAccounts: { _ in }, config: { Config() }, storeConfig: { _ in }, loadMemory: { memory }, storeMemory: { _ in }))
-        }
-        // As 0.10.0 wrote it. Times are seconds since 2001: one long past, one far off.
-        let earlier = try accounts(remembering: #"{"usage":{"fake/a":[{"name":"5h","used":1,"resetsAt":1000}],"fake/b":[{"name":"7d","used":0.5,"resetsAt":9000000000}]},"router":{"holds":{}}}"#)
-        #expect(try await earlier.candidates(provider: "fake", pin: nil, folder: nil, conversation: nil, model: nil).accounts.map(\.label) == ["b", "a"])
-        let now = try accounts(remembering: #"{"usage":{},"router":{"holds":{}},"plans":{"fake/a":{"name":"Big","multiple":20,"business":false,"price":200}},"scoped":{"fake/a":[{"name":"model","used":0.2,"resetsAt":9000000000}]},"resets":{"fake/a":[{"id":"r","refills":["7d"],"left":1,"usable":true}]}}"#)
-        let told = try await now.status().first
+        // The file as it is written. Times are seconds since 2001: one long past, the others far off.
+        let memory = try JSONDecoder().decode(Memory.self, from: Data(#"""
+        {"accounts":{
+          "fake/a":{"plan":{"name":"Big","multiple":20,"business":false,"price":200},"windows":[{"name":"5h","used":1,"resetsAt":1000}],
+            "scoped":[{"name":"model","used":0.2,"resetsAt":9000000000}],"resets":[{"id":"r","refills":["7d"],"left":1,"usable":true}],"sizing":{"weighed":0,"answers":0,"rises":[]}},
+          "fake/b":{"windows":[{"name":"7d","used":0.5,"resetsAt":9000000000}],"scoped":[],"resets":[],"sizing":{"weighed":0,"answers":0,"rises":[]}}},
+         "router":{"holds":{}},"clients":{}}
+        """#.utf8))
+        let accounts = try Accounts(storage: Storage(loadAccounts: { stored }, storeAccounts: { _ in }, config: { Config() }, storeConfig: { _ in }, loadMemory: { memory }, storeMemory: { _ in }))
+        #expect(try await accounts.candidates(provider: "fake", pin: nil, folder: nil, conversation: nil, model: nil).accounts.map(\.label) == ["b", "a"])
+        let told = try await accounts.status().first
         #expect(told?.plan?.multiple == 20 && told?.scoped.map(\.name) == ["model"] && told?.resets.map(\.id) == ["r"])
     }
 

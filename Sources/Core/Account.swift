@@ -211,17 +211,21 @@ private extension String {
 
 /// What Sluice observed and would otherwise relearn after a restart.
 struct Memory: Codable {
-    var usage: [String: [Window]] = [:]
+    /// By account.
+    var accounts: [String: Known] = [:]
     var router = Router()
-    /// By provider: how its own client last named itself. Nil in a memory from before this was kept.
-    var clients: [String: String]?
-    /// By account, as its provider last told: its plan, the limits on a part of its use, and the resets
-    /// it holds. Nil in a memory from before these were kept.
-    var plans: [String: Plan]?
-    var scoped: [String: [Window]]?
-    var resets: [String: [Reset]]?
-    /// By account: what its week is seen to hold. Nil in a memory from before this was learned.
-    var sizings: [String: Sizing]?
+    /// By provider: how its own client last named itself.
+    var clients: [String: String] = [:]
+}
+
+/// An account as its provider last told of it, and what its week is seen to hold.
+struct Known: Codable {
+    var plan: Plan?
+    var windows: [Window] = []
+    /// The limits on a part of its use.
+    var scoped: [Window] = []
+    var resets: [Reset] = []
+    var sizing = Sizing()
 }
 
 public struct AccountStatus: Codable, Sendable {
@@ -257,36 +261,22 @@ actor Accounts {
     private var accounts: [Account]
     private var refreshing: [String: Task<Account, any Error>] = [:]
     private var memory: Memory
-    private var lastAnswered: [String: Date] = [:]
-    private var problems: [String: String] = [:]
-    /// When each account's usage was last told, since the relay started.
-    private var usageAsked: [String: Date] = [:]
-    /// What each account's windows read when its last line of history was written.
-    private var sampled: [String: [Window]] = [:]
-    /// When each account's resets were last asked for, since the relay started.
-    private var resetsAsked: [String: Date] = [:]
-    /// The accounts no reset is used on unasked: one is being used there now, or one was and it is not
-    /// known to have gone well.
-    private var paused: Set<String> = []
+    /// By account, in this run of the relay.
+    private var run: [String: Run] = [:]
 
-    private var plans: [String: Plan] {
-        get { memory.plans ?? [:] }
-        set { memory.plans = newValue }
-    }
-
-    private var scoped: [String: [Window]] {
-        get { memory.scoped ?? [:] }
-        set { memory.scoped = newValue }
-    }
-
-    private var resets: [String: [Reset]] {
-        get { memory.resets ?? [:] }
-        set { memory.resets = newValue }
-    }
-
-    private var sizings: [String: Sizing] {
-        get { memory.sizings ?? [:] }
-        set { memory.sizings = newValue }
+    private struct Run {
+        /// When it last answered a relayed request.
+        var answered: Date?
+        /// Why it cannot serve; nil when nothing is known to be wrong.
+        var problem: String?
+        /// When its usage was last told, and its resets last asked for.
+        var usageAsked: Date?
+        var resetsAsked: Date?
+        /// What its windows read when its last line of history was written.
+        var sampled: [Window]?
+        /// No reset is used on it unasked: one is being used there now, or one was and it is not known
+        /// to have gone well.
+        var paused = false
     }
 
     init(storage: Storage, formulas: [String: Formula] = [:]) throws {
@@ -303,11 +293,11 @@ actor Accounts {
     func status() throws -> [AccountStatus] {
         let config = try storage.config(), now = Date()
         return accounts.map {
-            let live = live($0.id, now: now), plan = plans[$0.id], sizing = sizings[$0.id]
+            let live = live($0.id, now: now), plan = memory.accounts[$0.id]?.plan, sizing = memory.accounts[$0.id]?.sizing
             return AccountStatus(
                 provider: $0.provider, label: $0.label, profile: config.profile(ofAccount: $0.label), plan: plan,
                 windows: live.windows, scoped: live.scoped, resets: live.resets,
-                warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: lastAnswered[$0.id], problem: problems[$0.id],
+                warmConversations: memory.router.warmConversations(on: $0.id, now: now), lastAnswered: run[$0.id]?.answered, problem: run[$0.id]?.problem,
                 size: sizing?.size ?? formulas[$0.provider]?.size(of: plan) ?? Double(plan?.multiple ?? 1), spread: sizing?.spread
             )
         }
@@ -319,9 +309,7 @@ actor Accounts {
         let next = accounts.filter { $0.id != gone.id }
         try storage.storeAccounts(next)
         accounts = next
-        memory.usage[gone.id] = nil
-        (plans[gone.id], problems[gone.id], lastAnswered[gone.id], scoped[gone.id], resets[gone.id], resetsAsked[gone.id], usageAsked[gone.id], sizings[gone.id]) = (nil, nil, nil, nil, nil, nil, nil, nil)
-        paused.remove(gone.id)
+        (memory.accounts[gone.id], run[gone.id]) = (nil, nil)
         remember()
         return true
     }
@@ -349,59 +337,58 @@ actor Accounts {
 
     /// The account could not be used, for a reason worth showing until it next works.
     func failed(_ id: String, _ problem: String) {
-        problems[id] = problem
+        run[id, default: Run()].problem = problem
     }
 
     /// What the provider said about the account when asked.
     func record(_ usage: Usage, for id: String) {
-        plans[id] = usage.plan
-        scoped[id] = usage.scoped
-        usageAsked[id] = Date()
+        (memory.accounts[id, default: Known()].plan, memory.accounts[id, default: Known()].scoped) = (usage.plan, usage.scoped)
+        run[id, default: Run()].usageAsked = Date()
         record(usage.windows, for: id)
         remember()
     }
 
     /// Whether the account's usage was last told longer ago than `age`.
     func owesUsage(_ id: String, after age: TimeInterval, now: Date = Date()) -> Bool {
-        usageAsked[id].map { now.timeIntervalSince($0) >= age } ?? true
+        run[id]?.usageAsked.map { now.timeIntervalSince($0) >= age } ?? true
     }
 
     /// A provider's own client named itself on a request. True when that is news.
     func seen(client: String, of provider: String) -> Bool {
-        guard memory.clients?[provider] != client else { return false }
-        memory.clients = (memory.clients ?? [:]).merging([provider: client]) { $1 }
+        guard memory.clients[provider] != client else { return false }
+        memory.clients[provider] = client
         remember()
         return true
     }
 
-    func client(of provider: String) -> String? { memory.clients?[provider] }
+    func client(of provider: String) -> String? { memory.clients[provider] }
 
     /// Whether the account's resets were last asked for longer ago than `age`, or a reset its provider
     /// would not take until some time has reached that time.
     func owesResets(_ id: String, after age: TimeInterval, now: Date = Date()) -> Bool {
-        guard let asked = resetsAsked[id] else { return true }
-        return now.timeIntervalSince(asked) >= age || (resets[id] ?? []).contains { !$0.usable && $0.usableAfter.map { $0 <= now } == true }
+        guard let asked = run[id]?.resetsAsked else { return true }
+        return now.timeIntervalSince(asked) >= age || (memory.accounts[id]?.resets ?? []).contains { !$0.usable && $0.usableAfter.map { $0 <= now } == true }
     }
 
     func record(resets held: [Reset], for id: String) {
-        resets[id] = held
-        resetsAsked[id] = Date()
+        memory.accounts[id, default: Known()].resets = held
+        run[id, default: Run()].resetsAsked = Date()
         remember()
     }
 
     /// The account's resets were asked for and not told. What was known stands until they are next due.
     func resetsNotTold(_ id: String) {
-        resetsAsked[id] = Date()
+        run[id, default: Run()].resetsAsked = Date()
     }
 
-    /// The resets the account still holds.
-    private func held(by id: String, now: Date) -> [Reset] {
-        (resets[id] ?? []).filter { $0.left > 0 && $0.expiresAt.map { $0 > now } != false }
-    }
-
-    /// What is live of what the account was last told to stand at, the windows by when they reset.
+    /// What is live of what the account was last told to stand at: the windows by when they reset, and
+    /// the resets it still holds.
     private func live(_ id: String, now: Date) -> (windows: [Window], scoped: [Window], resets: [Reset]) {
-        ((memory.usage[id] ?? []).filter { $0.resetsAt > now }.sorted { $0.resetsAt < $1.resetsAt }, (scoped[id] ?? []).filter { $0.resetsAt > now }, held(by: id, now: now))
+        let known = memory.accounts[id] ?? Known()
+        return (
+            known.windows.filter { $0.resetsAt > now }.sorted { $0.resetsAt < $1.resetsAt }, known.scoped.filter { $0.resetsAt > now },
+            known.resets.filter { $0.left > 0 && $0.expiresAt.map { $0 > now } != false }
+        )
     }
 
     private func standing(_ account: Account, now: Date) -> Standing {
@@ -412,7 +399,7 @@ actor Accounts {
     /// The reset `id` that the provider's account `label` holds.
     func reset(_ id: String, heldBy label: String, at provider: String) -> (account: Account, reset: Reset)? {
         guard let account = accounts.first(where: { $0.provider == provider && $0.label == label }),
-              let reset = held(by: account.id, now: Date()).first(where: { $0.id == id }) else { return nil }
+              let reset = live(account.id, now: Date()).resets.first(where: { $0.id == id }) else { return nil }
         return (account, reset)
     }
 
@@ -432,15 +419,15 @@ actor Accounts {
         if standings.contains(where: { $0.spent(for: model).isEmpty }) {
             return memory.router.order(standings, conversation: nil, model: model, now: now).first.flatMap(account).map(Back.open)
         }
-        guard usesResets, let pick = memory.router.refill(standings.filter { !paused.contains($0.account) }, model: model), let account = account(pick.account) else { return nil }
-        paused.insert(account.id)
+        guard usesResets, let pick = memory.router.refill(standings.filter { run[$0.account]?.paused != true }, model: model), let account = account(pick.account) else { return nil }
+        run[account.id, default: Run()].paused = true
         return .reset(account, pick.reset)
     }
 
     /// A reset of the account's to use with no request waiting, on the same terms.
     func due(_ account: Account, now: Date = Date()) -> Reset? {
-        guard usesResets, !paused.contains(account.id), let reset = memory.router.due(standing(account, now: now), now: now) else { return nil }
-        paused.insert(account.id)
+        guard usesResets, run[account.id]?.paused != true, let reset = memory.router.due(standing(account, now: now), now: now) else { return nil }
+        run[account.id, default: Run()].paused = true
         return reset
     }
 
@@ -449,33 +436,33 @@ actor Accounts {
     /// A reset's use on the account is over. Resets are used on it unasked again where that went well or
     /// the provider refused in so many words; otherwise not until a person uses one there, or the relay restarts.
     func usedReset(on id: String, well: Bool) {
-        if well { paused.remove(id) } else { paused.insert(id) }
+        run[id, default: Run()].paused = !well
     }
 
     /// The provider did not take the reset. It is not offered again until the account's resets are next read.
     func notTaken(_ reset: Reset, by id: String) {
-        if let index = resets[id]?.firstIndex(where: { $0.id == reset.id }) { resets[id]?[index].usable = false }
+        if let index = memory.accounts[id]?.resets.firstIndex(where: { $0.id == reset.id }) { memory.accounts[id]?.resets[index].usable = false }
     }
 
     /// The account answered a relayed request, reporting these windows.
     func answered(_ id: String, reporting windows: [Window]) {
-        lastAnswered[id] = Date()
+        run[id, default: Run()].answered = Date()
         record(windows, for: id)
     }
 
     private func record(_ windows: [Window], for id: String) {
-        problems[id] = nil
+        run[id, default: Run()].problem = nil
         for window in windows {
             // A provider's answers and its usage endpoint round the same use a point apart, so within one
             // window a reading a point lower than the last says nothing new.
-            if let kept = memory.usage[id]?.first(where: { $0.name == window.name }), kept.settled.resetsAt == window.settled.resetsAt,
+            if let kept = memory.accounts[id]?.windows.first(where: { $0.name == window.name }), kept.settled.resetsAt == window.settled.resetsAt,
                window.used < kept.used, kept.used - window.used < 0.015 { continue }
-            memory.usage[id, default: []].removeAll { $0.name == window.name }
-            memory.usage[id, default: []].append(window)
+            memory.accounts[id, default: Known()].windows.removeAll { $0.name == window.name }
+            memory.accounts[id, default: Known()].windows.append(window)
         }
         if !windows.isEmpty {
             if let budget = live(id, now: Date()).windows.budget, accounts.contains(where: { $0.id == id && formulas[$0.provider] != nil }) {
-                sizings[id, default: Sizing()].read(budget)
+                memory.accounts[id]?.sizing.read(budget)
             }
             remember()
             sample(id)
@@ -487,10 +474,10 @@ actor Accounts {
     private func sample(_ id: String, now: Date = Date()) {
         guard let account = accounts.first(where: { $0.id == id }) else { return }
         let live = live(id, now: now), windows = live.windows.map(\.settled), parts = live.scoped.map(\.settled)
-        guard windows + parts != sampled[id] else { return }
+        guard windows + parts != run[id]?.sampled else { return }
         do {
             try storage.appendSample(Sample(at: now, provider: account.provider, account: account.label, windows: windows, scoped: parts.isEmpty ? nil : parts))
-            sampled[id] = windows + parts
+            run[id, default: Run()].sampled = windows + parts
         } catch {
             log("could not add to the history: \(error)", kept: true)
         }
@@ -499,7 +486,7 @@ actor Accounts {
     /// An answer that cost something is a line of history. One that cannot be written is logged and lost.
     func spent(_ spend: Spend, by id: String, for profile: String, folder: String?, conversation: String?, since asked: Date) {
         guard spend != Spend(), let account = accounts.first(where: { $0.id == id }) else { return }
-        if let formula = formulas[account.provider] { sizings[id]?.answered(weighing: formula.weigh(spend)) }
+        if let formula = formulas[account.provider] { memory.accounts[id]?.sizing.answered(weighing: formula.weigh(spend)) }
         let now = Date()
         do {
             try storage.appendServed(Served(
@@ -539,7 +526,7 @@ actor Accounts {
             try save(renewed)
             return renewed
         } catch {
-            problems[id] = "Could not renew its sign-in: \(error)"
+            run[id, default: Run()].problem = "Could not renew its sign-in: \(error)"
             throw error
         }
     }
