@@ -78,12 +78,6 @@ private struct PoolUsage: View {
         samples.filter { $0.provider == account.provider && $0.account == account.label }
     }
 
-    /// The pool's share used per hour over the last day.
-    private var burn: Double? {
-        let day = now.addingTimeInterval(-86400)
-        return Forecast.burn(pool.map { account in (samples(of: account).filter { $0.at >= day }, account.size) }, from: day, to: now)
-    }
-
     private func percent(_ share: Double) -> String { "\(Int((share * 100).rounded()))%" }
 
     var body: some View {
@@ -99,7 +93,7 @@ private struct PoolUsage: View {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 PoolTitle(provider: provider, title: title)
                 Spacer()
-                if let burn {
+                if let burn = pool.burn(samples, now: now) {
                     let members = pool.map { Member(size: $0.size, used: $0.budget?.used ?? 0, resetsAt: $0.budget?.resetsAt) }
                     if let dry = Forecast.dry(members, burn: burn, now: now) {
                         HStack(spacing: 3) {

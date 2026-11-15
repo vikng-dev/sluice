@@ -230,7 +230,7 @@ struct Share: View {
     static func text(_ used: Double, left: Bool) -> String { "\(Int(((left ? 1 - min(used, 1) : used) * 100).rounded()))%" }
 
     /// The colour that warns of a share nearly or wholly gone; nil while there is room.
-    static func warning(_ used: Double) -> Color? { used >= 1 ? .red : used >= 0.85 ? .orange : nil }
+    static func warning(_ used: Double) -> Color? { StatusLine.alarm(used).map { $0 == .critical ? .red : .orange } }
 
     var body: some View {
         let text = Self.text(used, left: left) + (worded ? (left ? " left" : " used") : "")

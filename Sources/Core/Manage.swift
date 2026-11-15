@@ -78,6 +78,11 @@ public extension Config {
         autoResets = on
     }
 
+    /// Each item is said once, where it is first named.
+    mutating func say(_ items: [StatusLine.Item]) {
+        statusLine = items.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
+    }
+
     mutating func claim(folder: String, for profile: String, home: String = NSHomeDirectory()) throws {
         try require(profile)
         let folder = Self.written(folder, home: home)

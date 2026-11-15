@@ -27,6 +27,12 @@ extension [AccountStatus] {
         let total = map(\.size).reduce(0, +)
         return total > 0 ? map { $0.size * ($0.problem == nil ? Swift.min($0.budget?.used ?? 0, 1) : 1) }.reduce(0, +) / total : 0
     }
+
+    /// The share of a pool of these used per hour over the last day, as the readings say.
+    func burn(_ samples: [Sample], now: Date) -> Double? {
+        let day = now.addingTimeInterval(-86400)
+        return Forecast.burn(map { account in (samples.filter { $0.provider == account.provider && $0.account == account.label && $0.at >= day }, account.size) }, from: day, to: now)
+    }
 }
 
 struct PoolView: View {

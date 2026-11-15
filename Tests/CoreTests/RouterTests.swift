@@ -370,6 +370,30 @@ import Testing
         #expect(try JSONSerialization.jsonObject(with: Claude.pointed(routed, at: nil, path: "")) as? NSDictionary == ["env": ["KEEP": "1"], "model": "x"])
         #expect(throws: UserFileError.self) { try Claude.pointed(Data("[]".utf8), at: "A", path: "") }
     }
+
+    @Test func claudeShowsSluicesStatusLineButNeverOverALineOfTheUsersOwn() throws {
+        func line(_ settings: Data?) throws -> NSDictionary? { try settings.flatMap { (try JSONSerialization.jsonObject(with: $0) as? NSDictionary)?["statusLine"] as? NSDictionary } }
+        let ours = try Claude.lined(Data(#"{"model":"x"}"#.utf8), by: "'/a/Sluice' statusline claude", ours: "statusline claude", path: "")
+        #expect(try line(ours) == ["type": "command", "command": "'/a/Sluice' statusline claude"])
+        // Its own line is replaced wherever Sluice has moved to, and taken out without the rest.
+        #expect(try line(Claude.lined(ours, by: "'/b/Sluice' statusline claude", ours: "statusline claude", path: ""))?["command"] as? String == "'/b/Sluice' statusline claude")
+        #expect(try JSONSerialization.jsonObject(with: #require(try Claude.lined(ours, by: nil, ours: "statusline claude", path: ""))) as? NSDictionary == ["model": "x"])
+        let own = Data(#"{"statusLine":{"type":"command","command":"~/bin/line.sh"}}"#.utf8)
+        #expect(try Claude.lined(own, by: "'/a/Sluice' statusline claude", ours: "statusline claude", path: "") == nil)
+        #expect(try Claude.lined(own, by: nil, ours: "statusline claude", path: "") == nil)
+    }
+
+    @Test func aStatusLineItemTheConfigMisnamesIsSaidWithTheOnesThereAre() throws {
+        #expect(try JSONDecoder().decode(Config.self, from: Data(#"{"statusLine":["share","profile"]}"#.utf8)).statusLine == [.share, .profile])
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(Config.self, from: Data(#"{"statusLine":["shar"]}"#.utf8)) }
+    }
+
+    @Test func theStatusLineSaysOnlyWhatThePoolHasToSayInTheOrderAsked() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let pool = StatusLine.Pool(profile: "work", tint: nil, used: 0.5, resetsAt: now + 26 * 3600, dry: nil, account: nil, today: nil)
+        let line = StatusLine.runs([.dry, .reset, .account, .share, .bar], of: pool, now: now).map { $0.map(\.text).joined() }
+        #expect(line == ["1d 2h", "50%", "━━━━━━━━"])
+    }
 }
 
 @Suite struct StandInTests {

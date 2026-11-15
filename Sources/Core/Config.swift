@@ -53,6 +53,8 @@ public struct Config: Codable, Sendable, Equatable {
     public internal(set) var profiles: [String: Profile] = [:]
     /// A pool uses the resets its accounts hold without being asked: when it is out, and before one lapses.
     public internal(set) var autoResets = false
+    /// What the clients' status lines say, in order; nothing where the user wants no line.
+    public internal(set) var statusLine = StatusLine.usual
 
     public init() {}
 
@@ -60,6 +62,12 @@ public struct Config: Codable, Sendable, Equatable {
         let keys = try decoder.container(keyedBy: CodingKeys.self)
         profiles = try keys.decodeIfPresent([String: Profile].self, forKey: .profiles) ?? [:]
         autoResets = try keys.decodeIfPresent(Bool.self, forKey: .autoResets) ?? false
+        statusLine = try (keys.decodeIfPresent([String].self, forKey: .statusLine))?.map { name in
+            guard let item = StatusLine.Item(rawValue: name) else {
+                throw DecodingError.dataCorruptedError(forKey: .statusLine, in: keys, debugDescription: "no status line item \(name); there is: \(StatusLine.Item.allCases.map(\.rawValue).joined(separator: ", "))")
+            }
+            return item
+        } ?? StatusLine.usual
     }
 
     /// Only what is set is written, as a person would write it.
@@ -67,9 +75,10 @@ public struct Config: Codable, Sendable, Equatable {
         var keys = encoder.container(keyedBy: CodingKeys.self)
         try keys.encode(profiles, forKey: .profiles)
         if autoResets { try keys.encode(true, forKey: .autoResets) }
+        if statusLine != StatusLine.usual { try keys.encode(statusLine, forKey: .statusLine) }
     }
 
-    private enum CodingKeys: CodingKey { case profiles, autoResets }
+    private enum CodingKeys: CodingKey { case profiles, autoResets, statusLine }
 
     /// Every profile's name, the default first.
     public var names: [String] { [Self.defaultProfile] + profiles.keys.filter { $0 != Self.defaultProfile }.sorted() }

@@ -159,6 +159,8 @@ private let program = Bundle.main.executableURL!
         chooser.canChooseFiles = false
         chooser.allowsMultipleSelection = true
         chooser.prompt = "Add"
+        // Not wherever a picker was last left, which may hold a folder of the same name as the one meant.
+        chooser.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         chooser.message = "Work in these folders belongs to \(config.shown(profile))."
         NSApplication.shared.activate(ignoringOtherApps: true)
         guard chooser.runModal() == .OK else { return }
@@ -220,6 +222,13 @@ private let program = Bundle.main.executableURL!
 
     func star(_ profile: String, _ provider: String, _ starred: Bool) {
         change { try $0.star(profile, provider, starred) }
+    }
+
+    /// Asks what the clients' status lines say, and has them say it.
+    func editStatusLine() {
+        guard let items = askForStatusLine(config.statusLine) else { return }
+        change { $0.say(items) }
+        if routed { do { refusal = try ownLines(showStatusLines(by: program)) ?? "" } catch { refusal = "\(error)" } }
     }
 
     func autoReset(_ on: Bool) {

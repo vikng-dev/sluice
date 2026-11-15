@@ -38,7 +38,7 @@ Each profile's accounts sit on a card under its name, a pool per provider.
   search finds for the letters typed, which are all that is sent to it.
 - **The first line** holds the two views, the bolt and **⋯**. The bolt has Sluice use resets for
   you, as [How an account is picked](#how-an-account-is-picked) says. **⋯** holds the version,
-  **Stop routing** and **Quit**.
+  **Status line…**, **Stop routing** and **Quit**.
 - **The second view** is the last seven days of use. Each pool has a bar for every day: how much of
   the pool that day used, in the colors of the accounts that gave it, against a dashed line at the
   pace that uses the pool up in a week. Over the bars is how much went in the last 24 hours, and
@@ -128,6 +128,8 @@ edited by hand too:
 }
 ```
 
+Beside `profiles`, `"statusLine"` lists what the [status line](#the-status-line) says.
+
 - **`label`** and **`color`** are how the profile is shown: the label in place of its name, the color
   as a dot beside it. The name stays what its folders and the commands go by, and `default` can be
   given both like any other.
@@ -151,6 +153,35 @@ The relay finds the profile itself: it asks macOS which program sent a request a
 program runs in. So a client started some way that skips the stand-in still has its requests served
 by the right profile's accounts. A harness can also name one account outright:
 `http://localhost:7483/claude/pin/<email>`.
+
+## The status line
+
+Claude Code shows a line under its prompt, and with Sluice set up that line is of the pool that
+pays for the work, not of the one account the last answer came through:
+
+```
+● work  ━━━━━━━━  62%  1d 4h
+```
+
+What it says is one ordered list for every profile, changed under **Status line…** in the panel
+(tick an item to say it, drag it to where it is said) or with the command:
+
+```sh
+sluice statusline items profile share reset   # or: none
+sluice statusline                             # the line for the folder you are in
+```
+
+| Item | Says |
+|---|---|
+| `profile` | the profile's name after a dot in its color |
+| `bar`, `share` | how much of the pool is used, as the panel counts it |
+| `reset` | how long until any of it comes back |
+| `dry` | when the pool has nothing left at the rate of the last day; nothing while it lasts |
+| `account` | the account that answered last |
+| `today` | today's use against the pace that uses the pool up in a week |
+
+A profile whose client settings already have a status line of your own keeps it; run
+`sluice statusline` from yours to have both. Codex's status line takes no command, so it shows none.
 
 ## How an account is picked
 

@@ -83,10 +83,25 @@ public func useReset(_ id: String, provider: String, account label: String) asyn
 }
 
 /// Sets this machine up: every client talks to Sluice in every profile, and `program` (Sluice itself)
-/// stands in for the clients to open the right profile.
-public func setUp(program: URL) throws {
+/// stands in for the clients to open the right profile and writes their status lines. Returns the
+/// profiles that keep a status line of the user's own.
+@discardableResult public func setUp(program: URL) throws -> [String] {
     for provider in providers { try provider.route(true, profiles: try profiles()) }
     try StandIns.install(standIns, program: program)
+    return try showStatusLines(by: program)
+}
+
+/// Has every client that shows a status line run `program` for it, or none of them where the user wants
+/// nothing said or `program` is nil. Returns the profiles where a client keeps a line the user set themselves.
+@discardableResult public func showStatusLines(by program: URL?) throws -> [String] {
+    let config = try Storage.live.config()
+    let kept = try providers.compactMap { $0 as? any StatusShowing }.flatMap { try $0.showStatus(by: config.statusLine.isEmpty ? nil : program, profiles: config.names) }
+    return config.names.filter(kept.contains)
+}
+
+/// What to say of profiles that keep a status line of the user's own; nil when there are none.
+public func ownLines(_ profiles: [String]) -> String? {
+    profiles.isEmpty ? nil : "\(profiles.formatted(.list(type: .and))) \(profiles.count == 1 ? "keeps its" : "keep their") own status line. To have Sluice's there, take `statusLine` out of the client's settings, or run `sluice statusline` from your own."
 }
 
 /// Makes every client talk to its provider again. With `all`, the stand-ins go too; without, they stay,
@@ -97,6 +112,7 @@ public func stopRouting(all: Bool) throws {
     let profiles = try profiles()
     var failure: (any Error)?
     for provider in providers { do { try provider.route(false, profiles: profiles) } catch { failure = failure ?? error } }
+    do { try showStatusLines(by: nil) } catch { failure = failure ?? error }
     if all { try StandIns.remove(standIns) }
     if let failure { throw failure }
 }

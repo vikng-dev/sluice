@@ -115,6 +115,7 @@ struct Panel: View {
                 Menu {
                     Text("Sluice \(Sluice.version)")
                     Divider()
+                    Button("Status line…", action: running.editStatusLine)
                     if running.routed { Button("Stop routing") { running.route(false) } }
                     Button("Quit Sluice", action: running.quit)
                 } label: {

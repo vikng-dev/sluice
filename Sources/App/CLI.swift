@@ -96,6 +96,11 @@ sluice \(Sluice.version)
   sluice resets [auto | manual]                  whether a pool uses the resets it holds by itself: when it is out,
                                                  or one is about to lapse. With neither word, says which it is
 
+  sluice statusline [provider]                   the line a client shows under its prompt, of the pool its folder's
+                                                 profile has there (default: claude)
+  sluice statusline items [<item> ... | none]    what that line says, in order: \(StatusLine.Item.allCases.map(\.rawValue).joined(separator: ", ")).
+                                                 With no item, says what it is
+
   sluice setup [--undo]                          make Claude Code and Codex talk to Sluice and open the right profile
   sluice serve                                   run the relay in the foreground
 
@@ -143,12 +148,34 @@ func command(_ arguments: [String]) async throws {
         let config = try mode.map { mode in try Storage.live.change { $0.useResets(mode == "auto") } } ?? Storage.live.config()
         if json { return printJSON(["resets": config.autoResets ? "auto" : "manual"]) }
         print(config.autoResets ? "auto: a pool uses the resets it holds when it is out, or one is about to lapse." : "manual: a reset is used only when told to, in the panel or with: sluice account refill")
+    case ("statusline", "items"):
+        let names = words.dropFirst(2)
+        let items: [StatusLine.Item] = names == ["none"] ? [] : names.map { name in
+            guard let item = StatusLine.Item(rawValue: name) else { fail("no status line item \(name); there is: \(StatusLine.Item.allCases.map(\.rawValue).joined(separator: ", "))") }
+            return item
+        }
+        let config = try names.isEmpty ? Storage.live.config() : Storage.live.change { $0.say(items) }
+        if json { printJSON(config.statusLine) } else { print(config.statusLine.isEmpty ? "none" : config.statusLine.map(\.rawValue).joined(separator: " ")) }
+        if !names.isEmpty, try isSetUp(), let kept = ownLines(try showStatusLines(by: program())) { print(kept) }
+    case ("statusline", let id):
+        guard let provider = providers.first(where: { $0.id == id ?? "claude" }) else { fail("no provider \(id!); there is: \(providers.map(\.id).joined(separator: ", "))") }
+        // Under a prompt is no place to say that the relay is not running: the line is then empty.
+        guard let accounts = try? await relayAccounts() else { return }
+        let config = try Storage.live.config(), now = Date()
+        // The profile the client was opened in, as its variable names it, or else the folder's.
+        let named = ProcessInfo.processInfo.environment[provider.home.variable].map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+        let profile = config.names.first { provider.folder(of: $0).standardizedFileURL.path == named } ?? config.profile(for: FileManager.default.currentDirectoryPath)
+        let pool = accounts.filter { $0.profile == profile && $0.provider == provider.id }
+        if pool.isEmpty { return }
+        let samples = try Storage.live.readings().filter { $0.at >= now.addingTimeInterval(-86400) }
+        print(terminalText(StatusLine.runs(config.statusLine, of: StatusLine.Pool(pool, profile: profile, config: config, samples: samples, now: now), now: now)))
     case ("setup", nil):
         if arguments.contains("--undo") {
             try stopRouting(all: true)
             print("Claude Code and Codex talk to their providers directly again, and open one profile everywhere.")
         } else {
-            try setUp(program: program())
+            let kept = try setUp(program: program())
+            if let kept = ownLines(kept) { print(kept) }
             print("Claude Code and Codex now talk to Sluice. In a new shell, claude and codex open the profile their folder belongs to. Undo with: sluice setup --undo")
         }
     case ("profile", "list"):

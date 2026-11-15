@@ -78,6 +78,15 @@ public struct Claude: Provider {
         try profiles.map(settings).allSatisfy { try Self.environment(in: try $0.read(), path: $0.path).env["ANTHROPIC_BASE_URL"] as? String == address }
     }
 
+    /// The settings with Claude Code's `statusLine` running `command`, or with nil without that; nil where
+    /// the line there is one the user set, which is told by its not being run with Sluice's words.
+    static func lined(_ settings: Data?, by command: String?, ours words: String, path: String) throws -> Data? {
+        var all = try environment(in: settings, path: path).all
+        if let line = all["statusLine"] as? [String: Any], (line["command"] as? String)?.hasSuffix(" " + words) != true { return nil }
+        all["statusLine"] = command.map { ["type": "command", "command": $0] }
+        return try JSONSerialization.data(withJSONObject: all, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
+    }
+
     /// The settings with `env.ANTHROPIC_BASE_URL` set to `address`, or removed; everything else is kept.
     /// Claude Code keeps its own sign-in, which the relay replaces on each request: the features it runs
     /// outside the relay need that sign-in to be a real one.
@@ -316,5 +325,18 @@ public struct Claude: Provider {
         }
         guard let grant = try? JSONDecoder().decode(Grant.self, from: body) else { throw ProviderError.invalidResponse }
         return grant
+    }
+}
+
+/// Claude Code runs the command its settings name under `statusLine` (seen in 2.1.325) and shows what it prints.
+extension Claude: StatusShowing {
+    public func showStatus(by program: URL?, profiles: [String]) throws -> [String] {
+        try profiles.filter { profile in
+            let settings = settings(of: profile), now = try settings.read()
+            if program == nil, now == nil { return false }
+            guard let lined = try Self.lined(now, by: program.map { "'\($0.path)' \(statusArguments)" }, ours: statusArguments, path: settings.path) else { return true }
+            try settings.write(lined)
+            return false
+        }
     }
 }
