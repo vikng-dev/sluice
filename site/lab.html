@@ -359,11 +359,7 @@ function meters(now) {
 const initialHash = location.hash;
 /* The water, six ways. One water for the whole page: the air, three layers each of its own weight, the deep, and the bed the footer lies on.
    The accounts pour in from above for as long as they have anything left; the agents, under the surface, draw from it. */
-const VARIANTS = [
-  { name: 'Plume', says: 'Drag anywhere in the water. Each stream joins the surface and trails its colour under it', supply: 'ribbon', smear: 1, plume: 1, hum: .09 },
-  { name: 'Rings', says: 'Drag anywhere in the water. Each stream only sets small rings going on the surface', supply: 'ribbon', smear: 1, plume: 0, hum: .2 },
-  { name: 'Drips', says: 'Drag anywhere in the water. Accounts drip; each drop leaves a ring and a puff that sinks', supply: 'drops', smear: 1, puff: true },
-];
+const VARIANTS = [{ name: 'Stir', says: '', supply: 'ribbon', smear: 1, hum: .12 }];
 const page = $('#page'), canvas = $('#water'), hero = $('#hero');
 const gl = canvas.getContext('webgl', { antialias: false, alpha: true, premultipliedAlpha: false });
 const VS = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0., 1.); }';
@@ -393,23 +389,6 @@ void main() {
   float by = bed + (sin(xd * .006 + .5) * 9. + sin(xd * .019 + 2.) * 4.) * D;
   vec3 col = mix(vec3(.075, .13, .27), navy, clamp(y / max(S, 1.), 0., 1.));
   float liquid = yw - s1;
-  // what the accounts pour: a stream bends with the water it is stirred with, and meets the surface in a small foot
-  for (int i = 0; i < 3; i++) {
-    float c = i == 0 ? sx.x : i == 1 ? sx.y : sx.z, f = i == 0 ? fl.x : i == 1 ? fl.y : fl.z;
-    vec3 tint = tintOf(float(i));
-    float wd = (1.5 + 8. * f) * D, d = abs(mix(x, xw, smoothstep(top, top + 50. * D, y)) - c + sin(y / D * .05 + T * 2. + float(i)) * 1.2 * D * f);
-    float run = .7 + .3 * sin(y / D * .11 - T * 9. + float(i) * 2.);
-    float body = smoothstep(wd, wd * .35, d) * step(top, y) * step(yw, s1 + 4. * D) * step(.02, f);
-    col = mix(col, mix(tint, cream, .35) * (.75 + .25 * run), body * (.4 + .6 * f));
-    col += tint * f * .2 * exp(-length(vec2(xw - c, yw - s1)) / (26. * D));
-    if (men * f > .02) liquid = smax(liquid, min(wd - d, yw - (s1 - 13. * D)), 13. * D * min(1., f * 2.) * men);
-  }
-  if (Pin > 0.) {
-    // over the water and near it, the pointer draws a neck of it up; in it, it is a hole the water closes round
-    float reach = smoothstep(260. * D, 40. * D, s1 - P.y);
-    if (reach > .01 && P.y < s1) liquid = smax(liquid, min((3. + 6. * reach) * D * Pin - abs(x - P.x), y - P.y), 38. * D * reach);
-    liquid = -smax(-liquid, 17. * D * Pin - pd, 22. * D);
-  }
   float in1 = smoothstep(-e, e, liquid), em = e + mixed * .3;
   float in2 = smoothstep(s2 - em, s2 + em, yw), in3 = smoothstep(s3 - em, s3 + em, yw), in4 = led > .5 ? smoothstep(s4 - em, s4 + em, yw) : smoothstep(s4 - F * .5, s4 + F * .9, yw);
   vec3 c1 = violet, c2 = blue, c3 = teal;
@@ -431,6 +410,24 @@ void main() {
   water += max(ray, 0.) * .032 * lit * in3;
   float foam = exp(-abs(liquid) / (1.8 * D)) * (.5 + min(abs(slope) * .25, .6)) + (exp(-abs(yw - s2) / (1.6 * D)) * .22 + exp(-abs(yw - s3) / (1.6 * D)) * .16 + exp(-abs(yw - s4) / (1.6 * D)) * .12 * led) * in1;
   col = mix(col, water, in1) + foam * vec3(.85, .95, 1.) * .55;
+  // what the accounts pour: a stream bends with the water it is stirred with, and goes a little way into it, widening, before it is lost
+  for (int i = 0; i < 3; i++) {
+    float c = i == 0 ? sx.x : i == 1 ? sx.y : sx.z, f = i == 0 ? fl.x : i == 1 ? fl.y : fl.z;
+    vec3 tint = tintOf(float(i));
+    float wd = (1.5 + 8. * f) * D, d = abs(mix(x, xw, smoothstep(top, top + 50. * D, y)) - c + sin(y / D * .05 + T * 2. + float(i)) * 1.2 * D * f);
+    float run = .7 + .3 * sin(y / D * .11 - T * 9. + float(i) * 2.);
+    float into = smoothstep(s1 - 4. * D, s1 + (16. + 22. * f) * D, yw);
+    wd *= 1. + .9 * into;
+    float body = smoothstep(wd, wd * .35, d) * step(top, y) * (1. - into) * step(.02, f);
+    col = mix(col, mix(tint, cream, .35) * (.75 + .25 * run), body * (.4 + .6 * f));
+    col += tint * f * .2 * exp(-length(vec2(xw - c, yw - s1)) / (26. * D));
+  }
+  if (Pin > 0.) {
+    // over the water and near it, the pointer draws a neck of it up; in it, it is a hole the water closes round
+    float reach = smoothstep(260. * D, 40. * D, s1 - P.y);
+    if (reach > .01 && P.y < s1) liquid = smax(liquid, min((3. + 6. * reach) * D * Pin - abs(x - P.x), y - P.y), 38. * D * reach);
+    liquid = -smax(-liquid, 17. * D * Pin - pd, 22. * D);
+  }
   if (Pin > 0.) {
     float rr = 17. * D * Pin;
     col += in1 * vec3(.7, .9, 1.) * max(sin(atan(pv.y, pv.x) * 3. + log(max(pd / D, 1.)) * 5. + T * 5.), 0.) * exp(-pd / (60. * D)) * .16 * Pin;
@@ -652,6 +649,7 @@ function draw(t) {
 }
 let glOK = false, last = performance.now();
 const asked = parseInt(location.hash.slice(1), 10); if (asked >= 1 && asked <= VARIANTS.length) mode = asked - 1;
+if (VARIANTS.length < 2) $('#labbar').hidden = true;
 $('#lab').innerHTML = VARIANTS.map((v, i) => '<button type="button" aria-pressed="false"><b>' + (i + 1) + '</b>' + v.name + '</button>').join('');
 try { if (gl) { setup(); glOK = true; document.documentElement.classList.add('gl'); } } catch (e) { console.warn('water', e); $('#labsays').textContent = String(e).slice(0, 200); }
 if (!glOK) canvas.hidden = true;
