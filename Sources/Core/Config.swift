@@ -59,6 +59,8 @@ public struct Config: Codable, Sendable, Equatable {
     /// Whether the clients' status lines say anything of Sluice's, and what, in order.
     public internal(set) var statusLineOn = true
     public internal(set) var statusLine = StatusLine.usual
+    /// The app replaces itself with a newer release when there is one.
+    public internal(set) var autoUpdate = true
 
     public init() {}
 
@@ -67,6 +69,7 @@ public struct Config: Codable, Sendable, Equatable {
         profiles = try keys.decodeIfPresent([String: Profile].self, forKey: .profiles) ?? [:]
         autoResets = try keys.decodeIfPresent(Bool.self, forKey: .autoResets) ?? false
         statusLineOn = try keys.decodeIfPresent(Bool.self, forKey: .statusLineOn) ?? true
+        autoUpdate = try keys.decodeIfPresent(Bool.self, forKey: .autoUpdate) ?? true
         statusLine = try (keys.decodeIfPresent([String].self, forKey: .statusLine))?.map { name in
             guard let item = StatusLine.Item(rawValue: name) else {
                 throw DecodingError.dataCorruptedError(forKey: .statusLine, in: keys, debugDescription: "no status line item \(name); there is: \(StatusLine.Item.allCases.map(\.rawValue).joined(separator: ", "))")
@@ -83,9 +86,10 @@ public struct Config: Codable, Sendable, Equatable {
         if autoResets { try keys.encode(true, forKey: .autoResets) }
         if !statusLineOn { try keys.encode(false, forKey: .statusLineOn) }
         if statusLine != StatusLine.usual { try keys.encode(statusLine, forKey: .statusLine) }
+        if !autoUpdate { try keys.encode(false, forKey: .autoUpdate) }
     }
 
-    private enum CodingKeys: CodingKey { case profiles, autoResets, statusLineOn, statusLine }
+    private enum CodingKeys: CodingKey { case profiles, autoResets, statusLineOn, statusLine, autoUpdate }
 
     /// Every profile's name, the default first.
     public var names: [String] { [Self.defaultProfile] + profiles.keys.filter { $0 != Self.defaultProfile }.sorted() }

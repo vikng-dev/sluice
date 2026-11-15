@@ -99,6 +99,7 @@ struct Panel: View {
             }
             .padding(.horizontal, 10)
             if !running.said.isEmpty { Text(running.said).font(.caption).foregroundStyle(.red) }
+            if !running.news.isEmpty { Text(running.news).font(.caption).foregroundStyle(.secondary).onDisappear { running.news = "" } }
             // The settings say it themselves, where it is turned on.
             if !running.routed, shown != .settings {
                 HStack {

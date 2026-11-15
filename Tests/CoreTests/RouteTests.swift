@@ -219,3 +219,27 @@ import Testing
         #expect(Route(target: "/accounts/claude") == nil)
     }
 }
+
+@Suite struct UpdateTests {
+    /// GitHub's account of a release, cut to what is read of it (docs/wire.md).
+    private let answer = Data(#"{"tag_name":"v1.10.0","assets":[{"name":"Sluice.dmg","browser_download_url":"https://github.com/vikng-dev/sluice/releases/download/v1.10.0/Sluice.dmg"},{"name":"Sluice-v1.10.0-macos.zip","browser_download_url":"https://github.com/vikng-dev/sluice/releases/download/v1.10.0/Sluice-v1.10.0-macos.zip"}]}"#.utf8)
+
+    @Test func aReleaseIsTakenOnlyWhenItsNumbersComeAfterTheOneRunning() throws {
+        // By its letters 1.10.0 comes before 1.9.2.
+        #expect(try Update.release(in: answer, newerThan: "1.9.2")?.version == "1.10.0")
+        #expect(try Update.release(in: answer, newerThan: "1.10.0") == nil)
+        #expect(try Update.release(in: answer, newerThan: "2.0.0") == nil)
+    }
+
+    @Test func theAppIsWhatIsDownloadedAndNotTheDiskImage() throws {
+        #expect(try Update.release(in: answer, newerThan: "1.0.0")?.archive.lastPathComponent == "Sluice-v1.10.0-macos.zip")
+    }
+
+    @Test func turningUpdatesOffIsKeptAndOnIsNotWritten() throws {
+        var config = Config()
+        #expect(config.autoUpdate)
+        #expect(!String(decoding: try JSONEncoder().encode(config), as: UTF8.self).contains("autoUpdate"))
+        config.update(false)
+        #expect(try !JSONDecoder().decode(Config.self, from: JSONEncoder().encode(config)).autoUpdate)
+    }
+}

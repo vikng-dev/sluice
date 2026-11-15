@@ -96,6 +96,9 @@ sluice \(Sluice.version)
   sluice resets [auto | manual]                  whether a pool uses the resets it holds by itself: when it is out,
                                                  or one is about to lapse. With neither word, says which it is
 
+  sluice updates [auto | manual]                 whether the app replaces itself with each new release. With neither
+                                                 word, says which it is
+
   sluice statusline <provider> [--with <command>]
                                                  the line a client shows under its prompt, of the pool its folder's
                                                  profile has there, and after it what the command says
@@ -150,6 +153,11 @@ func command(_ arguments: [String]) async throws {
         let config = try mode.map { mode in try Storage.live.change { $0.useResets(mode == "auto") } } ?? Storage.live.config()
         if json { return printJSON(["resets": config.autoResets ? "auto" : "manual"]) }
         print(config.autoResets ? "auto: a pool uses the resets it holds when it is out, or one is about to lapse." : "manual: a reset is used only when told to, in the panel or with: sluice account refill")
+    case ("updates", let mode):
+        guard words.count <= 2, mode == nil || mode == "auto" || mode == "manual" else { fail("usage: sluice updates [auto | manual]") }
+        let config = try mode.map { mode in try Storage.live.change { $0.update(mode == "auto") } } ?? Storage.live.config()
+        if json { return printJSON(["updates": config.autoUpdate ? "auto" : "manual"]) }
+        print(config.autoUpdate ? "auto: the app replaces itself with each new release, without cutting an answer." : "manual: the app stays as it is until you install another.")
     case ("statusline", "items"):
         let items = words.dropFirst(2).map { name -> StatusLine.Item in
             guard let item = StatusLine.Item(rawValue: name) else { fail("no status line item \(name); there is: \(StatusLine.Item.allCases.map(\.rawValue).joined(separator: ", "))") }

@@ -78,6 +78,11 @@ public extension Config {
         autoResets = on
     }
 
+    /// Whether the app replaces itself with a newer release.
+    mutating func update(_ on: Bool) {
+        autoUpdate = on
+    }
+
     mutating func showStatusLine(_ on: Bool) {
         statusLineOn = on
     }

@@ -25,6 +25,10 @@ private let program = Bundle.main.executableURL!
     var unread = ""
     /// Why the last thing asked of the panel was not done, gone at the next that is.
     var refusal = ""
+    /// Why the app did not update itself at the last try, gone at the next that works.
+    private(set) var updateProblem = ""
+    /// That this is a newer Sluice than last ran here, said until the panel is next shut.
+    var news = ""
     /// The one of them the panel says.
     var said: String { [problem, unread, refusal].first { !$0.isEmpty } ?? "" }
     var routed = false
@@ -51,7 +55,10 @@ private let program = Bundle.main.executableURL!
                 sluice = try await startSluice { Task { @MainActor in self.yielded = true } }
                 Task { await watch() }
                 // Only launchd starts a copy that left; one run by hand stays as it is.
-                if isKept { await follow() }
+                if isKept {
+                    Task { await update() }
+                    await follow()
+                }
             } catch {
                 problem = "Not relaying: \(error)"
                 log.error("not relaying: \(String(describing: error), privacy: .public)")
@@ -86,6 +93,32 @@ private let program = Bundle.main.executableURL!
                 log.notice("the app is gone: quitting")
                 return quit()
             }
+        }
+    }
+
+    /// A kept copy that its developer signed looks for a newer release when it starts and once a day, and
+    /// puts it in its own place, where `follow` finds it. One that could not be had is tried again in an hour.
+    private func update() async {
+        let app = Bundle.main.bundleURL
+        guard let team = Update.team(of: app) else { return }
+        let ran = UserDefaults.standard.string(forKey: "ranVersion")
+        if let ran, ran != Sluice.version { news = "Updated to \(Sluice.version)" }
+        UserDefaults.standard.set(Sluice.version, forKey: "ranVersion")
+        while true {
+            var wait = 86400
+            do {
+                if try Storage.live.config().autoUpdate, let release = try await Update.newer() {
+                    log.notice("updating to \(release.version, privacy: .public)")
+                    try await Update.install(release, over: app, signedBy: team)
+                    return
+                }
+                updateProblem = ""
+            } catch {
+                updateProblem = "Could not update: \(error is UpdateError ? "\(error)" : error.localizedDescription)"
+                log.error("could not update: \(String(describing: error), privacy: .public)")
+                wait = 3600
+            }
+            try? await Task.sleep(for: .seconds(wait))
         }
     }
 
@@ -288,6 +321,10 @@ private let program = Bundle.main.executableURL!
 
     func autoReset(_ on: Bool) {
         change { $0.useResets(on) }
+    }
+
+    func autoUpdate(_ on: Bool) {
+        change { $0.update(on) }
     }
 
     /// What the menu bar shows in place of the glyph: the profiles with a starred pool, each with its

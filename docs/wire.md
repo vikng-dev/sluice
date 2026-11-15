@@ -263,3 +263,9 @@ Projects, voice, `/usage`. Claude Code 2.1.323:
 `Accept: application/vnd.github+json` and no sign-in answers 200 with `items[].login`, users and
 organizations alike. Asked as nobody it allows ten searches a minute (`x-ratelimit-limit: 10`,
 `x-ratelimit-resource: search`).
+
+## GitHub's latest release (checked 2026-11-15)
+
+`GET https://api.github.com/repos/vikng-dev/sluice/releases/latest` with no sign-in answers 200 with
+`tag_name` (`v1.1.0`) and `assets[]`, each with a `name` and a `browser_download_url`. Asked as nobody
+it allows sixty an hour (`x-ratelimit-limit: 60`).
